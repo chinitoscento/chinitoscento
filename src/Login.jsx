@@ -1,18 +1,35 @@
 import React, { useState, useEffect } from 'react';
-import logo from './logo.png'; // Make sure logo.png is inside your src folder
+import logo from './logo.png';
 
 export default function Login({ onLoginSuccess }) {
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('chinitoscento2026');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleLogin = (e) => {
     if (e) e.preventDefault();
-    if (username === 'admin' && password === 'chinitoscento2026') {
+    
+    const savedSettings = JSON.parse(localStorage.getItem('chinito_settings') || '{}');
+    
+    const adminUser = savedSettings.loginUsername || 'admin';
+    const adminPass = savedSettings.loginPassword || 'chinitoscento2026';
+    const managerUser = savedSettings.managerUsername || 'manager';
+    const managerPass = savedSettings.managerPassword || 'managerpassword123';
+
+    const trimmedUser = username.trim();
+
+    if (trimmedUser === adminUser && password === adminPass) {
+      localStorage.setItem('chinito_user_role', 'owner');
+      localStorage.setItem('chinito_username', trimmedUser);
+      setError('');
+      onLoginSuccess();
+    } else if (trimmedUser === managerUser && password === managerPass) {
+      localStorage.setItem('chinito_user_role', 'manager');
+      localStorage.setItem('chinito_username', trimmedUser);
       setError('');
       onLoginSuccess();
     } else {
-      setError('Invalid credentials. Use admin / chinitoscento2026');
+      setError('Invalid credentials. Please check your username and password.');
     }
   };
 
@@ -89,13 +106,14 @@ const styles = {
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#0b0b0b', // Deep obsidian background matching main layout
+    backgroundColor: '#0b0b0b',
     margin: 0,
     padding: 0,
     overflow: 'hidden',
     position: 'fixed',
     top: 0,
     left: 0,
+    zIndex: 9999,
   },
   card: {
     width: '420px',
@@ -141,10 +159,11 @@ const styles = {
     padding: '10px',
     backgroundColor: '#f8d7da',
     color: '#721c24',
-    fontSize: '12px',
+    fontSize: '11px',
     borderRadius: '4px',
     marginBottom: '15px',
     textAlign: 'center',
+    boxSizing: 'border-box',
   },
   form: {
     width: '100%',

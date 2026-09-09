@@ -6,6 +6,7 @@ export default function Salesorder() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState(null);
   const [notification, setNotification] = useState(null);
+  const [userRole, setUserRole] = useState('admin');
 
   const [soNumber, setSoNumber] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
@@ -24,6 +25,9 @@ export default function Salesorder() {
 
   useEffect(() => {
     loadData();
+    const role = localStorage.getItem('chinito_user_role') || 'admin';
+    setUserRole(role);
+
     const syncData = () => loadData();
     window.addEventListener('storage', syncData);
     window.addEventListener('chinito_sales_updated', syncData);
@@ -262,6 +266,8 @@ export default function Salesorder() {
     return styles.badgePending;
   };
 
+  const isOwner = userRole === 'admin' || userRole === 'owner';
+
   return (
     <div style={styles.container}>
       <div style={styles.headerRow}>
@@ -304,14 +310,16 @@ export default function Salesorder() {
                   <td style={styles.td}>{so.paymentMode}</td>
                   <td style={styles.td}>₱{Number(so.totalDue || 0).toFixed(2)}</td>
                   <td style={styles.td}>
-                    <span style={getBadgeStyle(so.status)}>
-                      {so.status}
-                    </span>
+                    {so.status === 'Pending' && !isOwner ? (
+                      <span style={styles.badgePendingNonOwner}>PENDING FOR APPROVAL</span>
+                    ) : (
+                      <span style={getBadgeStyle(so.status)}>{so.status}</span>
+                    )}
                   </td>
                   <td style={styles.td}>{so.remarks || ''}</td>
                   <td style={styles.td}>
                     <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {so.status === 'Pending' && (
+                      {so.status === 'Pending' && isOwner && (
                         <>
                           <button style={styles.approveBtn} onClick={() => handleApproveSO(so.id || so.soNumber)}>Approve</button>
                           <button style={styles.declineBtn} onClick={() => handleDeclineSO(so.id || so.soNumber)}>Decline</button>
@@ -498,7 +506,6 @@ export default function Salesorder() {
                 <p><b>Total Amount Due: ₱{Number(previewInvoice.totalDue || 0).toFixed(2)}</b></p>
               </div>
 
-              {/* Signatures Section */}
               <div style={styles.signaturesContainer}>
                 <div style={styles.signatureBox}>
                   <div style={styles.signatureLine}></div>
@@ -547,6 +554,7 @@ const styles = {
   emptyCell: { textAlign: 'left', padding: '20px', color: '#777', fontStyle: 'italic' },
   badgeApproved: { backgroundColor: '#d1fae5', color: '#065f46', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
   badgePending: { backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
+  badgePendingNonOwner: { backgroundColor: '#f3f4f6', color: '#4b5563', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '700', letterSpacing: '0.5px', border: '1px solid #d1d5db' },
   badgeDeclined: { backgroundColor: '#fee2e2', color: '#991b1b', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
   primaryBtn: { backgroundColor: '#111827', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '14px' },
   secondaryBtn: { backgroundColor: '#e5e7eb', color: '#374151', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', marginTop: '10px', fontWeight: '600' },

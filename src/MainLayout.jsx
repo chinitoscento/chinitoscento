@@ -13,14 +13,80 @@ import Packaging from './Packaging.jsx';
 import FinishedGoodsInventory from './FinishedGoodsInventory.jsx';
 import Salesorder from './Salesorder.jsx';
 import Invoices from './Invoices.jsx';
-import SalesReturns from './SalesReturns.jsx'; // <-- Fixed to match exact casing (SalesReturns.jsx)
+import SalesReturns from './SalesReturns.jsx';
 import Collections from './Collections.jsx';
 import CustomerLedger from './CustomerLedger.jsx';
+import SystemSettings from './SystemSettings.jsx';
 import logo from './logo.png';
 
+// Luxury Atelier Welcome view for non-owner roles
+function AtelierWorkspace({ userName, onNavigate }) {
+  return (
+    <div style={atelierStyles.container}>
+      <div style={atelierStyles.heroCard}>
+        <div style={atelierStyles.subheading}>CHINITO SCENTO ATELIER</div>
+        <h1 style={atelierStyles.heading}>Welcome, {userName}</h1>
+        <p style={atelierStyles.description}>
+          Your bespoke fragrance order management and client boutique portal is ready. 
+          Select an option below or use the sidebar navigation to manage client requisitions and dispatches.
+        </p>
+        
+        <div style={atelierStyles.quickActionGrid}>
+          <div style={atelierStyles.actionCard} onClick={() => onNavigate('Sales Order')}>
+            <span style={atelierStyles.actionIcon}>✦</span>
+            <h3 style={atelierStyles.actionTitle}>New Sales Order</h3>
+            <p style={atelierStyles.actionText}>Process boutique or wholesale perfume requisitions.</p>
+          </div>
+          
+          <div style={atelierStyles.actionCard} onClick={() => onNavigate('Invoices')}>
+            <span style={atelierStyles.actionIcon}>◇</span>
+            <h3 style={atelierStyles.actionTitle}>Check Invoices?</h3>
+            <p style={atelierStyles.actionText}>Review active billing records and transaction status.</p>
+          </div>
+
+          <div style={atelierStyles.actionCard} onClick={() => onNavigate('Sales Returns')}>
+            <span style={atelierStyles.actionIcon}>◆</span>
+            <h3 style={atelierStyles.actionTitle}>Any Returns?</h3>
+            <p style={atelierStyles.actionText}>Manage product returns and quality feedback logs.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function MainLayout({ onLogout }) {
-  const [activePage, setActivePage] = useState('Dashboard');
+  const [userRole, setUserRole] = useState(() => localStorage.getItem('chinito_user_role') || 'manager');
+  const [userName, setUserName] = useState(() => {
+    const user = localStorage.getItem('chinito_username') || 
+                 localStorage.getItem('chinito_current_user') || 
+                 localStorage.getItem('chinito_logged_in_user') || 
+                 localStorage.getItem('chinito_user') ||
+                 localStorage.getItem('chinito_name') ||
+                 'Edson';
+    return user.toUpperCase();
+  });
   
+  useEffect(() => {
+    const role = localStorage.getItem('chinito_user_role') || 'manager';
+    setUserRole(role);
+
+    const loggedInUser = localStorage.getItem('chinito_username') || 
+                         localStorage.getItem('chinito_current_user') || 
+                         localStorage.getItem('chinito_logged_in_user') || 
+                         localStorage.getItem('chinito_user') ||
+                         localStorage.getItem('chinito_name') ||
+                         'Edson';
+    setUserName(loggedInUser.toUpperCase());
+  }, []);
+
+  const normalizedRole = userRole.toLowerCase();
+  const isOwnerOrAdmin = normalizedRole === 'admin' || normalizedRole === 'owner';
+  const isManager = normalizedRole === 'manager' || !isOwnerOrAdmin;
+
+  const [activePage, setActivePage] = useState(isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace');
+  
+  // All sidebar sections collapsed by default
   const [openSections, setOpenSections] = useState({
     Masters: false,
     Purchasing: false,
@@ -105,7 +171,9 @@ export default function MainLayout({ onLogout }) {
   const renderContent = () => {
     switch (activePage) {
       case 'Dashboard':
-        return <Dashboard />;
+        return isOwnerOrAdmin ? <Dashboard /> : <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
+      case 'Atelier Workspace':
+        return <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
       case 'Customers':
         return <Customers />;
       case 'Suppliers':
@@ -135,12 +203,13 @@ export default function MainLayout({ onLogout }) {
       case 'Invoices':
         return <Invoices />;
       case 'Sales Returns':
-        return <SalesReturns />; // <-- Fixed to render the correctly imported component
+        return <SalesReturns />;
       case 'Collections':
         return <Collections />;
       case 'Customer Ledger':
         return <CustomerLedger />;
-      
+      case 'System Settings':
+        return <SystemSettings />;      
       default:
         return (
           <div style={{ padding: '30px' }}>
@@ -163,45 +232,55 @@ export default function MainLayout({ onLogout }) {
         </div>
 
         <div style={styles.navMenu}>
-          <div style={styles.sectionContainer}>
-            <div 
-              style={{ 
-                ...styles.navItem, 
-                ...(activePage === 'Dashboard' ? styles.navItemActive : {}),
-                marginTop: '4px',
-                marginBottom: '8px'
-              }}
-              onClick={() => handleNavClick('Dashboard')}
-            >
-              Dashboard
+          {isOwnerOrAdmin && (
+            <div style={styles.sectionContainer}>
+              <div 
+                style={{ 
+                  ...styles.navItem, 
+                  ...(activePage === 'Dashboard' ? styles.navItemActive : {}),
+                  marginTop: '4px',
+                  marginBottom: '8px'
+                }}
+                onClick={() => handleNavClick('Dashboard')}
+              >
+                Dashboard
+              </div>
             </div>
-          </div>
+          )}
 
-          {renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations', 'SRP Control'])}
-          {renderSection('Purchasing', ['Purchases', 'Costing'])}
-          {renderSection('Inventory', ['Raw Materials', 'Finished Goods', 'Stock Ledger'])}
-          {renderSection('Production', ['Maceration', 'Packaging'])}
+          {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations', 'SRP Control'])}
+          {!isManager && renderSection('Purchasing', ['Purchases', 'Costing'])}
+          {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods', 'Stock Ledger'])}
+          {!isManager && renderSection('Production', ['Maceration', 'Packaging'])}
+          
           {renderSection('Sales', ['Sales Order', 'Invoices', 'Sales Returns'])}
-          {renderSection('Receivables', ['Collections', 'Customer Ledger'])}
-          {renderSection('Reports', ['Reports Center'])}
-          {renderSection('Settings', ['System Settings'])}
+          
+          {!isManager && renderSection('Receivables', ['Collections', 'Customer Ledger'])}
+          {!isManager && renderSection('Reports', ['Reports Center'])}
+          {!isManager && renderSection('Settings', ['System Settings'])}
         </div>
       </aside>
 
       <div style={styles.mainWrapper}>
         <header style={styles.topHeader}>
-          <div style={styles.dateTimeDisplay}>
-            <span style={styles.dateTimeLabel}>SESSION TIME</span>
-            <span style={styles.dateTimeValue}>{currentDate}</span>
+          <div style={styles.welcomeBanner}>
+            Hello, <span style={styles.userNameHighlight}>{userName}</span>! Welcome Back!
           </div>
-          <button 
-            style={styles.logoutButton} 
-            onClick={onLogout}
-            onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
-            onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
-          >
-            Sign Out
-          </button>
+
+          <div style={styles.headerRightGroup}>
+            <div style={styles.dateTimeDisplay}>
+              <span style={styles.dateTimeLabel}>SESSION TIME</span>
+              <span style={styles.dateTimeValue}>{currentDate}</span>
+            </div>
+            <button 
+              style={styles.logoutButton} 
+              onClick={onLogout}
+              onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
+              onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
+            >
+              Sign Out
+            </button>
+          </div>
         </header>
 
         <main style={{
@@ -220,6 +299,82 @@ const darkSidebar = '#0b0b0b';
 const mainBackground = '#f5f4f0'; 
 const sidebarBorder = '#1c1c1c';
 const topHeaderBg = '#ffffff';
+
+const atelierStyles = {
+  container: {
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: '100%',
+    padding: '20px',
+  },
+  heroCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e6e2db',
+    borderRadius: '8px',
+    padding: '50px 60px',
+    maxWidth: '850px',
+    width: '100%',
+    boxShadow: '0 10px 35px rgba(0,0,0,0.04)',
+    textAlign: 'center',
+  },
+  subheading: {
+    color: '#c5a059',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '3px',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    marginBottom: '12px',
+  },
+  heading: {
+    fontSize: '32px',
+    color: '#1a1a1a',
+    fontFamily: "'Cormorant Garamond', 'Cinzel', serif",
+    fontWeight: '600',
+    marginBottom: '16px',
+    letterSpacing: '1px',
+  },
+  description: {
+    color: '#666666',
+    fontSize: '15px',
+    lineHeight: '1.6',
+    maxWidth: '600px',
+    margin: '0 auto 40px auto',
+  },
+  quickActionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '20px',
+    textAlign: 'left',
+  },
+  actionCard: {
+    backgroundColor: '#fcfbfa',
+    border: '1px solid #eeebe4',
+    borderRadius: '6px',
+    padding: '24px 20px',
+    cursor: 'pointer',
+    transition: 'all 0.2s ease',
+    boxShadow: '0 2px 6px rgba(0,0,0,0.02)',
+  },
+  actionIcon: {
+    color: '#c5a059',
+    fontSize: '18px',
+    display: 'block',
+    marginBottom: '12px',
+  },
+  actionTitle: {
+    fontSize: '15px',
+    fontWeight: '600',
+    color: '#2c2c2c',
+    marginBottom: '6px',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+  },
+  actionText: {
+    fontSize: '12.5px',
+    color: '#777777',
+    lineHeight: '1.4',
+  },
+};
 
 const styles = {
   appContainer: { 
@@ -339,12 +494,27 @@ const styles = {
     backgroundColor: topHeaderBg, 
     borderBottom: '1px solid #e2ded8', 
     display: 'flex', 
-    justifyContent: 'flex-end', 
+    justifyContent: 'space-between', 
     alignItems: 'center', 
     padding: '0 40px', 
-    gap: '30px', 
     flexShrink: 0, 
     boxShadow: '0 4px 20px rgba(0,0,0,0.03)' 
+  },
+  welcomeBanner: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#2c2c2c',
+    letterSpacing: '0.5px',
+    fontFamily: "'Cinzel', 'Segoe UI', serif"
+  },
+  userNameHighlight: {
+    color: primaryGold,
+    fontWeight: '700'
+  },
+  headerRightGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '30px',
   },
   dateTimeDisplay: { 
     display: 'flex', 
@@ -371,7 +541,7 @@ const styles = {
     padding: '11px 24px', 
     borderRadius: '4px', 
     fontWeight: '600', 
-    fontSize: '13.5px', 
+    fontSize: `13.5px`, 
     letterSpacing: '1px', 
     cursor: 'pointer', 
     transition: 'background-color 0.2s ease, transform 0.1s ease',

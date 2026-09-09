@@ -3,13 +3,22 @@ import Login from './Login.jsx';
 import MainLayout from './MainLayout.jsx';
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  // Initialize state by checking if a session exists in localStorage
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('chinito_user_role') || !!localStorage.getItem('chinito_username');
+  });
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
+    // Clear session storage items on logout
+    localStorage.removeItem('chinito_user_role');
+    localStorage.removeItem('chinito_username');
+    localStorage.removeItem('chinito_current_user');
+    localStorage.removeItem('chinito_logged_in_user');
+    localStorage.removeItem('chinito_user');
     setIsAuthenticated(false);
   };
 
