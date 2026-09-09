@@ -1,0 +1,1028 @@
+import React, { useState, useEffect } from 'react';
+
+// Helper function to parse volume size (e.g., "500ml", "1L") into mL
+const parseVolumeInMl = (volumeStr) => {
+  if (!volumeStr) return 1;
+  const str = String(volumeStr).toLowerCase().trim();
+  const num = parseFloat(str) || 1;
+  if (str.includes('l') && !str.includes('ml')) {
+    return num * 1000; // Convert Liters to mL
+  }
+  return num; // Default to given number (assumed mL or unit multiplier)
+};
+
+// Helper function to generate sequential reference numbers for audit trails
+const getNextRefId = (history) => {
+  if (!history || history.length === 0) return 'PUR-000001';
+  let maxNum = 0;
+  history.forEach(item => {
+    if (item.id && item.id.startsWith('PUR-')) {
+      const num = parseInt(item.id.replace('PUR-', ''), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    }
+  });
+  const next = Math.max(history.length, maxNum) + 1;
+  return `PUR-${String(next).padStart(6, '0')}`;
+};
+
+export default function Purchases() {
+  // --- STATE FOR FORM FIELDS ---
+  const [suppliers, setSuppliers] = useState([]);
+  const [rawCatalogue, setRawCatalogue] = useState([]);
+  
+  const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  
+  // Item entry state
+  const [purchaseType, setPurchaseType] = useState('COGS'); // 'COGS' or 'OPEX'
+  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); // Stores the strict Raw Material ID (e.g., RM-001)
+  const [opexDescription, setOpexDescription] = useState('');
+  const [containerVolume, setContainerVolume] = useState(''); // Editable container size/volume per batch
+  const [quantity, setQuantity] = useState('');
+  const [unitCost, setUnitCost] = useState('');
+  
+  // List of added items in current transaction
+  const [lineItems, setLineItems] = useState([]);
+
+  // Payment terms state
+  const [paymentMode, setPaymentMode] = useState('Cash'); // 'Cash' or 'Credit'
+  const [creditOption, setCreditOption] = useState('One-Time'); // 'One-Time' or 'Installment'
+  const [monthlyAmortization, setMonthlyAmortization] = useState('');
+  const [installmentCount, setInstallmentCount] = useState('');
+  const [totalAmountDueInput, setTotalAmountDueInput] = useState(''); // User encodes total amount due for One-Time credit
+
+  // Saved purchases history state
+  const [purchaseHistory, setPurchaseHistory] = useState(() => {
+    const saved = localStorage.getItem('chinito_purchases');
+    return saved ? JSON.parse(saved) : [];
+  });
+
+  // Modal Visibility States
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [submittedModalData, setSubmittedModalData] = useState(null);
+
+  // Load suppliers and raw materials catalogue from local storage on mount
+  useEffect(() => {
+    const loadedSuppliers = localStorage.getItem('chinito_suppliers');
+    if (loadedSuppliers) {
+      try { setSuppliers(JSON.parse(loadedSuppliers)); } catch (e) { console.error(e); }
+    }
+
+    // Directly load from the standardized chinito_raw_materials_catalogue storage key
+    const loadedCatalogue = localStorage.getItem('chinito_raw_materials_catalogue');
+    if (loadedCatalogue) {
+      try { 
+        const parsed = JSON.parse(loadedCatalogue);
+        if (Array.isArray(parsed)) {
+          setRawCatalogue(parsed);
+        }
+      } catch (e) { 
+        console.error(e); 
+      }
+    }
+  }, []);
+
+  // Save purchase history updates to local storage
+  useEffect(() => {
+    localStorage.setItem('chinito_purchases', JSON.stringify(purchaseHistory));
+  }, [purchaseHistory]);
+
+  // When catalogue selection changes, auto-populate container volume if available
+  const handleCatalogueChange = (e) => {
+    const itemId = e.target.value;
+    setSelectedCatalogueItem(itemId);
+    if (itemId) {
+      const foundCat = rawCatalogue.find(cat => String(cat.id) === String(itemId));
+      if (foundCat && foundCat.volumeSize) {
+        setContainerVolume(foundCat.volumeSize);
+      } else {
+        setContainerVolume('');
+      }
+    } else {
+      setContainerVolume('');
+    }
+  };
+
+  // Handle adding an item to the current transaction list
+  const handleAddItem = (e) => {
+    e.preventDefault();
+    if (purchaseType === 'COGS' && !selectedCatalogueItem) {
+      alert('Please select an item from the Raw Materials Catalogue.');
+      return;
+    }
+    if (purchaseType === 'OPEX' && !opexDescription.trim()) {
+      alert('Please enter an OPEX description.');
+      return;
+    }
+    if (!quantity || !unitCost) {
+      alert('Please provide both quantity and cost.');
+      return;
+    }
+
+    let itemCode = '';
+    let itemName = '';
+    let parsedVolumeStr = '1';
+
+    if (purchaseType === 'COGS') {
+      const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
+
+      itemCode = selectedCatalogueItem; // e.g. "RM-001"
+      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || 'Unknown Material') : 'Unknown Material';
+      parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || '1');
+    } else {
+      itemName = opexDescription.trim();
+      itemCode = 'OPEX';
+      parsedVolumeStr = '1';
+    }
+
+    const qtyNum = Number(quantity);
+    const costNum = Number(unitCost);
+    const totalLineAmount = qtyNum * costNum;
+
+    const newItem = {
+      id: Date.now() + Math.random(),
+      type: purchaseType,
+      code: itemCode, 
+      name: itemName,
+      containerVolume: parsedVolumeStr,
+      quantity: qtyNum,
+      unitCost: costNum,
+      total: totalLineAmount
+    };
+
+    setLineItems(prev => [...prev, newItem]);
+
+    // Reset item inputs
+    setSelectedCatalogueItem('');
+    setOpexDescription('');
+    setContainerVolume('');
+    setQuantity('');
+    setUnitCost('');
+  };
+
+  const handleRemoveLineItem = (id) => {
+    setLineItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  // --- CALCULATIONS ---
+  const totalPurchaseAmount = lineItems.reduce((acc, item) => acc + item.total, 0);
+
+  let computedInterest = 0;
+  let computedRate = 0;
+  let totalAmountDue = totalPurchaseAmount;
+
+  if (paymentMode === 'Credit') {
+    if (creditOption === 'Installment') {
+      const amort = Number(monthlyAmortization) || 0;
+      const count = Number(installmentCount) || 0;
+      const totalInstallmentPayable = amort * count;
+
+      if (totalInstallmentPayable > totalPurchaseAmount) {
+        computedInterest = totalInstallmentPayable - totalPurchaseAmount;
+        computedRate = totalPurchaseAmount > 0 ? (computedInterest / totalPurchaseAmount) * 100 : 0;
+      }
+      totalAmountDue = totalInstallmentPayable > 0 ? totalInstallmentPayable : totalPurchaseAmount;
+    } else if (creditOption === 'One-Time') {
+      const customDue = Number(totalAmountDueInput);
+      if (customDue > 0) {
+        totalAmountDue = customDue;
+        if (customDue > totalPurchaseAmount) {
+          computedInterest = customDue - totalPurchaseAmount;
+          computedRate = totalPurchaseAmount > 0 ? (computedInterest / totalPurchaseAmount) * 100 : 0;
+        }
+      } else {
+        totalAmountDue = totalPurchaseAmount;
+      }
+    }
+  }
+
+  // Handle final submission of transaction
+  const handleSubmitTransaction = (e) => {
+    e.preventDefault();
+    if (!selectedSupplier) {
+      alert('Please select a supplier.');
+      return;
+    }
+    if (lineItems.length === 0) {
+      alert('Please add at least one item or expense to the purchase list.');
+      return;
+    }
+
+    const transactionRecord = {
+      id: getNextRefId(purchaseHistory),
+      supplier: selectedSupplier,
+      date: transactionDate,
+      paymentMode,
+      creditOption: paymentMode === 'Credit' ? creditOption : 'N/A',
+      monthlyAmortization: paymentMode === 'Credit' && creditOption === 'Installment' ? monthlyAmortization : null,
+      installmentCount: paymentMode === 'Credit' && creditOption === 'Installment' ? installmentCount : null,
+      totalAmountDueInput: paymentMode === 'Credit' && creditOption === 'One-Time' ? totalAmountDueInput : null,
+      items: lineItems,
+      totalPurchaseAmount,
+      computedInterest,
+      computedRate,
+      totalAmountDue
+    };
+
+    // --- INTEGRATED CATALOGUE & INVENTORY STORAGE LOGIC ---
+    const inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    const rawCat = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
+
+    // Update catalogue stock quantities based on purchase lines using standardized properties (id, rawMaterial, volumeSize, baseUnit)
+    transactionRecord.items.forEach(line => {
+      if (line.type === 'COGS') {
+        const catMeta = rawCat.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name);
+        const volumeStr = line.containerVolume || (catMeta ? catMeta.volumeSize : '1');
+        const multiplier = parseVolumeInMl(volumeStr);
+        const totalToAdd = Number(line.quantity || 0) * multiplier;
+
+        const matchIndex = inventory.findIndex(i => String(i.code || i.id) === String(line.code) || i.rawMaterial === line.name);
+        if (matchIndex !== -1) {
+          const invItem = inventory[matchIndex];
+          invItem.stockQty = Number(invItem.stockQty || 0) + totalToAdd;
+        } else {
+          inventory.push({
+            id: catMeta ? catMeta.id : (Date.now() + Math.random()),
+            code: line.code,
+            rawMaterial: line.name,
+            category: catMeta ? catMeta.category : 'RAW MATERIAL',
+            volumeSize: volumeStr,
+            stockQty: totalToAdd,
+            unit: catMeta ? (catMeta.baseUnit || catMeta.unit || 'ml') : 'ml'
+          });
+        }
+      }
+    });
+
+    localStorage.setItem('chinito_inventory', JSON.stringify(inventory));
+    setPurchaseHistory(prev => [transactionRecord, ...prev]);
+    
+    setIsAddModalOpen(false);
+    setSubmittedModalData(transactionRecord);
+
+    // Reset Form State
+    setLineItems([]);
+    setSelectedSupplier('');
+    setMonthlyAmortization('');
+    setInstallmentCount('');
+    setTotalAmountDueInput('');
+  };
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.headerBlockWithBtn}>
+        <div>
+          <h2 style={styles.pageTitle}>Purchases & Expenses Ledger</h2>
+          <p style={styles.subText}>Record raw material acquisitions (COGS) with batch container sizes and operational expenses (OPEX).</p>
+        </div>
+        <button 
+          onClick={() => setIsAddModalOpen(true)} 
+          style={styles.primaryBtn}
+        >
+          + Add Purchase Transaction
+        </button>
+      </div>
+
+      {/* Recorded Purchase Transactions History Table */}
+      <div style={{ marginTop: '25px' }}>
+        <h3 style={styles.listHeading}>Recorded Purchase Transactions History</h3>
+        <table style={styles.historyTable}>
+          <colgroup>
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '13%' }} />
+          </colgroup>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.thLeft}>Ref / Date</th>
+              <th style={styles.thLeft}>Supplier</th>
+              <th style={styles.thLeft}>Terms</th>
+              <th style={styles.thLeft}>Items</th>
+              <th style={styles.thLeft}>Total Purchase</th>
+              <th style={styles.thLeft}>Total Amount Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {purchaseHistory.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
+              </tr>
+            ) : (
+              purchaseHistory.map(p => (
+                <tr key={p.id} style={styles.trBody}>
+                  <td style={styles.td}>
+                    <div style={{ fontWeight: 'bold' }}>{p.id}</div>
+                    <div style={{ fontSize: '13px', color: '#666' }}>{p.date}</div>
+                  </td>
+                  <td style={styles.td}><b>{p.supplier}</b></td>
+                  <td style={styles.td}>
+                    <div>{p.paymentMode}</div>
+                    <div style={{ fontSize: '13px', color: '#666' }}>
+                      {p.creditOption === 'Installment' && p.installmentCount
+                        ? `Installment (${p.installmentCount} mos)`
+                        : p.creditOption}
+                    </div>
+                  </td>
+                  <td style={styles.td}>
+                    {p.items && p.items.map((i, idx) => (
+                      <div key={idx} style={{ fontSize: '14px', marginBottom: '4px' }}>
+                        &bull; {i.code && i.code !== 'OPEX' ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
+                        {i.containerVolume ? ` (${i.containerVolume})` : ''} 
+                        {' '}({i.quantity} x ₱{i.unitCost})
+                      </div>
+                    ))}
+                  </td>
+                  <td style={styles.td}>₱{p.totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td style={styles.td}><strong>₱{p.totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {/* ADD PURCHASE TRANSACTION MODAL */}
+      {isAddModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>New Purchase Transaction Form</h3>
+              <button 
+                onClick={() => setIsAddModalOpen(false)} 
+                style={styles.closeBtnIcon}
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmitTransaction} style={styles.formCard}>
+              {/* Supplier & Date selection */}
+              <div style={styles.gridTwo}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Supplier *</label>
+                  <select 
+                    value={selectedSupplier} 
+                    onChange={(e) => setSelectedSupplier(e.target.value)} 
+                    style={styles.input}
+                    required
+                  >
+                    <option value="">-- Select Supplier --</option>
+                    {suppliers.map((sup, idx) => (
+                      <option key={sup.id || idx} value={sup.name || sup.supplierName}>
+                        {sup.name || sup.supplierName}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Date of Transaction *</label>
+                  <input 
+                    type="date" 
+                    value={transactionDate} 
+                    onChange={(e) => setTransactionDate(e.target.value)} 
+                    style={styles.input}
+                    required 
+                  />
+                </div>
+              </div>
+
+              {/* Recording Portion */}
+              <div style={styles.sectionBox}>
+                <h4 style={styles.sectionHeading}>Add Purchase Items / Expenses</h4>
+                
+                <div style={styles.gridRowCustom}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Classification</label>
+                    <select 
+                      value={purchaseType} 
+                      onChange={(e) => setPurchaseType(e.target.value)} 
+                      style={styles.input}
+                    >
+                      <option value="COGS">COGS (Raw Materials)</option>
+                      <option value="OPEX">OPEX (Expense)</option>
+                    </select>
+                  </div>
+
+                  {purchaseType === 'COGS' ? (
+                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                      <label style={styles.label}>Item (Catalogue)</label>
+                      <select 
+                        value={selectedCatalogueItem} 
+                        onChange={handleCatalogueChange} 
+                        style={styles.input}
+                      >
+                        <option value="">-- Select Raw Material --</option>
+                        {rawCatalogue.map((cat, idx) => {
+                          const itemName = cat.rawMaterial || cat.name;
+                          const itemId = cat.id; // e.g. RM-001
+                          return (
+                            <option key={cat.id || idx} value={itemId}>
+                              {itemId ? `[${itemId}] ` : ''}{itemName} {cat.volumeSize ? `(${cat.volumeSize})` : cat.baseUnit ? `(${cat.baseUnit})` : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    </div>
+                  ) : (
+                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+                      <label style={styles.label}>Expense Description</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Utilities, Rent" 
+                        value={opexDescription} 
+                        onChange={(e) => setOpexDescription(e.target.value)} 
+                        style={styles.input}
+                      />
+                    </div>
+                  )}
+
+                  {purchaseType === 'COGS' && (
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Container Vol / Size</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. 250ml, 1L" 
+                        value={containerVolume} 
+                        onChange={(e) => setContainerVolume(e.target.value)} 
+                        style={styles.input} 
+                      />
+                    </div>
+                  )}
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Quantity</label>
+                    <input 
+                      type="number" 
+                      placeholder="0" 
+                      value={quantity} 
+                      onChange={(e) => setQuantity(e.target.value)} 
+                      style={styles.input} 
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Unit Cost (₱)</label>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      placeholder="0.00" 
+                      value={unitCost} 
+                      onChange={(e) => setUnitCost(e.target.value)} 
+                      style={styles.input} 
+                    />
+                  </div>
+                </div>
+
+                <div style={styles.btnRowRight}>
+                  <button type="button" onClick={handleAddItem} style={styles.secondaryBtn}>
+                    + Add to Item List
+                  </button>
+                </div>
+              </div>
+
+              {/* Added Items List Form */}
+              <div>
+                <h4 style={styles.listHeading}>Added Items / Expenses List</h4>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.trHead}>
+                      <th style={styles.thLeft}>Type</th>
+                      <th style={styles.thLeft}>ID / Item Name</th>
+                      <th style={styles.thLeft}>Size/Vol</th>
+                      <th style={styles.thLeft}>Quantity</th>
+                      <th style={styles.thLeft}>Unit Cost</th>
+                      <th style={styles.thLeft}>Total Amount</th>
+                      <th style={styles.thLeft}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lineItems.length === 0 ? (
+                      <tr>
+                        <td colSpan="7" style={styles.emptyTd}>No items added yet. Complete the fields above.</td>
+                      </tr>
+                    ) : (
+                      lineItems.map(item => (
+                        <tr key={item.id} style={styles.trBody}>
+                          <td style={styles.td}>
+                            <span style={item.type === 'COGS' ? styles.cogsBadge : styles.opexBadge}>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td style={styles.td}>
+                            {item.code && item.code !== 'OPEX' ? <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c5a059', marginRight: '6px' }}>[{item.code}]</span> : null}
+                            <b>{item.name}</b>
+                          </td>
+                          <td style={styles.td}>{item.containerVolume || '-'}</td>
+                          <td style={styles.td}>{item.quantity.toLocaleString()}</td>
+                          <td style={styles.td}>₱{item.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                          <td style={styles.td}><strong>₱{item.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
+                          <td style={styles.td}>
+                            <button type="button" onClick={() => handleRemoveLineItem(item.id)} style={styles.removeBtn}>Remove</button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Payment Terms Section */}
+              <div style={styles.sectionBox}>
+                <h4 style={styles.sectionHeading}>Payment Terms</h4>
+                
+                <div style={styles.gridTwo}>
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>Payment Mode</label>
+                    <select 
+                      value={paymentMode} 
+                      onChange={(e) => setPaymentMode(e.target.value)} 
+                      style={styles.input}
+                    >
+                      <option value="Cash">Cash</option>
+                      <option value="Credit">Credit</option>
+                    </select>
+                  </div>
+
+                  {paymentMode === 'Credit' && (
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Credit Type</label>
+                      <select 
+                        value={creditOption} 
+                        onChange={(e) => setCreditOption(e.target.value)} 
+                        style={styles.input}
+                      >
+                        <option value="One-Time">One-Time Pay</option>
+                        <option value="Installment">Installment</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {paymentMode === 'Credit' && creditOption === 'Installment' && (
+                  <div style={{ ...styles.gridTwo, marginTop: '15px' }}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Monthly Amortization Due (₱)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="0.00" 
+                        value={monthlyAmortization} 
+                        onChange={(e) => setMonthlyAmortization(e.target.value)} 
+                        style={styles.input} 
+                      />
+                    </div>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Number of Installments (Months)</label>
+                      <input 
+                        type="number" 
+                        placeholder="0" 
+                        value={installmentCount} 
+                        onChange={(e) => setInstallmentCount(e.target.value)} 
+                        style={styles.input} 
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {paymentMode === 'Credit' && creditOption === 'One-Time' && (
+                  <div style={{ marginTop: '15px' }}>
+                    <div style={styles.inputGroup}>
+                      <label style={styles.label}>Total Amount Due (₱)</label>
+                      <input 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="0.00" 
+                        value={totalAmountDueInput} 
+                        onChange={(e) => setTotalAmountDueInput(e.target.value)} 
+                        style={styles.input} 
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Summary Card */}
+              <div style={styles.summaryCard}>
+                <div>
+                  <div style={styles.summaryLabel}>TOTAL PURCHASE AMOUNT</div>
+                  <div style={styles.summaryMainVal}>₱{totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                  {paymentMode === 'Credit' && (
+                    <div style={styles.summarySubText}>
+                      Computed Interest: ₱{computedInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({computedRate.toFixed(2)}%)
+                    </div>
+                  )}
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={styles.summaryLabel}>TOTAL AMOUNT DUE</div>
+                  <div style={styles.summaryDueVal}>₱{totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                </div>
+              </div>
+
+              <div style={styles.modalFooterActions}>
+                <button type="button" onClick={() => setIsAddModalOpen(false)} style={styles.cancelBtn}>
+                  Cancel
+                </button>
+                <button type="submit" style={styles.primaryBtn}>
+                  Save Purchase Transaction
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* SUBMITTED TRANSACTION SUMMARY MODAL */}
+      {submittedModalData && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>Purchase Transaction Summary</h3>
+              <span style={styles.modalBadge}>SUCCESSFULLY RECORDED</span>
+            </div>
+
+            <div style={styles.modalMetaGrid}>
+              <div>
+                <span style={styles.modalSubLabel}>Transaction Ref:</span>
+                <div style={styles.modalMetaVal}>{submittedModalData.id}</div>
+              </div>
+              <div>
+                <span style={styles.modalSubLabel}>Date:</span>
+                <div style={styles.modalMetaVal}>{submittedModalData.date}</div>
+              </div>
+              <div>
+                <span style={styles.modalSubLabel}>Supplier:</span>
+                <div style={styles.modalMetaVal}><b>{submittedModalData.supplier}</b></div>
+              </div>
+              <div>
+                <span style={styles.modalSubLabel}>Terms:</span>
+                <div style={styles.modalMetaVal}>
+                  {submittedModalData.paymentMode} {submittedModalData.creditOption === 'Installment' && submittedModalData.installmentCount ? `(Installment: ${submittedModalData.installmentCount} mos)` : submittedModalData.creditOption !== 'N/A' ? `(${submittedModalData.creditOption})` : ''}
+                </div>
+              </div>
+            </div>
+
+            <h4 style={{ ...styles.sectionHeading, marginTop: '20px' }}>Acquired Items / Expenses</h4>
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.trHead}>
+                  <th style={styles.thLeft}>Type</th>
+                  <th style={styles.thLeft}>ID / Item Name</th>
+                  <th style={styles.thLeft}>Size/Vol</th>
+                  <th style={styles.thLeft}>Qty</th>
+                  <th style={styles.thLeft}>Unit Cost</th>
+                  <th style={styles.thLeft}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {submittedModalData.items.map((i, idx) => (
+                  <tr key={idx} style={styles.trBody}>
+                    <td style={styles.td}>
+                      <span style={i.type === 'COGS' ? styles.cogsBadge : styles.opexBadge}>{i.type}</span>
+                    </td>
+                    <td style={styles.td}>
+                      {i.code && i.code !== 'OPEX' ? <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c5a059', marginRight: '6px' }}>[{i.code}]</span> : null}
+                      {i.name}
+                    </td>
+                    <td style={styles.td}>{i.containerVolume || '-'}</td>
+                    <td style={styles.td}>{i.quantity.toLocaleString()}</td>
+                    <td style={styles.td}>₱{i.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                    <td style={styles.td}>₱{i.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+
+            <div style={{ ...styles.summaryCard, marginTop: '20px' }}>
+              <div>
+                <div style={styles.summaryLabel}>TOTAL PURCHASE AMOUNT</div>
+                <div style={styles.summaryMainVal}>₱{submittedModalData.totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+                {submittedModalData.paymentMode === 'Credit' && (
+                  <div style={styles.summarySubText}>
+                    Computed Interest: ₱{submittedModalData.computedInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({submittedModalData.computedRate.toFixed(2)}%)
+                  </div>
+                )}
+              </div>
+              <div style={{ textAlign: 'right' }}>
+                <div style={styles.summaryLabel}>TOTAL AMOUNT DUE</div>
+                <div style={styles.summaryDueVal}>₱{submittedModalData.totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
+              </div>
+            </div>
+
+            <div style={{ ...styles.btnRowRight, marginTop: '20px' }}>
+              <button type="button" onClick={() => setSubmittedModalData(null)} style={styles.primaryBtn}>
+                Close Summary
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const primaryGold = '#c5a059';
+
+const styles = {
+  container: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2ded8',
+    borderRadius: '8px',
+    padding: '35px',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
+    fontFamily: 'sans-serif',
+    color: '#333',
+    fontSize: '15px'
+  },
+  headerBlockWithBtn: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '20px',
+    flexWrap: 'wrap',
+    gap: '15px'
+  },
+  pageTitle: {
+    fontSize: '26px',
+    fontWeight: '700',
+    color: '#1a1a1a',
+    margin: '0 0 6px 0'
+  },
+  subText: {
+    fontSize: '15px',
+    color: '#666',
+    margin: 0
+  },
+  listHeading: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#222',
+    margin: '0 0 12px 0'
+  },
+  sectionHeading: {
+    fontSize: '16px',
+    fontWeight: '600',
+    color: '#333',
+    margin: '0 0 12px 0'
+  },
+  sectionBox: {
+    backgroundColor: '#fbf9f6',
+    border: '1px solid #eae5de',
+    borderRadius: '6px',
+    padding: '20px',
+    marginTop: '20px',
+    marginBottom: '20px'
+  },
+  historyTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#fff',
+    fontSize: '15px',
+    textAlign: 'left'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#fff',
+    fontSize: '15px',
+    textAlign: 'left'
+  },
+  trHead: {
+    borderBottom: '2px solid #e2ded8',
+    backgroundColor: '#f4f1eb',
+    textAlign: 'left'
+  },
+  thLeft: {
+    padding: '14px 16px',
+    fontSize: '14px',
+    fontWeight: '700',
+    color: '#444',
+    textAlign: 'left',
+    letterSpacing: '0.5px'
+  },
+  trBody: {
+    borderBottom: '1px solid #eee',
+    textAlign: 'left'
+  },
+  td: {
+    padding: '16px',
+    verticalAlign: 'top',
+    textAlign: 'left',
+    fontSize: '15px'
+  },
+  emptyTd: {
+    padding: '25px',
+    textAlign: 'center',
+    color: '#777',
+    fontStyle: 'italic',
+    fontSize: '15px'
+  },
+  primaryBtn: {
+    backgroundColor: primaryGold,
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '12px 20px',
+    fontSize: '15px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    boxShadow: '0 2px 5px rgba(197,160,89,0.3)'
+  },
+  secondaryBtn: {
+    backgroundColor: '#444',
+    color: '#ffffff',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '10px 16px',
+    fontSize: '14px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  cancelBtn: {
+    backgroundColor: '#e0e0e0',
+    color: '#333',
+    border: 'none',
+    borderRadius: '6px',
+    padding: '12px 20px',
+    fontSize: '15px',
+    fontWeight: '600',
+    cursor: 'pointer'
+  },
+  removeBtn: {
+    backgroundColor: '#d9534f',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '6px 10px',
+    fontSize: '13px',
+    cursor: 'pointer'
+  },
+  cogsBadge: {
+    backgroundColor: '#e6f4ea',
+    color: '#137333',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700'
+  },
+  opexBadge: {
+    backgroundColor: '#fce8e6',
+    color: '#c5221f',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700'
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    padding: '20px'
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: '10px',
+    width: '100%',
+    maxWidth: '900px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    padding: '30px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid #eae5de',
+    paddingBottom: '15px',
+    marginBottom: '20px'
+  },
+  modalTitle: {
+    fontSize: '22px',
+    fontWeight: '700',
+    color: '#1a1a1a',
+    margin: 0
+  },
+  closeBtnIcon: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    fontSize: '20px',
+    cursor: 'pointer',
+    color: '#666'
+  },
+  formCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '15px'
+  },
+  gridTwo: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '15px'
+  },
+  gridRowCustom: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr 1fr',
+    gap: '15px'
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px'
+  },
+  label: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#444'
+  },
+  input: {
+    padding: '11px 14px',
+    borderRadius: '6px',
+    border: '1px solid #ccc',
+    fontSize: '15px',
+    outline: 'none',
+    backgroundColor: '#fff'
+  },
+  btnRowRight: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginTop: '5px'
+  },
+  summaryCard: {
+    backgroundColor: '#f4f1eb',
+    border: '1px solid #e2ded8',
+    borderRadius: '8px',
+    padding: '20px',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: '20px'
+  },
+  summaryLabel: {
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#666',
+    letterSpacing: '0.5px',
+    marginBottom: '4px'
+  },
+  summaryMainVal: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: '#1a1a1a'
+  },
+  summaryDueVal: {
+    fontSize: '24px',
+    fontWeight: '700',
+    color: primaryGold
+  },
+  summarySubText: {
+    fontSize: '13px',
+    color: '#666',
+    marginTop: '4px'
+  },
+  modalFooterActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '25px',
+    borderTop: '1px solid #eae5de',
+    paddingTop: '20px'
+  },
+  modalBadge: {
+    backgroundColor: '#e6f4ea',
+    color: '#137333',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '13px',
+    fontWeight: '700'
+  },
+  modalMetaGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(4, 1fr)',
+    gap: '15px',
+    backgroundColor: '#fbf9f6',
+    padding: '15px',
+    borderRadius: '6px',
+    border: '1px solid #eae5de'
+  },
+  modalSubLabel: {
+    fontSize: '13px',
+    color: '#666',
+    display: 'block',
+    marginBottom: '2px'
+  },
+  modalMetaVal: {
+    fontSize: '15px',
+    color: '#1a1a1a'
+  }
+};

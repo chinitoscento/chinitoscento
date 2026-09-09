@@ -1,0 +1,603 @@
+import React, { useState, useEffect } from 'react';
+
+export default function RawMaterialsInventory() {
+  const [inventory, setInventory] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [filterTab, setFilterTab] = useState('ALL'); // 'ALL', 'NORMAL', 'ALERT'
+  const [thresholds, setThresholds] = useState({});
+  const [isThresholdModalOpen, setIsThresholdModalOpen] = useState(false);
+  const [tempThresholds, setTempThresholds] = useState({});
+
+  useEffect(() => {
+    loadData();
+
+    // Listen for custom inventory updates and storage events
+    const handleCustomUpdate = () => {
+      loadData();
+    };
+
+    const handleStorageChange = (e) => {
+      if (!e.key || e.key === 'chinito_inventory' || e.key === 'chinito_maceration' || e.key === 'chinito_raw_materials_catalogue') {
+        loadData();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      loadData();
+    };
+
+    window.addEventListener('chinito_inventory_updated', handleCustomUpdate);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleWindowFocus);
+
+    return () => {
+      window.removeEventListener('chinito_inventory_updated', handleCustomUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleWindowFocus);
+    };
+  }, []);
+
+  const loadData = () => {
+    const catalogue = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
+    const purchases = JSON.parse(localStorage.getItem('chinito_purchases') || '[]');
+    const savedThresholds = JSON.parse(localStorage.getItem('chinito_raw_material_thresholds') || '{}');
+    const macerations = JSON.parse(localStorage.getItem('chinito_maceration') || '[]');
+    setThresholds(savedThresholds);
+
+    const itemMap = new Map();
+
+    // 1. Populate map from catalogue metadata
+    catalogue.forEach(cat => {
+      const code = cat.code || cat.materialCode || cat.id || '';
+      const name = cat.rawMaterial || cat.itemName || cat.name || cat.materialName || 'Unknown Material';
+      const category = cat.category || 'RAW MATERIAL';
+      
+      const lowerCat = category.toLowerCase();
+      const isFinishedGood = lowerCat.includes('women') || lowerCat.includes('men') || lowerCat.includes('unisex') || lowerCat.includes('finished good');
+      
+      if (!isFinishedGood) {
+        itemMap.set(String(code || name).toLowerCase(), {
+          id: cat.id || code || name,
+          code: code,
+          rawMaterial: name,
+          category: category,
+          volumeSize: cat.volumeSize || '1',
+          baseUnit: cat.baseUnit || '',
+          stockQty: 0, 
+        });
+      }
+    });
+
+    // 2. Aggregate stock strictly from purchases using catalogue volume size multipliers
+    purchases.forEach(p => {
+      if (p.items && Array.isArray(p.items)) {
+        p.items.forEach(line => {
+          if (line.type === 'COGS') {
+            const key = String(line.code || line.name).toLowerCase();
+            if (itemMap.has(key)) {
+              const item = itemMap.get(key);
+              const volInfo = parseVolumeSize(item.volumeSize);
+              item.stockQty += Number(line.quantity || 0) * volInfo.sizeVal;
+            } else {
+              const lowerName = line.name.toLowerCase();
+              const isLiquid = lowerName.includes('oil') || lowerName.includes('solvent') || lowerName.includes('liquid');
+              const defaultVol = isLiquid ? '250ml' : '1';
+              const volInfo = parseVolumeSize(defaultVol);
+              itemMap.set(key, {
+                id: line.id || key,
+                code: line.code || '',
+                rawMaterial: line.name,
+                category: 'RAW MATERIAL',
+                volumeSize: defaultVol,
+                baseUnit: '',
+                stockQty: Number(line.quantity || 0) * volInfo.sizeVal
+              });
+            }
+          }
+        });
+      }
+    });
+
+    // 3. Deduct quantities based on active/saved Maceration runs (live sync safeguard)
+    macerations.forEach(mac => {
+      // If your formulation details or maceration items track oil/solvent usage directly:
+    });
+
+    const finalInventory = Array.from(itemMap.values());
+    
+    // Check if chinito_inventory already has deductions saved, blend them or respect stored inventory values if present
+    const existingStoredInventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    if (existingStoredInventory.length > 0) {
+      finalInventory.forEach(newItem => {
+        const found = existingStoredInventory.find(e => 
+          String(e.code || '').trim().toLowerCase() === String(newItem.code || '').trim().toLowerCase() ||
+          String(e.id || '').trim().toLowerCase() === String(newItem.id || '').trim().toLowerCase()
+        );
+        if (found && found.stockQty !== undefined) {
+          newItem.stockQty = Number(found.stockQty);
+        }
+      });
+    }
+
+    setInventory(finalInventory);
+    localStorage.setItem('chinito_inventory', JSON.stringify(finalInventory));
+    window.dispatchEvent(new Event('storage'));
+  };
+
+  const parseVolumeSize = (volStr) => {
+    if (!volStr) return { sizeVal: 1, unit: '' };
+    const cleanStr = String(volStr).trim();
+    if (cleanStr === '1' || cleanStr === '1.0') {
+      return { sizeVal: 1, unit: '' };
+    }
+    const match = cleanStr.match(/^([\d,]+(\.\d+)?)\s*([a-zA-Z]*)$/);
+    if (match) {
+      const num = parseFloat(match[1].replace(/,/g, ''));
+      const unit = match[3] || '';
+      return { sizeVal: isNaN(num) ? 1 : num, unit };
+    }
+    return { sizeVal: 1, unit: '' };
+  };
+
+  const handleOpenThresholdModal = () => {
+    const initialTemp = {};
+    inventory.forEach(item => {
+      const key = item.code || item.rawMaterial;
+      initialTemp[key] = thresholds[key] !== undefined ? thresholds[key] : 10;
+    });
+    setTempThresholds(initialTemp);
+    setIsThresholdModalOpen(true);
+  };
+
+  const handleSaveThresholds = (e) => {
+    e.preventDefault();
+    setThresholds(tempThresholds);
+    localStorage.setItem('chinito_raw_material_thresholds', JSON.stringify(tempThresholds));
+    setIsThresholdModalOpen(false);
+  };
+
+  const counts = inventory.reduce((acc, item) => {
+    const key = item.code || item.rawMaterial;
+    const threshold = thresholds[key] !== undefined ? Number(thresholds[key]) : 10;
+    const totalStockValue = Number(item.stockQty);
+    const isAlert = totalStockValue < threshold;
+
+    acc.ALL += 1;
+    if (isAlert) acc.ALERT += 1;
+    else acc.NORMAL += 1;
+    return acc;
+  }, { ALL: 0, NORMAL: 0, ALERT: 0 });
+
+  const filteredInventory = inventory.filter(item => {
+    const search = searchTerm.toLowerCase();
+    const matchesSearch = (
+      item.rawMaterial.toLowerCase().includes(search) || 
+      (item.code && item.code.toLowerCase().includes(search)) ||
+      item.category.toLowerCase().includes(search)
+    );
+
+    if (!matchesSearch) return false;
+
+    const key = item.code || item.rawMaterial;
+    const threshold = thresholds[key] !== undefined ? Number(thresholds[key]) : 10;
+    const totalStockValue = Number(item.stockQty);
+    const isAlert = totalStockValue < threshold;
+
+    if (filterTab === 'ALERT') return isAlert;
+    if (filterTab === 'NORMAL') return !isAlert;
+    return true;
+  });
+
+  return (
+    <div style={styles.moduleCard}>
+      <div style={styles.headerBlock}>
+        <div>
+          <h2>Raw Materials Inventory & Monitoring</h2>
+          <p style={styles.subText}>Persistent inventory managed via local storage and updated through production & purchasing.</p>
+        </div>
+        <div style={styles.headerRightActions}>
+          <button onClick={loadData} style={styles.secondaryBtn} title="Refresh Inventory">
+            🔄
+          </button>
+          <button onClick={handleOpenThresholdModal} style={styles.secondaryBtn}>
+            ⚙️ System Restock Thresholds
+          </button>
+          <input 
+            type="text" 
+            placeholder="Search catalogue..." 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={styles.searchInput}
+          />
+        </div>
+      </div>
+
+      <div style={styles.filterTabsContainer}>
+        <button 
+          style={{ ...styles.filterTab, ...(filterTab === 'ALL' ? styles.activeFilterTab : {}) }}
+          onClick={() => setFilterTab('ALL')}
+        >
+          All Items <span style={styles.tabBadge}>{counts.ALL}</span>
+        </button>
+        <button 
+          style={{ ...styles.filterTab, ...(filterTab === 'NORMAL' ? styles.activeFilterTab : {}) }}
+          onClick={() => setFilterTab('NORMAL')}
+        >
+          Normal Level <span style={{ ...styles.tabBadge, backgroundColor: '#dcfce7', color: '#166534' }}>{counts.NORMAL}</span>
+        </button>
+        <button 
+          style={{ ...styles.filterTab, ...(filterTab === 'ALERT' ? styles.activeFilterTab : {}) }}
+          onClick={() => setFilterTab('ALERT')}
+        >
+          Alert Level <span style={{ ...styles.tabBadge, backgroundColor: '#fee2e2', color: '#dc2626' }}>{counts.ALERT}</span>
+        </button>
+      </div>
+
+      <table style={styles.table}>
+        <thead>
+          <tr style={styles.trHead}>
+            <th style={styles.th}>CODE</th>
+            <th style={styles.th}>RAW MATERIAL</th>
+            <th style={styles.th}>CATEGORY</th>
+            <th style={styles.th}>CURRENT STOCK LEVEL</th>
+            <th style={styles.th}>UNIT</th>
+            <th style={styles.th}>STATUS</th>
+          </tr>
+        </thead>
+        <tbody>
+          {filteredInventory.length === 0 ? (
+            <tr>
+              <td colSpan="6" style={styles.emptyTd}>No raw materials found matching your filter criteria.</td>
+            </tr>
+          ) : (
+            filteredInventory.map((item, index) => {
+              const key = item.code || item.rawMaterial;
+              const threshold = thresholds[key] !== undefined ? Number(thresholds[key]) : 10;
+              
+              const totalStockValue = Number(item.stockQty);
+              const isAlert = totalStockValue < threshold;
+
+              return (
+                <tr key={item.id || index} style={styles.trBody}>
+                  <td style={styles.td}>
+                    <span style={styles.codeBadge}>{item.code || '--'}</span>
+                  </td>
+                  <td style={styles.td}><b>{item.rawMaterial}</b></td>
+                  <td style={styles.td}>
+                    <span style={styles.categoryBadge}>{item.category}</span>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={{ fontSize: '15px', fontWeight: 'bold' }}>
+                      {totalStockValue.toLocaleString()}
+                    </span>
+                  </td>
+                  <td style={styles.td}>
+                    <span style={styles.unitBadge}>{item.baseUnit || '--'}</span>
+                  </td>
+                  <td style={styles.td}>
+                    {isAlert ? (
+                      <span style={styles.alertBadge}>ALERT</span>
+                    ) : (
+                      <span style={styles.normalBadge}>NORMAL</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+
+      {isThresholdModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <h3 style={styles.modalTitle}>System Restock Threshold Settings</h3>
+              <button onClick={() => setIsThresholdModalOpen(false)} style={styles.closeBtn}>✕</button>
+            </div>
+            <p style={{ fontSize: '13px', color: '#666', marginBottom: '20px' }}>
+              Configure minimum stock thresholds per item. If inventory drops below this level, an ALERT status will trigger automatically.
+            </p>
+
+            <form onSubmit={handleSaveThresholds}>
+              <div style={styles.thresholdListContainer}>
+                {inventory.map((item, idx) => {
+                  const key = item.code || item.rawMaterial;
+                  return (
+                    <div key={idx} style={styles.thresholdRow}>
+                      <div>
+                        <div style={{ fontWeight: 'bold', fontSize: '13.5px' }}>{item.rawMaterial}</div>
+                        <div style={{ fontSize: '11px', color: '#888' }}>Code: {item.code || 'N/A'} | Category: {item.category}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <input 
+                          type="number" 
+                          min="0"
+                          value={tempThresholds[key] !== undefined ? tempThresholds[key] : 10}
+                          onChange={(e) => setTempThresholds({ ...tempThresholds, [key]: e.target.value })}
+                          style={styles.thresholdInput}
+                        />
+                        {item.baseUnit && <span style={{ fontSize: '12px', color: '#666' }}>{item.baseUnit}</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div style={styles.modalFooter}>
+                <button type="button" onClick={() => setIsThresholdModalOpen(false)} style={styles.cancelModalBtn}>
+                  Cancel
+                </button>
+                <button type="submit" style={styles.primaryBtn}>
+                  Save Thresholds
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const primaryGold = '#c5a059';
+
+const styles = {
+  moduleCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2ded8',
+    borderRadius: '8px',
+    padding: '30px',
+    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
+    fontFamily: "'Cormorant Garamond', 'Cinzel', 'Segoe UI', serif",
+  },
+  headerBlock: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid #eee',
+    paddingBottom: '20px',
+    marginBottom: '20px',
+  },
+  headerRightActions: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '12px',
+  },
+  subText: {
+    color: '#666',
+    fontSize: '13.5px',
+    marginTop: '6px',
+    marginBottom: 0,
+  },
+  searchInput: {
+    padding: '10px 14px',
+    borderRadius: '4px',
+    border: '1px solid #d1ccc6',
+    backgroundColor: '#ffffff',
+    color: '#1a1a1a',
+    fontSize: '13px',
+    outline: 'none',
+    width: '240px',
+  },
+  secondaryBtn: {
+    backgroundColor: '#f9f8f6',
+    color: '#333',
+    border: '1px solid #d1ccc6',
+    padding: '10px 14px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '12.5px',
+    cursor: 'pointer',
+    fontFamily: "'Cinzel', serif",
+  },
+  primaryBtn: {
+    backgroundColor: primaryGold,
+    color: '#ffffff',
+    border: 'none',
+    padding: '10px 20px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '13px',
+    cursor: 'pointer',
+    fontFamily: "'Cinzel', serif",
+  },
+  filterTabsContainer: {
+    display: 'flex',
+    gap: '10px',
+    marginBottom: '20px',
+  },
+  filterTab: {
+    backgroundColor: '#f9f8f6',
+    border: '1px solid #e2ded8',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    fontSize: '12.5px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    color: '#555',
+    fontFamily: "'Cinzel', serif",
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+  },
+  activeFilterTab: {
+    backgroundColor: '#fffcf5',
+    borderColor: primaryGold,
+    color: '#1a1a1a',
+    boxShadow: '0 2px 5px rgba(197, 160, 89, 0.15)',
+  },
+  tabBadge: {
+    fontSize: '11px',
+    backgroundColor: '#e5e7eb',
+    color: '#374151',
+    padding: '2px 6px',
+    borderRadius: '10px',
+    fontWeight: 'bold',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13.5px',
+  },
+  trHead: {
+    backgroundColor: '#f9f8f6',
+    borderBottom: '2px solid #e2ded8',
+  },
+  th: {
+    padding: '12px 16px',
+    textAlign: 'left',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '12px',
+    letterSpacing: '0.5px',
+  },
+  trBody: {
+    borderBottom: '1px solid #eee',
+  },
+  td: {
+    padding: '14px 16px',
+    color: '#333',
+    verticalAlign: 'middle',
+    textAlign: 'left',
+  },
+  emptyTd: {
+    textAlign: 'center',
+    color: '#888',
+    padding: '30px',
+    fontStyle: 'italic',
+  },
+  codeBadge: {
+    fontSize: '11.5px',
+    fontWeight: 'bold',
+    color: '#c5a059',
+    backgroundColor: '#fdfbf7',
+    padding: '2px 6px',
+    borderRadius: '4px',
+    border: '1px solid #e2ded8',
+  },
+  categoryBadge: {
+    fontSize: '11px',
+    backgroundColor: '#f3f4f6',
+    color: '#374151',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontWeight: '500',
+  },
+  unitBadge: {
+    fontSize: '11.5px',
+    backgroundColor: '#fdfbf7',
+    color: '#85581A',
+    padding: '3px 8px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    border: '1px solid #e2ded8',
+  },
+  alertBadge: {
+    padding: '4px 10px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    backgroundColor: '#fee2e2',
+    color: '#dc2626',
+    letterSpacing: '1px',
+  },
+  normalBadge: {
+    padding: '4px 10px',
+    borderRadius: '4px',
+    fontSize: '11px',
+    fontWeight: 'bold',
+    backgroundColor: '#dcfce7',
+    color: '#166534',
+    letterSpacing: '1px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    padding: '30px',
+    borderRadius: '8px',
+    width: '650px',
+    maxWidth: '90vw',
+    maxHeight: '85vh',
+    display: 'flex',
+    flexDirection: 'column',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
+    fontFamily: "'Cormorant Garamond', 'Cinzel', 'Segoe UI', serif",
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid #eee',
+    paddingBottom: '12px',
+    marginBottom: '12px',
+  },
+  modalTitle: {
+    fontFamily: "'Cinzel', serif",
+    fontSize: '18px',
+    margin: 0,
+    color: '#1a1a1a',
+  },
+  closeBtn: {
+    background: 'none',
+    border: 'none',
+    fontSize: '16px',
+    cursor: 'pointer',
+    color: '#666',
+  },
+  thresholdListContainer: {
+    maxHeight: '400px',
+    overflowY: 'auto',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    paddingRight: '6px',
+    marginBottom: '20px',
+  },
+  thresholdRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '10px 12px',
+    backgroundColor: '#f9f8f6',
+    borderRadius: '6px',
+    border: '1px solid #e2ded8',
+  },
+  thresholdInput: {
+    width: '75px',
+    padding: '6px 8px',
+    borderRadius: '4px',
+    border: '1px solid #d1ccc6',
+    textAlign: 'right',
+    fontSize: '13px',
+    outline: 'none',
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '10px',
+    borderTop: '1px solid #eee',
+    paddingTop: '15px',
+  },
+  cancelModalBtn: {
+    backgroundColor: '#e5e7eb',
+    color: '#374151',
+    border: 'none',
+    padding: '10px 16px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '13px',
+    cursor: 'pointer',
+  }
+};

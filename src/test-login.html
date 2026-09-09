@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - Chinito Scento</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin: 0; background-color: #0b0b0b;">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function LoginPage({ onLoginSuccess }) {
+          const [username, setUsername] = React.useState('');
+          const [password, setPassword] = React.useState('');
+          const [error, setError] = React.useState('');
+          const [isLoading, setIsLoading] = React.useState(false);
+
+          const handleLogin = async (e) => {
+            e.preventDefault();
+            setError('');
+            setIsLoading(true);
+
+            await new Promise((resolve) => setTimeout(resolve, 500));
+
+            if (username === 'admin' && password === 'chinitoscento2026') {
+              alert('Login Successful!');
+              onLoginSuccess();
+            } else {
+              setError('Invalid username or password');
+              setIsLoading(false);
+            }
+          };
+
+          return (
+            <div style={styles.pageWrapper}>
+              <div style={styles.loginContainer}>
+                
+                {/* Logo replacing the text header */}
+                <div style={styles.headerSection}>
+                  <img 
+                    src="logo.png" 
+                    alt="Chinito Scento Logo" 
+                    style={styles.logoImage} 
+                    onError={(e) => { e.target.style.display = 'none'; }} 
+                  />
+                  <p style={styles.brandSubtitle}>PERFUME MANAGEMENT SYSTEM</p>
+                </div>
+
+                <form onSubmit={handleLogin} style={styles.form}>
+                  {error && <div style={styles.errorMessage}>{error}</div>}
+                  
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>USERNAME</label>
+                    <input
+                      type="text"
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                      style={styles.inputField}
+                      placeholder="admin"
+                      required
+                    />
+                  </div>
+
+                  <div style={styles.inputGroup}>
+                    <label style={styles.label}>PASSWORD</label>
+                    <input
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      style={styles.inputField}
+                      placeholder="chinitoscento2026"
+                      required
+                    />
+                  </div>
+
+                  <button type="submit" style={styles.submitButton} disabled={isLoading}>
+                    {isLoading ? 'AUTHENTICATING...' : 'Login'}
+                  </button>
+                </form>
+
+                <div style={styles.footerText}>
+                  For authorized personnel only
+                </div>
+              </div>
+            </div>
+          );
+        }
+
+        const primaryGold = '#c5a059';
+        const darkBackground = '#0b0b0b';
+        const cardBackground = '#141414';
+        const inputBackground = '#1f1f1f';
+        const borderColor = '#2c2c2c';
+        const lightText = '#f3f4f6';
+        const mutedText = '#9ca3af';
+        const errorRed = '#ef5350';
+
+        const styles = {
+          pageWrapper: { 
+            minHeight: '100vh', 
+            width: '100vw', 
+            display: 'flex', 
+            justifyContent: 'center', 
+            alignItems: 'center', 
+            backgroundColor: darkBackground, 
+            fontFamily: 'Segoe UI, sans-serif' 
+          },
+          loginContainer: { 
+            backgroundColor: cardBackground, 
+            padding: '45px 40px', 
+            borderRadius: '12px', 
+            boxShadow: '0 15px 45px rgba(0,0,0,0.8)', 
+            width: '100%', 
+            maxWidth: '400px', 
+            border: `1px solid ${borderColor}` 
+          },
+          headerSection: { 
+            textAlign: 'center', 
+            marginBottom: '35px' 
+          },
+          logoImage: { 
+            maxWidth: '130px', // Bigger, highly visible logo display
+            height: 'auto', 
+            marginBottom: '14px',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.6))'
+          },
+          brandSubtitle: { 
+            color: mutedText, 
+            fontSize: '11px', 
+            fontWeight: '600', 
+            letterSpacing: '1.5px', 
+            textTransform: 'uppercase', 
+            margin: '0' 
+          },
+          form: { 
+            display: 'flex', 
+            flexDirection: 'column' 
+          },
+          inputGroup: { 
+            marginBottom: '20px' 
+          },
+          label: { 
+            display: 'block', 
+            color: mutedText, 
+            fontSize: '11px', 
+            fontWeight: '600', 
+            marginBottom: '8px', 
+            letterSpacing: '0.5px' 
+          },
+          inputField: { 
+            width: '100%', 
+            padding: '12px 14px', 
+            backgroundColor: inputBackground, 
+            border: `1px solid ${borderColor}`, 
+            borderRadius: '4px', 
+            color: lightText, 
+            fontSize: '14px', 
+            boxSizing: 'border-box', 
+            outline: 'none'
+          },
+          submitButton: { 
+            width: '100%', 
+            padding: '13px', 
+            backgroundColor: primaryGold, 
+            color: '#0b0b0b', 
+            border: 'none', 
+            borderRadius: '4px', 
+            fontSize: '14px', 
+            fontWeight: '700', 
+            letterSpacing: '1px',
+            cursor: 'pointer', 
+            marginTop: '10px'
+          },
+          errorMessage: { 
+            backgroundColor: 'rgba(239, 83, 80, 0.1)', 
+            color: errorRed, 
+            padding: '10px', 
+            borderRadius: '4px', 
+            fontSize: '13px', 
+            marginBottom: '15px', 
+            textAlign: 'center', 
+            border: `1px solid ${errorRed}` 
+          },
+          footerText: { 
+            textAlign: 'center', 
+            color: '#666', 
+            fontSize: '10px', 
+            letterSpacing: '0.5px',
+            marginTop: '25px',
+            textTransform: 'uppercase'
+          }
+        };
+
+        ReactDOM.render(<LoginPage onLoginSuccess={() => {}} />, document.getElementById('root'));
+    </script>
+</body>
+</html>

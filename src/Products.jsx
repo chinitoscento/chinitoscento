@@ -1,0 +1,612 @@
+import React, { useState, useEffect } from 'react';
+
+export default function Products() {
+  const [products, setProducts] = useState(() => {
+    const saved = localStorage.getItem('chinito_products');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Auto-assign product codes to legacy entries if they lack one
+      return parsed.map((prod, index) => {
+        if (!prod.code) {
+          const name = prod.name || 'Scent';
+          const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
+          const numStr = String(index + 1).padStart(2, '0');
+          return { ...prod, code: `CS-${clean}-${numStr}` };
+        }
+        return prod;
+      });
+    }
+    return [];
+  });
+  
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingId, setEditingId] = useState(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [formData, setFormData] = useState({
+    code: '',
+    name: '',
+    gender: 'Unisex',
+    remarks: '',
+    image: ''
+  });
+
+  useEffect(() => {
+    localStorage.setItem('chinito_products', JSON.stringify(products));
+  }, [products]);
+
+  const handleInputChange = (e) => {
+    const { name, value } = e.target;
+    setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 600;
+          const MAX_HEIGHT = 600;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          setFormData(prev => ({ ...prev, image: compressedDataUrl }));
+        };
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleOpenAddModal = () => {
+    setEditingId(null);
+    // Auto-generate a default code preview for new entry
+    const autoClean = 'SNT';
+    const autoNum = String(products.length + 1).padStart(2, '0');
+    setFormData({ 
+      code: `CS-${autoClean}-${autoNum}`, 
+      name: '', 
+      gender: 'Unisex', 
+      remarks: '', 
+      image: '' 
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEditModal = (prod) => {
+    setEditingId(prod.id);
+    setFormData({
+      code: prod.code || '',
+      name: prod.name,
+      gender: prod.gender || 'Unisex',
+      remarks: prod.remarks || '',
+      image: prod.image || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDelete = (id) => {
+    if (window.confirm('Are you sure you want to delete this fragrance profile?')) {
+      setProducts(prev => prev.filter(p => p.id !== id));
+    }
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!formData.name) return;
+
+    const defaultImage = 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=400&auto=format&fit=crop&q=80';
+    const finalImage = formData.image.trim() !== '' ? formData.image : defaultImage;
+
+    // Fallback code generator if field was left blank
+    let finalCode = formData.code.trim();
+    if (!finalCode) {
+      const clean = formData.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
+      const numStr = String(products.length + 1).padStart(2, '0');
+      finalCode = `CS-${clean}-${numStr}`;
+    }
+
+    if (editingId) {
+      setProducts(prev => prev.map(p => {
+        if (p.id === editingId) {
+          return {
+            ...p,
+            code: finalCode,
+            name: formData.name,
+            gender: formData.gender,
+            remarks: formData.remarks,
+            image: formData.image.trim() !== '' ? formData.image : p.image
+          };
+        }
+        return p;
+      }));
+    } else {
+      setProducts(prev => [
+        ...prev, 
+        { 
+          ...formData, 
+          code: finalCode,
+          id: Date.now(),
+          image: finalImage
+        }
+      ]);
+    }
+
+    setFormData({ code: '', name: '', gender: 'Unisex', remarks: '', image: '' });
+    setEditingId(null);
+    setIsModalOpen(false);
+  };
+
+  const filteredProducts = products.filter(p => 
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.code && p.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (p.gender && p.gender.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    p.remarks.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  return (
+    <div style={styles.container}>
+      {/* Header Block */}
+      <div style={styles.headerBlock}>
+        <div>
+          <h1 style={styles.pageTitle}>Product & Scent Catalog</h1>
+          <p style={styles.pageSubtitle}>Curated fragrance inventory, signature profiles, and uniform product code IDs.</p>
+        </div>
+        <button 
+          style={styles.primaryButton}
+          onClick={handleOpenAddModal}
+          onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
+          onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
+        >
+          + Add New Scent
+        </button>
+      </div>
+
+      {/* Toolbar / Search */}
+      <div style={styles.toolbar}>
+        <input 
+          type="text" 
+          placeholder="Search by code, name, category, or remarks..." 
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          style={styles.searchInput}
+        />
+        <div style={styles.recordCount}>
+          Total Scents: <strong>{filteredProducts.length}</strong>
+        </div>
+      </div>
+
+      {/* Scent Grid */}
+      <div style={styles.grid}>
+        {filteredProducts.length === 0 ? (
+          <div style={styles.emptyStateCard}>
+            <p style={{ margin: 0, fontStyle: 'italic', color: '#888' }}>No fragrance profiles found. Click "+ Add New Scent" to populate your catalog.</p>
+          </div>
+        ) : (
+          filteredProducts.map((prod) => (
+            <div key={prod.id} style={styles.card}>
+              <div style={styles.imageContainer}>
+                <img src={prod.image} alt={prod.name} style={styles.productImage} />
+              </div>
+              <div style={styles.cardContent}>
+                <div style={styles.titleSection}>
+                  <span style={styles.codeBadge}>{prod.code || 'CS-SNT-01'}</span>
+                  <h3 style={styles.productName}>{prod.name}</h3>
+                  <span style={{
+                    ...styles.genderBadge,
+                    backgroundColor: prod.gender === 'For Men' ? '#1a365d' : prod.gender === 'For Women' ? '#702459' : '#555555'
+                  }}>
+                    {prod.gender || 'Unisex'}
+                  </span>
+                </div>
+                <p style={styles.productRemarks}>{prod.remarks || 'No remarks specified.'}</p>
+                <div style={styles.cardFooterActions}>
+                  <button 
+                    style={styles.textActionButton} 
+                    onClick={() => handleOpenEditModal(prod)}
+                  >
+                    ✎ Edit
+                  </button>
+                  <button 
+                    style={{ ...styles.textActionButton, color: '#d9534f' }} 
+                    onClick={() => handleDelete(prod.id)}
+                  >
+                    × Delete
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+
+      {/* Modal Form */}
+      {isModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <div style={styles.modalHeader}>
+              <h2 style={styles.modalTitle}>{editingId ? 'Edit Scent Profile' : 'Add New Scent'}</h2>
+              <button style={styles.closeButton} onClick={() => setIsModalOpen(false)}>×</button>
+            </div>
+
+            <form onSubmit={handleSubmit} style={styles.formStack}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Product Code ID *</label>
+                <input 
+                  type="text" 
+                  name="code" 
+                  required
+                  placeholder="e.g. CS-ANT-01" 
+                  value={formData.code}
+                  onChange={handleInputChange}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Scent Name *</label>
+                <input 
+                  type="text" 
+                  name="name" 
+                  required
+                  placeholder="e.g. Velvet Oud" 
+                  value={formData.name}
+                  onChange={handleInputChange}
+                  style={styles.input}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Classification / Gender *</label>
+                <select 
+                  name="gender" 
+                  value={formData.gender}
+                  onChange={handleInputChange}
+                  style={styles.input}
+                >
+                  <option value="For Men">For Men</option>
+                  <option value="For Women">For Women</option>
+                  <option value="Unisex">Unisex</option>
+                </select>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Remarks / Profile Notes (Supports Paragraphs)</label>
+                <textarea 
+                  name="remarks" 
+                  rows="4"
+                  placeholder="Top Notes: ...&#10;&#10;Heart Notes: ...&#10;&#10;Base Notes: ..." 
+                  value={formData.remarks}
+                  onChange={handleInputChange}
+                  style={{ ...styles.input, resize: 'vertical' }}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Product Photo</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={handleImageUpload}
+                    style={{ fontSize: '12px' }}
+                  />
+                  {formData.image && formData.image.startsWith('data:') && (
+                    <span style={{ fontSize: '11px', color: '#2e7d32', fontWeight: 'bold' }}>✓ Photo loaded & compressed successfully</span>
+                  )}
+                  <span style={{ fontSize: '11px', color: '#888' }}>Or paste direct image URL:</span>
+                  <input 
+                    type="text" 
+                    name="image" 
+                    placeholder="https://example.com/bottle.jpg" 
+                    value={formData.image.startsWith('data:') ? '' : formData.image}
+                    onChange={handleInputChange}
+                    style={styles.input}
+                  />
+                </div>
+              </div>
+
+              <div style={styles.modalFooter}>
+                <button 
+                  type="button" 
+                  style={styles.secondaryButton}
+                  onClick={() => setIsModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  style={styles.primaryButton}
+                >
+                  {editingId ? 'Update Scent' : 'Save Scent'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const primaryGold = '#c5a059';
+
+const styles = {
+  container: {
+    width: '100%',
+    maxWidth: '100%',
+    boxSizing: 'border-box',
+  },
+  headerBlock: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '25px',
+  },
+  pageTitle: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#1a1a1a',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    letterSpacing: '1px',
+    margin: '0 0 6px 0',
+  },
+  pageSubtitle: {
+    fontSize: '14px',
+    color: '#666666',
+    margin: 0,
+    letterSpacing: '0.3px',
+  },
+  primaryButton: {
+    backgroundColor: primaryGold,
+    color: '#ffffff',
+    border: 'none',
+    padding: '10px 20px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '13px',
+    letterSpacing: '0.8px',
+    cursor: 'pointer',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    boxShadow: '0 2px 8px rgba(197,160,89,0.3)',
+    transition: 'background-color 0.2s ease',
+  },
+  secondaryButton: {
+    backgroundColor: 'transparent',
+    color: '#555',
+    border: '1px solid #ccc',
+    padding: '10px 20px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '13px',
+    cursor: 'pointer',
+  },
+  toolbar: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '25px',
+  },
+  searchInput: {
+    width: '320px',
+    padding: '10px 14px',
+    borderRadius: '4px',
+    border: '1px solid #dcd6cd',
+    backgroundColor: '#ffffff',
+    fontSize: '13.5px',
+    outline: 'none',
+  },
+  recordCount: {
+    fontSize: '13px',
+    color: '#666',
+  },
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '24px',
+  },
+  card: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2ded8',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.03)',
+    display: 'flex',
+    flexDirection: 'column',
+    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+  },
+  imageContainer: {
+    width: '100%',
+    height: '240px',
+    backgroundColor: '#f7f6f2',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+    padding: '10px',
+    boxSizing: 'border-box',
+  },
+  productImage: {
+    maxWidth: '100%',
+    maxHeight: '100%',
+    width: 'auto',
+    height: 'auto',
+    objectFit: 'contain',
+  },
+  cardContent: {
+    padding: '22px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '12px',
+    textAlign: 'left',
+  },
+  titleSection: {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '6px',
+  },
+  codeBadge: {
+    fontSize: '11px',
+    fontWeight: 'bold',
+    color: '#c5a059',
+    backgroundColor: '#fdfbf7',
+    padding: '2px 8px',
+    borderRadius: '4px',
+    border: '1px solid #e2ded8',
+    letterSpacing: '0.8px',
+    fontFamily: "'Cinzel', serif",
+  },
+  productName: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#1a1a1a',
+    margin: 0,
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    letterSpacing: '0.5px',
+    textAlign: 'center',
+  },
+  genderBadge: {
+    color: '#ffffff',
+    padding: '3px 10px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '700',
+    letterSpacing: '0.5px',
+    fontFamily: "'Segoe UI', sans-serif",
+  },
+  productRemarks: {
+    fontSize: '13px',
+    color: '#4a4a4a',
+    margin: 0,
+    lineHeight: '1.6',
+    textAlign: 'left',
+    whiteSpace: 'pre-line',
+  },
+  cardFooterActions: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '15px',
+    marginTop: '10px',
+    paddingTop: '10px',
+    borderTop: '1px solid #f0ece6',
+  },
+  textActionButton: {
+    background: 'none',
+    border: 'none',
+    cursor: 'pointer',
+    fontSize: '12.5px',
+    fontWeight: '600',
+    color: '#555',
+    padding: 0,
+    transition: 'color 0.2s',
+  },
+  emptyStateCard: {
+    gridColumn: '1 / -1',
+    backgroundColor: '#fff',
+    padding: '50px',
+    textAlign: 'center',
+    border: '1px dashed #dcd6cd',
+    borderRadius: '8px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    width: '100vw',
+    height: '100vh',
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  modalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: '6px',
+    width: '480px',
+    maxWidth: '90vw',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    padding: '30px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
+    border: '1px solid #e2ded8',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '20px',
+    borderBottom: '1px solid #f0ece6',
+    paddingBottom: '12px',
+  },
+  modalTitle: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#1a1a1a',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    margin: 0,
+  },
+  closeButton: {
+    background: 'none',
+    border: 'none',
+    fontSize: '22px',
+    cursor: 'pointer',
+    color: '#888',
+  },
+  formStack: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '16px',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  label: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#555555',
+    letterSpacing: '0.8px',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+  },
+  input: {
+    padding: '10px 12px',
+    borderRadius: '4px',
+    border: '1px solid #dcd6cd',
+    fontSize: '13.5px',
+    backgroundColor: '#fff',
+    outline: 'none',
+    fontFamily: 'inherit',
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '10px',
+    borderTop: '1px solid #f0ece6',
+    paddingTop: '15px',
+  }
+};

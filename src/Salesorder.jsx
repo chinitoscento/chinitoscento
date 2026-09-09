@@ -1,0 +1,583 @@
+import React, { useState, useEffect } from 'react';
+import logoImage from './logo.png';
+
+export default function Salesorder() {
+  const [salesOrders, setSalesOrders] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [previewInvoice, setPreviewInvoice] = useState(null);
+  const [notification, setNotification] = useState(null);
+
+  const [soNumber, setSoNumber] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+  const [customerContact, setCustomerContact] = useState('');
+  
+  const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0]);
+  const [dueDate, setDueDate] = useState('');
+  const [paymentTerms, setPaymentTerms] = useState('');
+  const [orderStatus, setOrderStatus] = useState('');
+
+  const [orderItems, setOrderItems] = useState([{ productCode: '', productName: '', qty: '', price: '' }]);
+  
+  const [customers, setCustomers] = useState([]);
+  const [finishedGoods, setFinishedGoods] = useState([]);
+
+  useEffect(() => {
+    loadData();
+    const syncData = () => loadData();
+    window.addEventListener('storage', syncData);
+    window.addEventListener('chinito_sales_updated', syncData);
+    return () => {
+      window.removeEventListener('storage', syncData);
+      window.removeEventListener('chinito_sales_updated', syncData);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (orderDate) {
+      const d = new Date(orderDate);
+      d.setDate(d.getDate() + 10);
+      setDueDate(d.toISOString().split('T')[0]);
+    } else {
+      setDueDate('');
+    }
+  }, [orderDate]);
+
+  const showInlineMessage = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 4000);
+  };
+
+  const loadData = () => {
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]');
+    const savedCustomers = JSON.parse(localStorage.getItem('chinito_customers') || '[]');
+    const savedFinishedGoods = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
+
+    const fgList = savedFinishedGoods.map(item => ({
+      code: String(item.code || item.id || ''),
+      name: String(item.name || item.scent || item.productName || ''),
+      stockQty: Number(item.stockQty || item.quantity || 0)
+    }));
+
+    setSalesOrders(savedSOs);
+    setCustomers(savedCustomers);
+    setFinishedGoods(fgList);
+    setSoNumber(generateNextSoNumber(savedSOs));
+  };
+
+  const generateNextSoNumber = (existingList) => {
+    if (!existingList || existingList.length === 0) return 'SO-000001';
+    let maxNum = 0;
+    existingList.forEach(item => {
+      const codeToCheck = item.soNumber || '';
+      if (codeToCheck.startsWith('SO-')) {
+        const num = parseInt(codeToCheck.split('-')[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+    return `SO-${String(maxNum + 1).padStart(6, '0')}`;
+  };
+
+  const handleCustomerMasterSelect = (e) => {
+    const custName = e.target.value;
+    setSelectedCustomer(custName);
+    const found = customers.find(c => (c.name || c.customerName) === custName);
+    if (found) {
+      setCustomerAddress(found.address || found.location || 'N/A');
+      setCustomerContact(found.contact || found.phone || found.mobile || 'N/A');
+    } else {
+      setCustomerAddress('');
+      setCustomerContact('');
+    }
+  };
+
+  const handlePaymentTermsChange = (e) => {
+    const val = e.target.value;
+    setPaymentTerms(val);
+    if (val === 'CASH') {
+      setOrderStatus('APPROVED');
+    } else if (val === 'CREDIT') {
+      setOrderStatus('PENDING');
+    } else {
+      setOrderStatus('');
+    }
+  };
+
+  const handleAddItemRow = () => {
+    setOrderItems([...orderItems, { productCode: '', productName: '', qty: '', price: '' }]);
+  };
+
+  const handleRemoveItemRow = (index) => {
+    const updated = orderItems.filter((_, i) => i !== index);
+    setOrderItems(updated);
+  };
+
+  const handleItemChange = (index, field, value) => {
+    const updated = [...orderItems];
+    if (field === 'productCode') {
+      const selectedFg = finishedGoods.find(fg => fg.code === value || fg.name === value);
+      updated[index].productCode = value;
+      updated[index].productName = selectedFg ? selectedFg.name : value;
+    } else {
+      updated[index][field] = value;
+    }
+    setOrderItems(updated);
+  };
+
+  const calculateTotal = () => {
+    return orderItems.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0);
+  };
+
+  const handleSaveSO = (e) => {
+    e.preventDefault();
+    if (!selectedCustomer) {
+      alert('Please select a customer name.');
+      return;
+    }
+
+    const isApproved = orderStatus === 'APPROVED';
+    const newSO = {
+      id: Date.now(),
+      soNumber,
+      customerName: selectedCustomer,
+      address: customerAddress || 'N/A',
+      contact: customerContact || 'N/A',
+      items: orderItems,
+      paymentMode: paymentTerms || 'CASH',
+      totalDue: calculateTotal(),
+      status: isApproved ? 'Approved' : 'Pending',
+      date: orderDate,
+      dueDate: dueDate,
+      remarks: ''
+    };
+
+    if (isApproved) {
+      deductStock(newSO.items);
+      saveInvoice(newSO);
+    }
+
+    const updatedList = [newSO, ...salesOrders];
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+
+    setIsModalOpen(false);
+    setSoNumber(generateNextSoNumber(updatedList));
+    
+    setSelectedCustomer('');
+    setCustomerAddress('');
+    setCustomerContact('');
+    setPaymentTerms('');
+    setOrderStatus('');
+    setOrderItems([{ productCode: '', productName: '', qty: '', price: '' }]);
+    showInlineMessage('Sales Order created successfully.');
+  };
+
+  const handleApproveSO = (soId) => {
+    const updatedList = salesOrders.map(so => {
+      if (so.id === soId || so.soNumber === soId) {
+        const approvedSO = { ...so, status: 'Approved' };
+        deductStock(approvedSO.items);
+        saveInvoice(approvedSO);
+        return approvedSO;
+      }
+      return so;
+    });
+
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+    showInlineMessage('Sales Order has been approved, stock deducted, and invoice generated.');
+  };
+
+  const handleDeclineSO = (soId) => {
+    const updatedList = salesOrders.map(so => {
+      if (so.id === soId || so.soNumber === soId) {
+        return { ...so, status: 'Declined' };
+      }
+      return so;
+    });
+
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    const invoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
+    const targetSo = salesOrders.find(so => so.id === soId || so.soNumber === soId);
+    if (targetSo) {
+      const filteredInvoices = invoices.filter(inv => inv.soNumber !== targetSo.soNumber);
+      localStorage.setItem('chinito_invoices', JSON.stringify(filteredInvoices));
+    }
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+    showInlineMessage('Sales Order has been declined and removed from invoices.', 'error');
+  };
+
+  const deductStock = (items) => {
+    let finishedGoodsList = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
+    let updated = false;
+
+    finishedGoodsList = finishedGoodsList.map(fg => {
+      const match = items.find(i => i.productCode === fg.code || i.productName === (fg.name || fg.scent));
+      if (match) {
+        updated = true;
+        const current = Number(fg.stockQty || fg.quantity || 0);
+        const newQty = Math.max(0, current - Number(match.qty || 0));
+        return { 
+          ...fg, 
+          stockQty: newQty, 
+          quantity: fg.quantity !== undefined ? newQty : fg.quantity 
+        };
+      }
+      return fg;
+    });
+
+    if (updated) {
+      localStorage.setItem('chinito_finishedgoods', JSON.stringify(finishedGoodsList));
+    }
+  };
+
+  const saveInvoice = (soRecord) => {
+    const invoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
+    if (soRecord.status === 'Declined') return;
+    if (!invoices.some(inv => inv.soNumber === soRecord.soNumber)) {
+      invoices.unshift(soRecord);
+      localStorage.setItem('chinito_invoices', JSON.stringify(invoices));
+    }
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const getBadgeStyle = (status) => {
+    if (status === 'Approved') return styles.badgeApproved;
+    if (status === 'Declined') return styles.badgeDeclined;
+    return styles.badgePending;
+  };
+
+  return (
+    <div style={styles.container}>
+      <div style={styles.headerRow}>
+        <div>
+          <h2 style={styles.pageTitle}>Sales Orders</h2>
+          <p style={styles.sub}>Create and manage client acquisition records & invoices.</p>
+        </div>
+        <button style={styles.primaryBtn} onClick={() => setIsModalOpen(true)}>+ Create New Sales Order</button>
+      </div>
+
+      {notification && (
+        <div style={notification.type === 'error' ? styles.notificationError : styles.notificationSuccess}>
+          {notification.message}
+        </div>
+      )}
+
+      <div style={styles.card}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.th}>SO NUMBER</th>
+              <th style={styles.th}>CUSTOMER</th>
+              <th style={styles.th}>DATE</th>
+              <th style={styles.th}>TERMS</th>
+              <th style={styles.th}>TOTAL</th>
+              <th style={styles.th}>STATUS</th>
+              <th style={styles.th}>REMARKS</th>
+              <th style={styles.th}>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {salesOrders.length === 0 ? (
+              <tr><td colSpan="8" style={styles.emptyCell}>No sales orders recorded.</td></tr>
+            ) : (
+              salesOrders.map(so => (
+                <tr key={so.id || so.soNumber} style={styles.trBody}>
+                  <td style={styles.td}><b>{so.soNumber}</b></td>
+                  <td style={styles.td}>{so.customerName}</td>
+                  <td style={styles.td}>{so.date}</td>
+                  <td style={styles.td}>{so.paymentMode}</td>
+                  <td style={styles.td}>₱{Number(so.totalDue || 0).toFixed(2)}</td>
+                  <td style={styles.td}>
+                    <span style={getBadgeStyle(so.status)}>
+                      {so.status}
+                    </span>
+                  </td>
+                  <td style={styles.td}>{so.remarks || ''}</td>
+                  <td style={styles.td}>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {so.status === 'Pending' && (
+                        <>
+                          <button style={styles.approveBtn} onClick={() => handleApproveSO(so.id || so.soNumber)}>Approve</button>
+                          <button style={styles.declineBtn} onClick={() => handleDeclineSO(so.id || so.soNumber)}>Decline</button>
+                        </>
+                      )}
+                      {so.status !== 'Declined' && (
+                        <button style={styles.actionBtn} onClick={() => setPreviewInvoice(so)}>View Invoice</button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {isModalOpen && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <span>Create New Sales Order ({soNumber})</span>
+              <button style={styles.closeBtn} onClick={() => setIsModalOpen(false)}>✕</button>
+            </div>
+            
+            <div style={styles.modalBody}>
+              <div style={styles.formGrid}>
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Customer Name *</label>
+                  <select style={styles.select} value={selectedCustomer} onChange={handleCustomerMasterSelect}>
+                    <option value="">Select Customer...</option>
+                    {customers.map((c, i) => {
+                      const name = c.name || c.customerName;
+                      return <option key={i} value={name}>{name}</option>;
+                    })}
+                  </select>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Payment Terms *</label>
+                  <select style={styles.select} value={paymentTerms} onChange={handlePaymentTermsChange}>
+                    <option value="">Select Terms...</option>
+                    <option value="CASH">CASH (Auto-Approved)</option>
+                    <option value="CREDIT">CREDIT (Pending Approval)</option>
+                  </select>
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Order Date *</label>
+                  <input type="date" style={styles.input} value={orderDate} onChange={(e) => setOrderDate(e.target.value)} />
+                </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Due Date</label>
+                  <input type="date" style={styles.input} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                </div>
+              </div>
+
+              <div style={{ marginTop: '20px' }}>
+                <h4 style={{ fontSize: '14px', marginBottom: '10px' }}>Order Items</h4>
+                <table style={styles.table}>
+                  <thead>
+                    <tr style={styles.trHead}>
+                      <th style={styles.th}>Product</th>
+                      <th style={styles.th}>Quantity</th>
+                      <th style={styles.th}>Price (₱)</th>
+                      <th style={styles.th}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {orderItems.map((item, index) => (
+                      <tr key={index} style={styles.trBody}>
+                        <td style={styles.td}>
+                          <select 
+                            style={styles.select} 
+                            value={item.productCode} 
+                            onChange={(e) => handleItemChange(index, 'productCode', e.target.value)}
+                          >
+                            <option value="">Select Finished Good...</option>
+                            {finishedGoods.map((fg, fIdx) => (
+                              <option key={fIdx} value={fg.code}>
+                                {fg.name} (Stock: {fg.stockQty})
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={styles.td}>
+                          <input 
+                            type="number" 
+                            min="1" 
+                            style={styles.smallInput} 
+                            value={item.qty} 
+                            onChange={(e) => handleItemChange(index, 'qty', e.target.value)} 
+                          />
+                        </td>
+                        <td style={styles.td}>
+                          <input 
+                            type="number" 
+                            min="0" 
+                            step="0.01" 
+                            style={styles.smallInput} 
+                            value={item.price} 
+                            onChange={(e) => handleItemChange(index, 'price', e.target.value)} 
+                          />
+                        </td>
+                        <td style={styles.td}>
+                          {orderItems.length > 1 && (
+                            <button style={styles.dangerBtn} onClick={() => handleRemoveItemRow(index)}>Remove</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <button style={styles.secondaryBtn} onClick={handleAddItemRow}>+ Add Item</button>
+              </div>
+
+              <div style={{ textAlign: 'right', marginTop: '20px', fontSize: '15px' }}>
+                <b>Total Due: ₱{calculateTotal().toFixed(2)}</b>
+              </div>
+            </div>
+
+            <div style={styles.modalActions}>
+              <button style={styles.cancelBtn} onClick={() => setIsModalOpen(false)}>Cancel</button>
+              <button style={styles.primaryBtn} onClick={handleSaveSO}>Save Sales Order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {previewInvoice && previewInvoice.status !== 'Declined' && (
+        <div style={styles.overlay}>
+          <div style={styles.modal}>
+            <div style={styles.modalHeader}>
+              <span>Invoice: {previewInvoice.soNumber}</span>
+              <button style={styles.closeBtn} onClick={() => setPreviewInvoice(null)}>✕</button>
+            </div>
+            
+            <div style={styles.printableArea} className="printable-invoice">
+              <div style={styles.printHeader}>
+                <img src={logoImage} alt="Chinito Scento Logo" style={styles.logo} />
+                <h2>CHINITO SCENTO</h2>
+                <p>OFFICIAL SALES INVOICE / ORDER</p>
+              </div>
+
+              <div style={styles.invoiceMeta}>
+                <div><p><b>SO Number:</b> {previewInvoice.soNumber}</p></div>
+                <div><p><b>Date:</b> {previewInvoice.date}</p></div>
+              </div>
+
+              <div style={styles.invoiceClient}>
+                <p><b>Customer:</b> {previewInvoice.customerName}</p>
+                <p><b>Address:</b> {previewInvoice.address}</p>
+                <p><b>Contact:</b> {previewInvoice.contact}</p>
+                <p><b>Terms:</b> {previewInvoice.paymentMode}</p>
+                <p><b>Due Date:</b> {previewInvoice.dueDate || 'N/A'}</p>
+                {previewInvoice.remarks && <p><b>Remarks:</b> {previewInvoice.remarks}</p>}
+              </div>
+
+              <table style={styles.printTable}>
+                <thead>
+                  <tr>
+                    <th style={styles.printTh}>Product Code</th>
+                    <th style={styles.printTh}>Product Name</th>
+                    <th style={styles.printTh}>Qty</th>
+                    <th style={styles.printTh}>Price</th>
+                    <th style={styles.printTh}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(previewInvoice.items || []).map((item, idx) => (
+                    <tr key={idx}>
+                      <td style={styles.printTd}>{item.productCode}</td>
+                      <td style={styles.printTd}>{item.productName}</td>
+                      <td style={styles.printTd}>{item.qty}</td>
+                      <td style={styles.printTd}>₱{Number(item.price || 0).toFixed(2)}</td>
+                      <td style={styles.printTd}>₱{(Number(item.qty || 0) * Number(item.price || 0)).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              <div style={{textAlign: 'right', marginTop: '15px', fontSize: '15px'}}>
+                <p><b>Total Amount Due: ₱{Number(previewInvoice.totalDue || 0).toFixed(2)}</b></p>
+              </div>
+
+              {/* Signatures Section */}
+              <div style={styles.signaturesContainer}>
+                <div style={styles.signatureBox}>
+                  <div style={styles.signatureLine}></div>
+                  <p style={styles.signatureLabel}><b>Prepared / Authorized By</b></p>
+                  <p style={styles.companySubLabel}>Chinito Scento</p>
+                </div>
+                <div style={styles.signatureBox}>
+                  <div style={styles.signatureLine}></div>
+                  <p style={styles.signatureLabel}><b>Received / Customer Signature</b></p>
+                  <p style={styles.companySubLabel}>{previewInvoice.customerName}</p>
+                </div>
+              </div>
+            </div>
+            
+            <div style={styles.modalActions}>
+              <button style={styles.primaryBtn} onClick={handlePrint}>🖨️ Print / Save PDF</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @media print {
+            body * { visibility: hidden; }
+            .printable-invoice, .printable-invoice * { visibility: visible; }
+            .printable-invoice { position: absolute; left: 0; top: 0; width: 100%; background: white; padding: 20px; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+const styles = {
+  container: { padding: '30px', fontFamily: 'Segoe UI, sans-serif', backgroundColor: '#f9f9f9', minHeight: '100vh' },
+  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  pageTitle: { fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 },
+  sub: { fontSize: '14px', color: '#666', marginTop: '5px' },
+  notificationSuccess: { backgroundColor: '#d1fae5', color: '#065f46', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #a7f3d0' },
+  notificationError: { backgroundColor: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #fecaca' },
+  card: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 2px 5px rgba(0,0,0,0.03)', marginBottom: '30px' },
+  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
+  trHead: { backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' },
+  th: { padding: '10px 12px', textAlign: 'left', color: '#333', fontWeight: '600' },
+  trBody: { borderBottom: '1px solid #eee' },
+  td: { padding: '12px', color: '#333', verticalAlign: 'middle', textAlign: 'left' },
+  emptyCell: { textAlign: 'left', padding: '20px', color: '#777', fontStyle: 'italic' },
+  badgeApproved: { backgroundColor: '#d1fae5', color: '#065f46', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
+  badgePending: { backgroundColor: '#fef3c7', color: '#92400e', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
+  badgeDeclined: { backgroundColor: '#fee2e2', color: '#991b1b', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: '600' },
+  primaryBtn: { backgroundColor: '#111827', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '14px' },
+  secondaryBtn: { backgroundColor: '#e5e7eb', color: '#374151', border: 'none', padding: '6px 12px', borderRadius: '4px', fontSize: '12px', cursor: 'pointer', marginTop: '10px', fontWeight: '600' },
+  actionBtn: { backgroundColor: '#fff', border: '1px solid #d1d5db', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', color: '#374151' },
+  approveBtn: { backgroundColor: '#065f46', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
+  declineBtn: { backgroundColor: '#991b1b', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
+  dangerBtn: { backgroundColor: '#fee2e2', color: '#991b1b', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px' },
+  overlay: { position: 'fixed', top: '0', left: '0', right: '0', bottom: '0', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
+  modal: { backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '750px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh' },
+  modalHeader: { backgroundColor: '#111827', color: '#fff', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: '600', fontSize: '15px' },
+  modalBody: { padding: '25px', overflowY: 'auto', flex: 1 },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' },
+  inputGroup: { display: 'flex', flexDirection: 'column' },
+  label: { fontSize: '13px', fontWeight: '500', color: '#555', marginBottom: '6px' },
+  select: { padding: '8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '13px', backgroundColor: '#fff', width: '100%' },
+  input: { padding: '8px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '13px', width: '100%' },
+  smallInput: { padding: '6px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '13px', width: '80px' },
+  modalActions: { padding: '15px 20px', backgroundColor: '#f9f9f9', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' },
+  cancelBtn: { backgroundColor: '#e5e7eb', color: '#374151', border: 'none', padding: '10px 18px', borderRadius: '6px', fontSize: '14px', cursor: 'pointer', fontWeight: '500' },
+  closeBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' },
+  printableArea: { padding: '30px', overflowY: 'auto', flex: 1, backgroundColor: '#fff' },
+  printHeader: { textAlign: 'center', marginBottom: '20px' },
+  logo: { width: '50px', height: '50px', objectFit: 'contain', marginBottom: '5px' },
+  invoiceMeta: { display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #eee', borderBottom: '1px solid #eee', padding: '10px 0', marginBottom: '15px', fontSize: '13px' },
+  invoiceClient: { marginBottom: '20px', fontSize: '13px', textAlign: 'left' },
+  printTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '13px' },
+  printTh: { borderBottom: '2px solid #333', padding: '8px', textAlign: 'left', fontWeight: '700' },
+  printTd: { borderBottom: '1px solid #eee', padding: '8px', textAlign: 'left' },
+  signaturesContainer: { display: 'flex', justifyContent: 'space-between', marginTop: '40px', gap: '40px' },
+  signatureBox: { flex: 1, textAlign: 'center' },
+  signatureLine: { borderBottom: '1px solid #333', marginBottom: '6px', height: '30px' },
+  signatureLabel: { fontSize: '12px', margin: '0 0 2px 0' },
+  companySubLabel: { fontSize: '11px', color: '#666', margin: 0 }
+};

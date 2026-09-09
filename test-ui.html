@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Chinito Scento</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body style="margin: 0; background-color: #f4f5f7;">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        function MainLayout({ children, activePage = 'Dashboard' }) {
+          const [currentDate] = React.useState(() => {
+            const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
+            const dateStr = new Date().toLocaleDateString('en-US', options);
+            const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            return `${dateStr}, ${timeStr}`;
+          });
+
+          return (
+            <div style={styles.appContainer}>
+              <aside style={styles.sidebar}>
+                <div style={styles.sidebarHeader}>
+                  <img src="logo.png" alt="Logo" style={styles.sidebarLogo} onError={(e)=>{e.target.style.display='none'}} />
+                  <div style={styles.sidebarBrandText}>
+                    <span style={styles.brandTitle}>CHINITO SCENTO</span>
+                    <span style={styles.brandSubtitle}>PERFUME MANAGEMENT SYSTEM</span>
+                  </div>
+                </div>
+
+                <div style={styles.navMenu}>
+                  <div style={styles.navSectionTitle}>DASHBOARD</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Dashboard' ? styles.navItemActive : {}) }}>Dashboard</div>
+
+                  <div style={styles.navSectionTitle}>MASTERS</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Customers' ? styles.navItemActive : {}) }}>Customers</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Suppliers' ? styles.navItemActive : {}) }}>Suppliers</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Products' ? styles.navItemActive : {}) }}>Products</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'SRP Control' ? styles.navItemActive : {}) }}>SRP Control</div>
+
+                  <div style={styles.navSectionTitle}>PURCHASING</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Purchases' ? styles.navItemActive : {}) }}>Purchases</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Costing' ? styles.navItemActive : {}) }}>Costing</div>
+
+                  <div style={styles.navSectionTitle}>INVENTORY</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Raw Materials' ? styles.navItemActive : {}) }}>Raw Materials</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Finished Goods' ? styles.navItemActive : {}) }}>Finished Goods</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Stock Ledger' ? styles.navItemActive : {}) }}>Stock Ledger</div>
+
+                  <div style={styles.navSectionTitle}>MANUFACTURING</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Production Batches' ? styles.navItemActive : {}) }}>Production Batches</div>
+
+                  <div style={styles.navSectionTitle}>SALES</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Sales Orders' ? styles.navItemActive : {}) }}>Sales Orders</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Invoices' ? styles.navItemActive : {}) }}>Invoices</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Sales Returns' ? styles.navItemActive : {}) }}>Sales Returns</div>
+
+                  <div style={styles.navSectionTitle}>RECEIVABLES</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Collections' ? styles.navItemActive : {}) }}>Collections</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Customer Ledger' ? styles.navItemActive : {}) }}>Customer Ledger</div>
+
+                  <div style={styles.navSectionTitle}>REPORTS</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'Reports Center' ? styles.navItemActive : {}) }}>Reports Center</div>
+
+                  <div style={styles.navSectionTitle}>SETTINGS</div>
+                  <div style={{ ...styles.navItem, ...(activePage === 'System Settings' ? styles.navItemActive : {}) }}>System Settings</div>
+                </div>
+              </aside>
+
+              <div style={styles.mainWrapper}>
+                <header style={styles.topHeader}>
+                  <div style={styles.dateTimeDisplay}>
+                    <span style={styles.dateTimeLabel}>DATE & TIME</span>
+                    <span style={styles.dateTimeValue}>{currentDate}</span>
+                  </div>
+                  <button style={styles.logoutButton} onClick={() => alert('Logging out...')}>
+                    Logout
+                  </button>
+                </header>
+
+                <main style={styles.contentArea}>
+                  {children}
+                </main>
+              </div>
+            </div>
+          );
+        }
+
+        function App() {
+          return (
+            <MainLayout activePage="Dashboard">
+              <div>
+                <h1 style={{ margin: '0 0 6px 0', fontSize: '24px', fontWeight: '600', color: '#111827' }}>System Dashboard</h1>
+                <p style={{ color: '#4b5563', fontSize: '13px', margin: '0 0 24px 0' }}>
+                  Overview of perfume production inventory, active raw materials, and system analytics.
+                </p>
+                <div style={{ backgroundColor: '#ffffff', padding: '24px', borderRadius: '6px', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
+                  <p style={{ color: '#9a7b38', margin: 0, fontWeight: '600' }}>Dashboard summary widgets and performance indicators will load here.</p>
+                </div>
+              </div>
+            </MainLayout>
+          );
+        }
+
+        const primaryGold = '#c5a059';
+        const darkSidebar = '#121212';
+        const mainBackground = '#f4f5f7'; // Light grey background wrapper
+        const sidebarBorder = '#2c2c2c';
+        const topHeaderBg = '#ffffff';
+
+        const styles = {
+          appContainer: { display: 'flex', height: '100vh', width: '100vw', backgroundColor: mainBackground, fontFamily: 'Segoe UI, sans-serif', overflow: 'hidden' },
+          sidebar: { width: '270px', backgroundColor: darkSidebar, borderRight: `1px solid ${sidebarBorder}`, display: 'flex', flexDirection: 'column', overflowY: 'auto', flexShrink: 0 },
+          sidebarHeader: { padding: '18px 16px', display: 'flex', alignItems: 'center', gap: '14px', borderBottom: `1px solid ${sidebarBorder}` },
+          sidebarLogo: { width: '42px', height: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))' },
+          sidebarBrandText: { display: 'flex', flexDirection: 'column' },
+          brandTitle: { color: primaryGold, fontSize: '13px', fontWeight: '700', letterSpacing: '1px' },
+          brandSubtitle: { color: '#888', fontSize: '8.5px', fontWeight: '600', letterSpacing: '0.5px' },
+          navMenu: { padding: '15px 12px', display: 'flex', flexDirection: 'column', gap: '4px' },
+          navSectionTitle: { color: '#777', fontSize: '10px', fontWeight: '700', letterSpacing: '1px', marginTop: '16px', marginBottom: '6px', paddingLeft: '8px' },
+          navItem: { color: '#b0b5bc', fontSize: '13px', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' },
+          navItemActive: { backgroundColor: 'rgba(197, 160, 89, 0.15)', color: primaryGold, fontWeight: '600', borderLeft: `3px solid ${primaryGold}` },
+          mainWrapper: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' },
+          topHeader: { height: '60px', backgroundColor: topHeaderBg, borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', padding: '0 24px', gap: '20px', flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.02)' },
+          dateTimeDisplay: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end' },
+          dateTimeLabel: { color: '#9ca3af', fontSize: '9px', fontWeight: '700', letterSpacing: '1px' },
+          dateTimeValue: { color: '#1f2937', fontSize: '12px', fontWeight: '500' },
+          logoutButton: { backgroundColor: primaryGold, color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '4px', fontWeight: '700', fontSize: '12px', cursor: 'pointer' },
+          contentArea: { flex: 1, backgroundColor: '#ffffff', padding: '28px', overflowY: 'auto', color: '#111827' }
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>

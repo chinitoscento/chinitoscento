@@ -1,0 +1,494 @@
+import React, { useState, useEffect } from 'react';
+
+export default function RawMaterialsCatalogue() {
+  const [materials, setMaterials] = useState(() => {
+    const saved = localStorage.getItem('chinito_raw_materials_catalogue');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+        }
+      } catch (e) {
+        console.error("Error loading raw materials catalogue", e);
+      }
+    }
+    return [];
+  });
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  
+  const [code, setCode] = useState('');
+  const [rawMaterial, setRawMaterial] = useState('');
+  const [category, setCategory] = useState('OIL');
+  const [baseUnit, setBaseUnit] = useState('ml');
+
+  const CATEGORY_OPTIONS = [
+    'OIL',
+    'SOLVENT',
+    'BOTTLES',
+    'BOTTLE STICKERS',
+    'BOX - PACKAGING',
+    'STICKERS - PACKAGING',
+    'WRAP - PACKAGING'
+  ];
+
+  useEffect(() => {
+    localStorage.setItem('chinito_raw_materials_catalogue', JSON.stringify(materials));
+  }, [materials]);
+
+  const handleOpenAdd = () => {
+    setEditingItem(null);
+    const nextNum = materials.length + 1;
+    setCode(`RM-${String(nextNum).padStart(3, '0')}`);
+    setRawMaterial('');
+    setCategory('OIL');
+    setBaseUnit('ml');
+    setIsModalOpen(true);
+  };
+
+  const handleOpenEdit = (item) => {
+    setEditingItem(item);
+    setCode(item.id);
+    setRawMaterial(item.rawMaterial);
+    setCategory(item.category || 'OIL');
+    setBaseUnit(item.baseUnit || 'ml');
+    setIsModalOpen(true);
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    if (!rawMaterial.trim() || !code.trim()) {
+      alert('Please fill out Code and Raw Material name.');
+      return;
+    }
+
+    let updatedList;
+    if (editingItem) {
+      updatedList = materials.map(m => m.id === editingItem.id ? {
+        ...m,
+        id: code.trim(),
+        rawMaterial: rawMaterial.trim(),
+        category,
+        baseUnit: baseUnit.trim()
+      } : m);
+    } else {
+      const newItem = {
+        id: code.trim(),
+        rawMaterial: rawMaterial.trim(),
+        category,
+        baseUnit: baseUnit.trim()
+      };
+      updatedList = [newItem, ...materials];
+    }
+
+    updatedList.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    setMaterials(updatedList);
+    setIsModalOpen(false);
+  };
+
+  const handleDelete = (id) => {
+    if (window.confirm('Are you sure you want to delete this raw material record?')) {
+      setMaterials(prev => prev.filter(m => m.id !== id));
+    }
+  };
+
+  return (
+    <div style={styles.moduleCard}>
+      <div style={styles.contentHeaderRow}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <h2 style={{ fontFamily: "'Cinzel', serif", margin: 0, color: '#1a1a1a', fontSize: '24px', letterSpacing: '0.5px' }}>Raw Materials Catalogue</h2>
+            <span style={styles.totalBadge}>Total: {materials.length}</span>
+          </div>
+          <p style={styles.subText}>Distinct master list for fragrance components, solvents, and packaging specifications across production cycles.</p>
+        </div>
+        <button style={styles.goldActionBtn} onClick={handleOpenAdd}>
+          + Add New Raw Material
+        </button>
+      </div>
+
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.thCode}>CODE</th>
+              <th style={styles.thMaterial}>RAW MATERIAL</th>
+              <th style={styles.thCategory}>CATEGORY</th>
+              <th style={styles.thVolume}>BASE UNIT</th>
+              <th style={styles.thActions}>ACTIONS</th>
+            </tr>
+          </thead>
+          <tbody>
+            {materials.length === 0 ? (
+              <tr>
+                <td colSpan="5" style={{ textAlign: 'center', color: '#888', padding: '40px', fontStyle: 'italic' }}>
+                  No raw materials registered. Click "+ Add New Raw Material" above.
+                </td>
+              </tr>
+            ) : (
+              materials.map(m => (
+                <tr key={m.id} style={styles.trBody}>
+                  <td style={styles.tdCode}><span style={styles.idBadge}>{m.id}</span></td>
+                  <td style={styles.tdMaterial}><strong style={{ color: '#1a1a1a', fontSize: '14px', fontWeight: '600' }}>{m.rawMaterial}</strong></td>
+                  <td style={styles.tdCategory}><span style={styles.categoryBadge}>{m.category || 'OIL'}</span></td>
+                  <td style={styles.tdVolume}><span style={styles.volumePill}>{m.baseUnit || '—'}</span></td>
+                  <td style={styles.tdActions}>
+                    <button style={styles.actionLinkBtn} onClick={() => handleOpenEdit(m)}>Edit</button>
+                    <span style={{ color: '#d3cbbd', margin: '0 8px' }}>|</span>
+                    <button style={{ ...styles.actionLinkBtn, color: '#b33939' }} onClick={() => handleDelete(m.id)}>Delete</button>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {isModalOpen && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalContent}>
+            <div style={styles.modalHeader}>
+              <div>
+                <div style={{ fontSize: '10px', letterSpacing: '2px', color: '#c5a059', fontWeight: '700' }}>CATALOGUE SPECIFICATION</div>
+                <h3 style={{ margin: '2px 0 0 0', color: '#fff', fontFamily: "'Cinzel', serif" }}>
+                  {editingItem ? 'Edit Raw Material' : 'Add Raw Material'}
+                </h3>
+              </div>
+              <button style={styles.modalCloseBtn} onClick={() => setIsModalOpen(false)}>&times;</button>
+            </div>
+
+            <form onSubmit={handleSave} style={styles.modalForm}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>CODE</label>
+                <input 
+                  type="text" 
+                  value={code} 
+                  onChange={(e) => setCode(e.target.value)} 
+                  style={styles.inputDark} 
+                  required 
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, marginTop: '16px' }}>
+                <label style={styles.label}>RAW MATERIAL</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. ANT Oil / Black Bottle" 
+                  value={rawMaterial} 
+                  onChange={(e) => setRawMaterial(e.target.value)} 
+                  style={styles.inputDark} 
+                  required 
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, marginTop: '16px' }}>
+                <label style={styles.label}>CATEGORY</label>
+                <select 
+                  value={category} 
+                  onChange={(e) => setCategory(e.target.value)} 
+                  style={styles.inputDark}
+                >
+                  {CATEGORY_OPTIONS.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ ...styles.inputGroup, marginTop: '16px' }}>
+                <label style={styles.label}>BASE UNIT</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. ml or pcs" 
+                  value={baseUnit} 
+                  onChange={(e) => setBaseUnit(e.target.value)} 
+                  style={styles.inputDark} 
+                  required 
+                />
+              </div>
+
+              <div style={styles.modalFooter}>
+                <button type="button" onClick={() => setIsModalOpen(false)} style={styles.cancelBtn}>Cancel</button>
+                <button type="submit" style={styles.submitBtn}>
+                  {editingItem ? 'Save Changes' : 'Add Raw Material'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const primaryGold = '#c5a059';
+
+const styles = {
+  moduleCard: {
+    backgroundColor: '#ffffff',
+    border: '1px solid #e2ded8',
+    borderRadius: '10px',
+    padding: '32px',
+    boxShadow: '0 6px 20px rgba(0,0,0,0.04)'
+  },
+  contentHeaderRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottom: '1px solid #eee5dc',
+    paddingBottom: '22px',
+    marginBottom: '20px',
+  },
+  goldActionBtn: {
+    backgroundColor: primaryGold,
+    color: '#ffffff',
+    border: 'none',
+    padding: '11px 22px',
+    borderRadius: '6px',
+    fontWeight: '600',
+    fontSize: '13.5px',
+    cursor: 'pointer',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    boxShadow: '0 4px 12px rgba(197,160,89,0.3)',
+    letterSpacing: '0.5px'
+  },
+  subText: {
+    color: '#777',
+    fontSize: '13.5px',
+    marginTop: '6px',
+    marginBottom: '0px'
+  },
+  totalBadge: {
+    backgroundColor: '#f4efe6',
+    color: '#8c733f',
+    padding: '4px 10px',
+    borderRadius: '12px',
+    fontSize: '12px',
+    fontWeight: '700',
+    border: '1px solid #e2dbcc',
+    fontFamily: "'Segoe UI', sans-serif"
+  },
+  tableContainer: {
+    overflowX: 'auto',
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    fontSize: '13.5px',
+  },
+  trHead: {
+    backgroundColor: '#faf8f5',
+    borderBottom: '2px solid #e2ded8',
+  },
+  thCode: {
+    width: '13%',
+    padding: '16px 18px',
+    textAlign: 'left',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '11.5px',
+    letterSpacing: '1.2px',
+  },
+  thMaterial: {
+    width: '31%',
+    padding: '16px 18px',
+    textAlign: 'left',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '11.5px',
+    letterSpacing: '1.2px',
+  },
+  thCategory: {
+    width: '22%',
+    padding: '16px 18px',
+    textAlign: 'left',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '11.5px',
+    letterSpacing: '1.2px',
+  },
+  thVolume: {
+    width: '18%',
+    padding: '16px 18px',
+    textAlign: 'left',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '11.5px',
+    letterSpacing: '1.2px',
+  },
+  thActions: {
+    width: '16%',
+    padding: '16px 18px',
+    textAlign: 'center',
+    color: '#444',
+    fontFamily: "'Cinzel', serif",
+    fontSize: '11.5px',
+    letterSpacing: '1.2px',
+  },
+  trBody: {
+    borderBottom: '1px solid #f1ece4',
+    transition: 'background-color 0.2s',
+  },
+  tdCode: {
+    padding: '16px 18px',
+    verticalAlign: 'middle',
+    textAlign: 'left',
+  },
+  tdMaterial: {
+    padding: '16px 18px',
+    verticalAlign: 'middle',
+    textAlign: 'left',
+  },
+  tdCategory: {
+    padding: '16px 18px',
+    verticalAlign: 'middle',
+    textAlign: 'left',
+  },
+  tdVolume: {
+    padding: '16px 18px',
+    verticalAlign: 'middle',
+    textAlign: 'left',
+  },
+  tdActions: {
+    padding: '16px 18px',
+    verticalAlign: 'middle',
+    textAlign: 'center',
+  },
+  idBadge: {
+    backgroundColor: '#f4efe6',
+    color: '#8c733f',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    fontFamily: 'monospace',
+    fontWeight: '700',
+    fontSize: '12px',
+    border: '1px solid #e2dbcc',
+    display: 'inline-block'
+  },
+  categoryBadge: {
+    backgroundColor: '#f0ece1',
+    color: '#554a36',
+    padding: '4px 8px',
+    borderRadius: '4px',
+    fontSize: '11.5px',
+    fontWeight: '700',
+    letterSpacing: '0.5px',
+    fontFamily: "'Segoe UI', sans-serif",
+    border: '1px solid #e4dbc8',
+    display: 'inline-block'
+  },
+  volumePill: {
+    backgroundColor: '#f8f6f0',
+    color: '#555',
+    padding: '5px 12px',
+    borderRadius: '4px',
+    fontSize: '12.5px',
+    fontWeight: '600',
+    fontFamily: 'monospace',
+    border: '1px solid #eae5dc',
+    display: 'inline-block'
+  },
+  actionLinkBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#c5a059',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontSize: '13px',
+    letterSpacing: '0.3px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backdropFilter: 'blur(4px)',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 1000,
+    padding: '20px',
+  },
+  modalContent: {
+    backgroundColor: '#141414',
+    border: '1px solid #c5a059',
+    borderRadius: '8px',
+    width: '100%',
+    maxWidth: '480px',
+    boxShadow: '0 25px 50px rgba(0,0,0,0.8)',
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    padding: '20px 24px',
+    backgroundColor: '#1c1c1c',
+    borderBottom: '1px solid #2a2a2a',
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modalCloseBtn: {
+    backgroundColor: 'transparent',
+    border: 'none',
+    color: '#aaa',
+    fontSize: '26px',
+    cursor: 'pointer',
+    lineHeight: '1',
+  },
+  modalForm: {
+    padding: '24px',
+    fontFamily: "'Segoe UI', sans-serif",
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+  },
+  label: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#b0b8c0',
+    letterSpacing: '1px',
+    fontFamily: "'Cinzel', serif"
+  },
+  inputDark: {
+    padding: '11px 14px',
+    borderRadius: '4px',
+    border: '1px solid #333',
+    backgroundColor: '#1c1c1c',
+    color: '#ffffff',
+    fontSize: '13.5px',
+    outline: 'none',
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '12px',
+    marginTop: '24px',
+    borderTop: '1px solid #2a2a2a',
+    paddingTop: '18px',
+  },
+  cancelBtn: {
+    backgroundColor: 'transparent',
+    color: '#aaa',
+    border: '1px solid #444',
+    padding: '9px 18px',
+    borderRadius: '4px',
+    fontWeight: '600',
+    fontSize: '13px',
+    cursor: 'pointer',
+  },
+  submitBtn: {
+    backgroundColor: primaryGold,
+    color: '#000000',
+    border: 'none',
+    padding: '9px 20px',
+    borderRadius: '4px',
+    fontWeight: '700',
+    fontSize: '13px',
+    cursor: 'pointer',
+    boxShadow: '0 4px 12px rgba(197,160,89,0.3)',
+  }
+};
