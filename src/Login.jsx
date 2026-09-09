@@ -11,10 +11,10 @@ export default function Login({ onLoginSuccess }) {
     
     const savedSettings = JSON.parse(localStorage.getItem('chinito_settings') || '{}');
     
-    const adminUser = savedSettings.loginUsername || 'admin';
-    const adminPass = savedSettings.loginPassword || 'chinitoscento2026';
-    const managerUser = savedSettings.managerUsername || 'manager';
-    const managerPass = savedSettings.managerPassword || 'managerpassword123';
+    const adminUser = savedSettings.loginUsername || 'Edson';
+    const adminPass = savedSettings.loginPassword || 'Edsontan1988.';
+    const managerUser = savedSettings.managerUsername || 'Romel';
+    const managerPass = savedSettings.managerPassword || 'Password123';
 
     const trimmedUser = username.trim();
 
