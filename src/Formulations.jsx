@@ -5,7 +5,6 @@ export default function Formulations() {
     const saved = localStorage.getItem('chinito_formulations');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Auto-assign product code if legacy data lacks it
       return parsed.map((form, index) => {
         if (!form.productCode) {
           const name = form.scentName || 'Scent';
@@ -46,11 +45,13 @@ export default function Formulations() {
     bottleStickerId: '',
     boxId: '',
     boxStickerId: '',
-    wrappingId: 'RM-035'
+    wrappingId: 'RM-035',
+    price: ''
   });
 
   useEffect(() => {
     localStorage.setItem('chinito_formulations', JSON.stringify(formulations));
+    window.dispatchEvent(new Event('chinito_formulations_updated'));
   }, [formulations]);
 
   const handleOpenAddModal = () => {
@@ -68,7 +69,8 @@ export default function Formulations() {
       bottleStickerId: '',
       boxId: 'RM-024',
       boxStickerId: '',
-      wrappingId: 'RM-035'
+      wrappingId: 'RM-035',
+      price: ''
     });
     setIsModalOpen(true);
   };
@@ -87,7 +89,8 @@ export default function Formulations() {
       bottleStickerId: form.bottleStickerId || '',
       boxId: form.boxId || '',
       boxStickerId: form.boxStickerId || '',
-      wrappingId: form.wrappingId || ''
+      wrappingId: form.wrappingId || '',
+      price: form.price ?? ''
     });
     setIsModalOpen(true);
   };
@@ -109,7 +112,11 @@ export default function Formulations() {
       finalCode = `CS-${clean}-${numStr}`;
     }
 
-    const payload = { ...formData, productCode: finalCode };
+    const payload = { 
+      ...formData, 
+      productCode: finalCode,
+      price: formData.price !== '' ? Number(formData.price) : undefined 
+    };
 
     if (editingId) {
       setFormulations(prev => prev.map(f => f.id === editingId ? { ...payload, id: editingId } : f));
@@ -256,6 +263,18 @@ export default function Formulations() {
                 </div>
               </div>
 
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Custom Fixed Price (Optional Override)</label>
+                <input 
+                  type="number" 
+                  step="0.01"
+                  placeholder="Leave blank to use dynamic markup"
+                  value={formData.price}
+                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                  style={styles.input}
+                />
+              </div>
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>OIL (SKU / ID)</label>
@@ -320,18 +339,18 @@ const styles = {
   tbodyRow: { borderBottom: '1px solid #f0ece6' },
   td: { padding: '10px', color: '#444', whiteSpace: 'nowrap' },
   tdRight: { padding: '10px', textAlign: 'right', whiteSpace: 'nowrap' },
-  codeBadge: { fontSize: '11px', fontWeight: 'bold', color: '#c5a059', backgroundColor: '#fdfbf7', padding: '2px 8px', borderRadius: '4px', border: '1px solid #e2ded8', letterSpacing: '0.8px', fontFamily: "'Cinzel', serif" },
-  skuTag: { backgroundColor: '#f7f6f2', border: '1px solid #e2ded8', padding: '3px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11.5px', color: '#333' },
-  emptyCell: { padding: '30px', textAlign: 'center', fontStyle: 'italic', color: '#888' },
+  emptyCell: { padding: '30px', textAlign: 'center', color: '#777' },
+  codeBadge: { backgroundColor: '#f4f2ee', padding: '3px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11.5px', fontWeight: '600' },
+  skuTag: { fontSize: '11.5px', color: '#555', backgroundColor: '#f9f9f9', padding: '2px 5px', borderRadius: '3px', border: '1px solid #eee' },
+  actionBtn: { backgroundColor: 'transparent', border: '1px solid #ccc', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '11.5px', fontWeight: '600', color: '#333' },
   modalOverlay: { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
-  modalCard: { backgroundColor: '#fff', borderRadius: '6px', width: '550px', maxHeight: '90vh', overflowY: 'auto', padding: '25px', boxShadow: '0 10px 30px rgba(0,0,0,0.15)', border: '1px solid #e2ded8' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', borderBottom: '1px solid #f0ece6', paddingBottom: '10px' },
-  modalTitle: { fontSize: '17px', fontWeight: '600', color: '#1a1a1a', fontFamily: "'Cinzel', 'Segoe UI', serif", margin: 0 },
-  closeButton: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#888' },
+  modalCard: { backgroundColor: '#fff', padding: '24px', borderRadius: '8px', width: '500px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #eee', paddingBottom: '10px' },
+  modalTitle: { fontSize: '18px', fontWeight: '600', color: '#111', margin: 0 },
+  closeButton: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' },
   formStack: { display: 'flex', flexDirection: 'column', gap: '12px' },
-  inputGroup: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  label: { fontSize: '10.5px', fontWeight: '700', color: '#555', fontFamily: "'Cinzel', 'Segoe UI', serif" },
-  input: { padding: '8px 10px', borderRadius: '4px', border: '1px solid #dcd6cd', fontSize: '13px', backgroundColor: '#fff', outline: 'none' },
-  modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px', borderTop: '1px solid #f0ece6', paddingTop: '12px' },
-  actionBtn: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#555' }
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
+  label: { fontSize: '11.5px', fontWeight: '700', color: '#444', textTransform: 'uppercase' },
+  input: { padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', outline: 'none' },
+  modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '12px' }
 };

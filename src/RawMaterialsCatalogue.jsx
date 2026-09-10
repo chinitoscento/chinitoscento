@@ -36,6 +36,8 @@ export default function RawMaterialsCatalogue() {
 
   useEffect(() => {
     localStorage.setItem('chinito_raw_materials_catalogue', JSON.stringify(materials));
+    window.dispatchEvent(new Event('chinito_raw_materials_updated'));
+    window.dispatchEvent(new Event('storage'));
   }, [materials]);
 
   const handleOpenAdd = () => {

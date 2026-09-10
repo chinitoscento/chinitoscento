@@ -5,15 +5,7 @@ export default function SystemSettings() {
     loginUsername: 'admin',
     loginPassword: 'chinitoscento2026',
     managerUsername: 'manager',
-    managerPassword: 'managerpassword123',
-    defaultOilCost: 4.5,
-    defaultSolventCost: 0.38,
-    defaultBottleCost: 25,
-    defaultBottleSticker: 3,
-    defaultBoxCost: 12,
-    defaultBoxSticker: 3,
-    defaultShrinkWrap: 2,
-    defaultPrice: 350
+    managerPassword: 'managerpassword123'
   });
 
   const [savedMessage, setSavedMessage] = useState('');
@@ -46,7 +38,7 @@ export default function SystemSettings() {
       <div style={styles.headerRow}>
         <div>
           <h2 style={styles.pageTitle}>System Settings</h2>
-          <p style={styles.sub}>Configure default material fallback costs, pricing structures, and access credentials.</p>
+          <p style={styles.sub}>Configure system access credentials.</p>
         </div>
       </div>
 
@@ -79,55 +71,6 @@ export default function SystemSettings() {
             <div style={styles.inputGroup}>
               <label style={styles.label}>Manager Password</label>
               <input type="text" name="managerPassword" value={settings.managerPassword} onChange={handleChange} style={styles.input} required />
-            </div>
-          </div>
-        </div>
-
-        {/* Default Material Costs Section */}
-        <div style={styles.card}>
-          <h3 style={styles.cardTitle}>📦 Default Fallback Unit Costs (₱)</h3>
-          
-          <div style={styles.rowGrid}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Oil Cost</label>
-              <input type="number" step="0.01" name="defaultOilCost" value={settings.defaultOilCost} onChange={handleChange} style={styles.input} />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Solvent Cost</label>
-              <input type="number" step="0.01" name="defaultSolventCost" value={settings.defaultSolventCost} onChange={handleChange} style={styles.input} />
-            </div>
-          </div>
-
-          <div style={styles.rowGrid}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Bottle Cost</label>
-              <input type="number" step="0.01" name="defaultBottleCost" value={settings.defaultBottleCost} onChange={handleChange} style={styles.input} />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Bottle Sticker</label>
-              <input type="number" step="0.01" name="defaultBottleSticker" value={settings.defaultBottleSticker} onChange={handleChange} style={styles.input} />
-            </div>
-          </div>
-
-          <div style={styles.rowGrid}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Box Cost</label>
-              <input type="number" step="0.01" name="defaultBoxCost" value={settings.defaultBoxCost} onChange={handleChange} style={styles.input} />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Box Sticker</label>
-              <input type="number" step="0.01" name="defaultBoxSticker" value={settings.defaultBoxSticker} onChange={handleChange} style={styles.input} />
-            </div>
-          </div>
-
-          <div style={styles.rowGrid}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Shrink Wrap</label>
-              <input type="number" step="0.01" name="defaultShrinkWrap" value={settings.defaultShrinkWrap} onChange={handleChange} style={styles.input} />
-            </div>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Default Scent Price</label>
-              <input type="number" step="0.01" name="defaultPrice" value={settings.defaultPrice} onChange={handleChange} style={styles.input} />
             </div>
           </div>
         </div>

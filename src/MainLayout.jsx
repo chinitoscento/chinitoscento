@@ -6,6 +6,7 @@ import Products from './Products.jsx';
 import RawMaterialsCatalogue from './RawMaterialsCatalogue.jsx';
 import Formulations from './Formulations.jsx';
 import Purchases from './Purchases.jsx';
+import PurchaseCostMonitoring from './PurchaseCostMonitoring.jsx';
 import Costing from './Costing.jsx';
 import RawMaterialsInventory from './RawMaterialsInventory.jsx';
 import Maceration from './Maceration.jsx';
@@ -188,9 +189,9 @@ export default function MainLayout({ onLogout }) {
         return <Purchases />;
       case 'Costing':
         return <Costing />;
-      case 'Stock Ledger':
+      case 'Purchase Cost Monitoring':
+        return <PurchaseCostMonitoring />;
       case 'Raw Materials':
-      case 'Raw Materials Inventory':
         return <RawMaterialsInventory />;
       case 'Maceration':
         return <Maceration />;
@@ -249,7 +250,7 @@ export default function MainLayout({ onLogout }) {
           )}
 
           {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations', 'SRP Control'])}
-          {!isManager && renderSection('Purchasing', ['Purchases', 'Costing'])}
+          {!isManager && renderSection('Purchasing', ['Purchases', 'Purchase Cost Monitoring', 'Costing'])}
           {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods', 'Stock Ledger'])}
           {!isManager && renderSection('Production', ['Maceration', 'Packaging'])}
           
