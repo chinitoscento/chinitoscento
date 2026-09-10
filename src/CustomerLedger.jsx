@@ -9,7 +9,11 @@ export default function CustomerLedger() {
   useEffect(() => {
     loadLedgerData();
     window.addEventListener('storage', loadLedgerData);
-    return () => window.removeEventListener('storage', loadLedgerData);
+    window.addEventListener('chinito_collections_updated', loadLedgerData);
+    return () => {
+      window.removeEventListener('storage', loadLedgerData);
+      window.removeEventListener('chinito_collections_updated', loadLedgerData);
+    };
   }, []);
 
   const loadLedgerData = () => {
@@ -22,7 +26,8 @@ export default function CustomerLedger() {
       const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || 0), 0);
       
       const custCollections = savedCollections.filter(c => c.customerName === cust.name);
-      const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || 0), 0);
+      // Sum up amounts whether they are regular payments or sales return credits
+      const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.credit || 0), 0);
       const totalDue = Math.max(0, totalTrans - totalPaid);
 
       return {
@@ -53,23 +58,30 @@ export default function CustomerLedger() {
     });
 
     custSummary.collections.forEach(col => {
-      if (invoiceMap[col.invoiceNo]) {
-        invoiceMap[col.invoiceNo].credit += Number(col.amountPaid || 0);
-        invoiceMap[col.invoiceNo].payments.push({
+      // Determine the identifier mapping (supports invoiceNo or soNumber)
+      const targetRef = col.invoiceNo || col.soNumber;
+      const creditVal = Number(col.amountPaid || col.credit || 0);
+      const labelType = col.transactionType === 'Sales Return' 
+        ? `Sales Return (${col.reference || col.remarks})` 
+        : `Payment (${col.remarks})`;
+
+      if (invoiceMap[targetRef]) {
+        invoiceMap[targetRef].credit += creditVal;
+        invoiceMap[targetRef].payments.push({
           date: col.date,
-          type: `Payment (${col.remarks})`,
-          amount: Number(col.amountPaid || 0)
+          type: labelType,
+          amount: creditVal
         });
       } else {
-        invoiceMap[col.invoiceNo] = {
-          ref: col.invoiceNo,
+        invoiceMap[targetRef] = {
+          ref: targetRef,
           date: col.date,
           debit: 0,
-          credit: Number(col.amountPaid || 0),
+          credit: creditVal,
           payments: [{
             date: col.date,
-            type: `Payment (${col.remarks})`,
-            amount: Number(col.amountPaid || 0)
+            type: labelType,
+            amount: creditVal
           }]
         };
       }
@@ -96,7 +108,7 @@ export default function CustomerLedger() {
     const savedCollections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
 
     const so = savedSOs.find(s => s.soNumber === invoiceRef);
-    const collections = savedCollections.filter(c => c.invoiceNo === invoiceRef);
+    const collections = savedCollections.filter(c => (c.invoiceNo === invoiceRef || c.soNumber === invoiceRef));
 
     const subledgerEntries = [];
 
@@ -111,12 +123,17 @@ export default function CustomerLedger() {
     }
 
     collections.forEach(col => {
+      const creditVal = Number(col.amountPaid || col.credit || 0);
+      const txnLabel = col.transactionType === 'Sales Return'
+        ? `Sales Return Credit (${col.reference || col.remarks})`
+        : `Payment Collection (${col.remarks})`;
+
       subledgerEntries.push({
         date: col.date,
-        soNumber: col.invoiceNo,
-        transaction: `Payment Collection (${col.remarks})`,
+        soNumber: col.invoiceNo || col.soNumber,
+        transaction: txnLabel,
         debit: 0,
-        credit: Number(col.amountPaid || 0)
+        credit: creditVal
       });
     });
 
@@ -178,7 +195,7 @@ export default function CustomerLedger() {
                 <th style={styles.th}>CUSTOMER CODE</th>
                 <th style={styles.th}>CUSTOMER NAME</th>
                 <th style={styles.th}>TOTAL AMOUNT OF TRANSACTION</th>
-                <th style={styles.th}>TOTAL AMOUNT PAID</th>
+                <th style={styles.th}>TOTAL AMOUNT PAID / CREDITED</th>
                 <th style={styles.th}>TOTAL AMOUNT DUE FOR COLLECTION</th>
               </tr>
             </thead>
@@ -220,7 +237,7 @@ export default function CustomerLedger() {
                 <th style={styles.th}>DATE</th>
                 <th style={styles.th}>REF / INVOICE #</th>
                 <th style={styles.th}>DEBIT (DUE)</th>
-                <th style={styles.th}>CREDIT (PAYMENT)</th>
+                <th style={styles.th}>CREDIT (PAYMENT/RETURN)</th>
                 <th style={styles.th}>RUNNING BALANCE</th>
               </tr>
             </thead>
@@ -276,17 +293,17 @@ export default function CustomerLedger() {
             {/* Customer Details info block */}
             <div style={styles.printCustomerBox}>
               <p style={{margin: '0 0 4px 0', fontSize: '13px'}}>Customer: <b>{selectedSubledgerInvoice.customerName}</b></p>
-              <p style={{margin: 0, fontSize: '13px'}}>Original SO: <b>{selectedSubledgerInvoice.invoiceNo}</b></p>
+              <p style={{margin: 0, fontSize: '13px'}}>Original SO / Ref: <b>{selectedSubledgerInvoice.invoiceNo}</b></p>
             </div>
 
             <table style={styles.table}>
               <thead>
                 <tr style={styles.trHead}>
-                  <th style={styles.th}>SO NUMBER</th>
+                  <th style={styles.th}>REF NUMBER</th>
                   <th style={styles.th}>DATE OF TRANSACTION</th>
                   <th style={styles.th}>TRANSACTION</th>
                   <th style={styles.th}>DEBIT (DUE)</th>
-                  <th style={styles.th}>CREDIT (PAYMENT)</th>
+                  <th style={styles.th}>CREDIT (PAYMENT/RETURN)</th>
                   <th style={styles.th}>RUNNING BALANCE</th>
                 </tr>
               </thead>

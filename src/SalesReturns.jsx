@@ -6,6 +6,7 @@ export default function SalesReturns() {
   const [customers, setCustomers] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
   const [finishedGoods, setFinishedGoods] = useState([]);
+  const [userRole, setUserRole] = useState('non-owner');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newReturn, setNewReturn] = useState({
@@ -17,6 +18,8 @@ export default function SalesReturns() {
   
   const [selectedSoItems, setSelectedSoItems] = useState([]);
   const [previewReturn, setPreviewReturn] = useState(null);
+  const [inlineNotification, setInlineNotification] = useState(null);
+  const [modalNotification, setModalNotification] = useState(null);
   const printRef = useRef();
 
   useEffect(() => {
@@ -33,10 +36,22 @@ export default function SalesReturns() {
   }, []);
 
   const loadAllData = () => {
-    setSalesReturns(JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]'));
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    
+    // Sort descending by SR Code (e.g., SR-000004 comes before SR-000001)
+    const sortedReturns = rawReturns.sort((a, b) => {
+      const seqA = parseInt((a.srCode || '').split('-')[1] || 0, 10);
+      const seqB = parseInt((b.srCode || '').split('-')[1] || 0, 10);
+      return seqB - seqA;
+    });
+
+    setSalesReturns(sortedReturns);
     setCustomers(JSON.parse(localStorage.getItem('chinito_customers') || '[]'));
     setSalesOrders(JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]'));
     setFinishedGoods(JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]'));
+    
+    const currentRole = localStorage.getItem('chinito_user_role') || 'non-owner';
+    setUserRole(currentRole);
   };
 
   const filteredSoList = salesOrders.filter(so => {
@@ -121,37 +136,85 @@ export default function SalesReturns() {
   };
 
   const generateSrCode = () => {
-    const lastSr = salesReturns.length > 0 ? salesReturns[salesReturns.length - 1] : null;
-    if (!lastSr) return 'SR-000001';
+    const highestSr = salesReturns.length > 0 ? salesReturns[0] : null;
+    if (!highestSr || !highestSr.srCode) return 'SR-000001';
     
-    const lastCode = lastSr.srCode;
-    const sequence = parseInt(lastCode.split('-')[1], 10);
+    const sequence = parseInt(highestSr.srCode.split('-')[1] || 0, 10);
     return `SR-${(sequence + 1).toString().padStart(6, '0')}`;
   };
 
   const handleSaveReturn = () => {
     if (!newReturn.customerId || !newReturn.soNumber) {
-      alert('Please select Customer and SO Number.');
+      setModalNotification({ type: 'error', message: 'Please select Customer and SO Number.' });
       return;
     }
     
     const validItems = newReturn.items.filter(item => item.returnQty > 0 && item.reason);
     if (validItems.length === 0) {
-      alert('Please encode at least one valid return quantity and reason.');
+      setModalNotification({ type: 'error', message: 'Please encode at least one valid return quantity and reason.' });
       return;
     }
+
+    const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
+    
+    let totalReturnValue = 0;
+    const enrichedReturnItems = validItems.map(returnItem => {
+      const originalSoItem = matchingSo?.items?.find(i => 
+        (i.productCode || i.productId || i.code) === returnItem.productId
+      );
+      const unitPrice = Number(originalSoItem?.price || originalSoItem?.unitPrice || 0);
+      const subtotal = unitPrice * Number(returnItem.returnQty);
+      totalReturnValue += subtotal;
+
+      return {
+        ...returnItem,
+        unitPrice,
+        subtotal
+      };
+    });
 
     const srCode = generateSrCode();
     const finalReturn = {
       ...newReturn,
       srCode: srCode,
       returnDate: new Date().toISOString().split('T')[0],
-      items: validItems,
-      status: 'COMPLETED'
+      items: enrichedReturnItems,
+      totalAmount: totalReturnValue,
+      status: 'PENDING FOR APPROVAL'
     };
 
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = [...rawReturns, finalReturn];
+    localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
+    
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('chinito_sales_updated'));
+
+    setNewReturn({ customerId: '', customerName: '', soNumber: '', items: [] });
+    setSelectedSoItems([]);
+    
+    setModalNotification({
+      type: 'success',
+      message: `Sales Return ${srCode} created successfully and is pending approval.`,
+      onOk: () => {
+        setModalNotification(null);
+        setIsModalOpen(false);
+        loadAllData();
+      }
+    });
+  };
+
+  const handleApproveReturn = (srCode) => {
+    if (userRole !== 'owner') {
+      alert('Only the owner can approve sales returns.');
+      return;
+    }
+
+    const targetSr = salesReturns.find(sr => sr.srCode === srCode);
+    if (!targetSr || targetSr.status === 'COMPLETED') return;
+
     const updatedSalesOrders = salesOrders.map(so => {
-      if (so.soNumber === newReturn.soNumber) {
+      if (so.soNumber === targetSr.soNumber) {
         return {
           ...so,
           remarks: `Refer to ${srCode}`
@@ -162,7 +225,7 @@ export default function SalesReturns() {
 
     let savedInvoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
     let updatedInvoices = savedInvoices.map(inv => {
-      if (inv.soNumber === newReturn.soNumber) {
+      if (inv.soNumber === targetSr.soNumber) {
         return {
           ...inv,
           remarks: `Refer to ${srCode}`
@@ -171,8 +234,8 @@ export default function SalesReturns() {
       return inv;
     });
 
-    if (!updatedInvoices.some(inv => inv.soNumber === newReturn.soNumber)) {
-      const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
+    const matchingSo = salesOrders.find(so => so.soNumber === targetSr.soNumber);
+    if (!updatedInvoices.some(inv => inv.soNumber === targetSr.soNumber)) {
       if (matchingSo) {
         updatedInvoices.unshift({
           ...matchingSo,
@@ -181,9 +244,24 @@ export default function SalesReturns() {
       }
     }
 
+    let collections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
+    const newCollectionEntry = {
+      id: Date.now(),
+      soNumber: targetSr.soNumber,
+      customerName: targetSr.customerName,
+      customerId: targetSr.customerId,
+      date: new Date().toISOString().split('T')[0],
+      transactionType: 'Sales Return',
+      reference: srCode,
+      debit: 0,
+      credit: targetSr.totalAmount,
+      remarks: `Sales Return Credit Ref: ${srCode}`
+    };
+    collections.push(newCollectionEntry);
+    localStorage.setItem('chinito_collections', JSON.stringify(collections));
+
     const updatedFinishedGoods = [...finishedGoods];
-    
-    validItems.forEach(returnItem => {
+    targetSr.items.forEach(returnItem => {
       let fgEntry = updatedFinishedGoods.find(fg => 
         (fg.code && fg.code === returnItem.productId) || 
         (fg.productCode && fg.productCode === returnItem.productId)
@@ -192,11 +270,9 @@ export default function SalesReturns() {
       if (fgEntry) {
         const currentStock = Number(fgEntry.stockQty ?? fgEntry.quantity ?? fgEntry.qty ?? fgEntry.availableQty ?? 0);
         const newStock = currentStock + Number(returnItem.returnQty);
-        
         fgEntry.stockQty = newStock;
         fgEntry.quantity = newStock;
         if (!fgEntry.code) fgEntry.code = returnItem.productId;
-        
         delete fgEntry.availableQty;
       } else {
         const prodFromMaster = JSON.parse(localStorage.getItem('chinito_products') || '[]').find(p => p.code === returnItem.productId);
@@ -210,7 +286,8 @@ export default function SalesReturns() {
       }
     });
 
-    const updatedReturns = [...salesReturns, finalReturn];
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = rawReturns.map(sr => sr.srCode === srCode ? { ...sr, status: 'COMPLETED' } : sr);
     
     localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
     localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedSalesOrders));
@@ -220,11 +297,30 @@ export default function SalesReturns() {
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new Event('chinito_sales_updated'));
     window.dispatchEvent(new Event('chinito_finishedgoods_updated'));
+    window.dispatchEvent(new Event('chinito_collections_updated'));
 
-    setNewReturn({ customerId: '', customerName: '', soNumber: '', items: [] });
-    setSelectedSoItems([]);
-    setIsModalOpen(false);
-    setPreviewReturn(finalReturn);
+    loadAllData();
+
+    const approvedSrObject = updatedReturns.find(sr => sr.srCode === srCode);
+    setInlineNotification({
+      message: `Sales Return ${srCode} successfully approved and applied!`,
+      srObject: approvedSrObject
+    });
+  };
+
+  const handleDeclineReturn = (srCode) => {
+    if (userRole !== 'owner') {
+      alert('Only the owner can decline sales returns.');
+      return;
+    }
+
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = rawReturns.map(sr => sr.srCode === srCode ? { ...sr, status: 'DECLINED' } : sr);
+    localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
+    
+    window.dispatchEvent(new Event('storage'));
+    loadAllData();
+    alert(`Sales Return ${srCode} has been declined.`);
   };
 
   const handlePrint = () => {
@@ -238,8 +334,26 @@ export default function SalesReturns() {
           <h2 style={styles.pageTitle}>Sales Returns</h2>
           <p style={styles.sub}>Manage returned products and update inventory.</p>
         </div>
-        <button style={styles.primaryBtn} onClick={() => setIsModalOpen(true)}>+ Add Sales Return</button>
+        <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+          <span style={styles.roleIndicator}>Role: <b>{userRole.toUpperCase()}</b></span>
+          <button style={styles.primaryBtn} onClick={() => { setModalNotification(null); setIsModalOpen(true); }}>+ Add Sales Return</button>
+        </div>
       </div>
+
+      {inlineNotification && (
+        <div style={styles.notificationBanner}>
+          <span style={{flex: 1}}>{inlineNotification.message}</span>
+          <button 
+            style={styles.notificationOkBtn} 
+            onClick={() => {
+              setPreviewReturn(inlineNotification.srObject);
+              setInlineNotification(null);
+            }}
+          >
+            OK
+          </button>
+        </div>
+      )}
 
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Sales Return History</h3>
@@ -251,29 +365,53 @@ export default function SalesReturns() {
               <th style={styles.th}>CUSTOMER</th>
               <th style={styles.th}>SO REF</th>
               <th style={styles.th}>ITEMS RETURNED</th>
+              <th style={styles.th}>STATUS</th>
               <th style={styles.th}>ACTION</th>
             </tr>
           </thead>
           <tbody>
             {salesReturns.length === 0 ? (
-              <tr><td colSpan="6" style={styles.emptyCell}>No sales return history recorded.</td></tr>
+              <tr><td colSpan="7" style={styles.emptyCell}>No sales return history recorded.</td></tr>
             ) : (
-              salesReturns.map(sr => (
-                <tr key={sr.srCode} style={styles.trBody}>
-                  <td style={styles.td}><b>{sr.srCode}</b></td>
-                  <td style={styles.td}>{sr.returnDate}</td>
-                  <td style={styles.td}>{sr.customerName}</td>
-                  <td style={styles.td}>{sr.soNumber}</td>
-                  <td style={styles.td}>
-                    <ul style={styles.historyItemsList}>
-                      {sr.items.map((item, idx) => <li key={idx}>{item.productName} x {item.returnQty} ({item.reason})</li>)}
-                    </ul>
-                  </td>
-                  <td style={styles.td}>
-                    <button style={styles.previewBtn} onClick={() => setPreviewReturn(sr)}>👁️ View / Print</button>
-                  </td>
-                </tr>
-              ))
+              salesReturns.map(sr => {
+                const isApproved = sr.status === 'COMPLETED';
+                const isPending = !sr.status || sr.status === 'PENDING FOR APPROVAL';
+                
+                return (
+                  <tr key={sr.srCode} style={styles.trBody}>
+                    <td style={styles.td}><b>{sr.srCode}</b></td>
+                    <td style={styles.td}>{sr.returnDate}</td>
+                    <td style={styles.td}>{sr.customerName}</td>
+                    <td style={styles.td}>{sr.soNumber}</td>
+                    <td style={styles.td}>
+                      <ul style={styles.historyItemsList}>
+                        {sr.items.map((item, idx) => <li key={idx}>{item.productName} x {item.returnQty} ({item.reason})</li>)}
+                      </ul>
+                    </td>
+                    <td style={styles.td}>
+                      <span style={isApproved ? styles.badgeComplete : sr.status === 'DECLINED' ? styles.badgeDeclined : styles.badgePending}>
+                        {sr.status || 'PENDING FOR APPROVAL'}
+                      </span>
+                    </td>
+                    <td style={styles.td}>
+                      <div style={{display: 'flex', gap: '5px', flexWrap: 'wrap'}}>
+                        {isApproved && (
+                          <button style={styles.previewBtn} onClick={() => setPreviewReturn(sr)}>👁️ View Invoice</button>
+                        )}
+                        {isPending && userRole !== 'owner' && (
+                          <span style={{fontSize: '11px', color: '#888', fontStyle: 'italic', alignSelf: 'center'}}>Pending Approval</span>
+                        )}
+                        {isPending && userRole === 'owner' && (
+                          <>
+                            <button style={styles.approveBtn} onClick={() => handleApproveReturn(sr.srCode)}>Approve</button>
+                            <button style={styles.declineBtn} onClick={() => handleDeclineReturn(sr.srCode)}>Decline</button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -288,6 +426,32 @@ export default function SalesReturns() {
             </div>
             
             <div style={styles.modalBody}>
+              {modalNotification && (
+                <div style={{
+                  ...styles.notificationBanner, 
+                  backgroundColor: modalNotification.type === 'error' ? '#fef2f2' : '#ecfdf5',
+                  borderColor: modalNotification.type === 'error' ? '#f87171' : '#10b981',
+                  color: modalNotification.type === 'error' ? '#991b1b' : '#065f46'
+                }}>
+                  <span style={{flex: 1}}>{modalNotification.message}</span>
+                  <button 
+                    style={{
+                      ...styles.notificationOkBtn,
+                      backgroundColor: modalNotification.type === 'error' ? '#ef4444' : '#10b981'
+                    }} 
+                    onClick={() => {
+                      if (modalNotification.onOk) {
+                        modalNotification.onOk();
+                      } else {
+                        setModalNotification(null);
+                      }
+                    }}
+                  >
+                    OK
+                  </button>
+                </div>
+              )}
+
               <div style={styles.formGrid}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Customer Name *</label>
@@ -355,7 +519,7 @@ export default function SalesReturns() {
 
             <div style={styles.modalActions}>
               <button style={styles.cancelBtn} onClick={() => setIsModalOpen(false)}>Cancel</button>
-              <button style={styles.primaryBtn} onClick={handleSaveReturn}>Save & Preview Return Invoice</button>
+              <button style={styles.primaryBtn} onClick={handleSaveReturn}>Save Sales Return</button>
             </div>
           </div>
         </div>
@@ -408,7 +572,7 @@ export default function SalesReturns() {
               </table>
 
               <div style={styles.printFooter}>
-                <p style={{fontSize: '12px', color: '#555', marginBottom: '30px'}}>Items have been successfully accounted for in inventory records with the corresponding return reference remarks.</p>
+                <p style={{fontSize: '12px', color: '#555', marginBottom: '30px'}}>Status: <b>{previewReturn.status || 'COMPLETED'}</b></p>
                 <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '40px'}}>
                   <div style={{textAlign: 'center', width: '40%'}}>
                     <div style={{borderBottom: '1px solid #000', marginBottom: '5px', height: '30px'}}></div>
@@ -460,6 +624,9 @@ const styles = {
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 },
   sub: { fontSize: '14px', color: '#666', marginTop: '5px' },
+  roleIndicator: { fontSize: '12px', backgroundColor: '#e5e7eb', padding: '6px 10px', borderRadius: '4px', color: '#374151' },
+  notificationBanner: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ecfdf5', border: '1px solid #10b981', color: '#065f46', padding: '15px 20px', borderRadius: '8px', marginBottom: '20px', fontWeight: '500' },
+  notificationOkBtn: { backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' },
   card: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 2px 5px rgba(0,0,0,0.03)', marginBottom: '30px' },
   cardTitle: { fontSize: '18px', fontWeight: '600', color: '#444', marginBottom: '20px', marginTop: 0 },
   formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' },
@@ -478,6 +645,11 @@ const styles = {
   reasonInput: { width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'left' },
   historyItemsList: { margin: '0', paddingLeft: '15px', fontSize: '12px', color: '#555', textAlign: 'left' },
   previewBtn: { backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
+  approveBtn: { backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
+  declineBtn: { backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
+  badgePending: { backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+  badgeComplete: { backgroundColor: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+  badgeDeclined: { backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
   overlay: { position: 'fixed', top: '0', left: '0', right: '0', bottom: '0', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
   modal: { backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '750px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh', textAlign: 'left' },
   modalHeader: { backgroundColor: '#111827', color: '#fff', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: '600', fontSize: '15px', textAlign: 'left' },

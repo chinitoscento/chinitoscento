@@ -38,7 +38,7 @@ export default function Maceration() {
     const savedProd = JSON.parse(localStorage.getItem('chinito_maceration') || '[]');
     const savedFormulations = JSON.parse(
       localStorage.getItem('chinito_formulations') || 
-      localStorage.getItem('chinito_formulation') || '[]'
+      localStorage.getItem('chinito_inventory') || '[]'
     );
     const savedCatalogue = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
 

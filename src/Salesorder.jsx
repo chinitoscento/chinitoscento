@@ -47,11 +47,9 @@ export default function Salesorder() {
     }
   }, [orderDate]);
 
-  const showInlineMessage = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => {
-      setNotification(null);
-    }, 4000);
+  const showInlineMessage = (message, type = 'success', actionText = null, onAction = null) => {
+    setNotification({ message, type, actionText, onAction });
+    // Removed auto-dismiss timeout so it ONLY disappears when OK or x is clicked.
   };
 
   const loadData = () => {
@@ -178,10 +176,13 @@ export default function Salesorder() {
     setPaymentTerms('');
     setOrderStatus('');
     setOrderItems([{ productCode: '', productName: '', qty: '', price: '' }]);
-    showInlineMessage('Sales Order created successfully.');
+    showInlineMessage('Sales Order created successfully.', 'success', 'OK', () => setNotification(null));
   };
 
   const handleApproveSO = (soId) => {
+    const targetSo = salesOrders.find(so => so.id === soId || so.soNumber === soId);
+    if (!targetSo) return;
+
     const updatedList = salesOrders.map(so => {
       if (so.id === soId || so.soNumber === soId) {
         const approvedSO = { ...so, status: 'Approved' };
@@ -197,7 +198,16 @@ export default function Salesorder() {
 
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-    showInlineMessage('Sales Order has been approved, stock deducted, and invoice generated.');
+
+    showInlineMessage(
+      `Sales Order ${targetSo.soNumber} has been approved. Click OK to view invoice.`,
+      'success',
+      'OK',
+      () => {
+        setPreviewInvoice(targetSo);
+        setNotification(null);
+      }
+    );
   };
 
   const handleDeclineSO = (soId) => {
@@ -220,7 +230,7 @@ export default function Salesorder() {
 
     window.dispatchEvent(new Event('storage'));
     window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-    showInlineMessage('Sales Order has been declined and removed from invoices.', 'error');
+    showInlineMessage('Sales Order has been declined and removed from invoices.', 'error', 'OK', () => setNotification(null));
   };
 
   const deductStock = (items) => {
@@ -280,7 +290,13 @@ export default function Salesorder() {
 
       {notification && (
         <div style={notification.type === 'error' ? styles.notificationError : styles.notificationSuccess}>
-          {notification.message}
+          <span style={{flex: 1}}>{notification.message}</span>
+          {notification.actionText && (
+            <button style={styles.notificationActionBtn} onClick={notification.onAction}>
+              {notification.actionText}
+            </button>
+          )}
+          <button style={styles.notificationCloseBtn} onClick={() => setNotification(null)}>✕</button>
         </div>
       )}
 
@@ -302,36 +318,41 @@ export default function Salesorder() {
             {salesOrders.length === 0 ? (
               <tr><td colSpan="8" style={styles.emptyCell}>No sales orders recorded.</td></tr>
             ) : (
-              salesOrders.map(so => (
-                <tr key={so.id || so.soNumber} style={styles.trBody}>
-                  <td style={styles.td}><b>{so.soNumber}</b></td>
-                  <td style={styles.td}>{so.customerName}</td>
-                  <td style={styles.td}>{so.date}</td>
-                  <td style={styles.td}>{so.paymentMode}</td>
-                  <td style={styles.td}>₱{Number(so.totalDue || 0).toFixed(2)}</td>
-                  <td style={styles.td}>
-                    {so.status === 'Pending' && !isOwner ? (
-                      <span style={styles.badgePendingNonOwner}>PENDING FOR APPROVAL</span>
-                    ) : (
-                      <span style={getBadgeStyle(so.status)}>{so.status}</span>
-                    )}
-                  </td>
-                  <td style={styles.td}>{so.remarks || ''}</td>
-                  <td style={styles.td}>
-                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-                      {so.status === 'Pending' && isOwner && (
-                        <>
-                          <button style={styles.approveBtn} onClick={() => handleApproveSO(so.id || so.soNumber)}>Approve</button>
-                          <button style={styles.declineBtn} onClick={() => handleDeclineSO(so.id || so.soNumber)}>Decline</button>
-                        </>
+              salesOrders.map(so => {
+                const isApproved = so.status === 'Approved';
+                const showViewInvoice = isOwner || isApproved;
+
+                return (
+                  <tr key={so.id || so.soNumber} style={styles.trBody}>
+                    <td style={styles.td}><b>{so.soNumber}</b></td>
+                    <td style={styles.td}>{so.customerName}</td>
+                    <td style={styles.td}>{so.date}</td>
+                    <td style={styles.td}>{so.paymentMode}</td>
+                    <td style={styles.td}>₱{Number(so.totalDue || 0).toFixed(2)}</td>
+                    <td style={styles.td}>
+                      {so.status === 'Pending' && !isOwner ? (
+                        <span style={styles.badgePendingNonOwner}>PENDING FOR APPROVAL</span>
+                      ) : (
+                        <span style={getBadgeStyle(so.status)}>{so.status}</span>
                       )}
-                      {so.status !== 'Declined' && (
-                        <button style={styles.actionBtn} onClick={() => setPreviewInvoice(so)}>View Invoice</button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))
+                    </td>
+                    <td style={styles.td}>{so.remarks || ''}</td>
+                    <td style={styles.td}>
+                      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                        {so.status === 'Pending' && isOwner && (
+                          <>
+                            <button style={styles.approveBtn} onClick={() => handleApproveSO(so.id || so.soNumber)}>Approve</button>
+                            <button style={styles.declineBtn} onClick={() => handleDeclineSO(so.id || so.soNumber)}>Decline</button>
+                          </>
+                        )}
+                        {so.status !== 'Declined' && showViewInvoice && (
+                          <button style={styles.actionBtn} onClick={() => setPreviewInvoice(so)}>View Invoice</button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>
@@ -543,8 +564,10 @@ const styles = {
   headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   pageTitle: { fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 },
   sub: { fontSize: '14px', color: '#666', marginTop: '5px' },
-  notificationSuccess: { backgroundColor: '#d1fae5', color: '#065f46', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #a7f3d0' },
-  notificationError: { backgroundColor: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #fecaca' },
+  notificationSuccess: { display: 'flex', alignItems: 'center', backgroundColor: '#d1fae5', color: '#065f46', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #a7f3d0' },
+  notificationError: { display: 'flex', alignItems: 'center', backgroundColor: '#fee2e2', color: '#991b1b', padding: '12px 16px', borderRadius: '6px', marginBottom: '20px', fontSize: '14px', fontWeight: '500', border: '1px solid #fecaca' },
+  notificationActionBtn: { backgroundColor: '#065f46', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '13px', marginLeft: '15px' },
+  notificationCloseBtn: { background: 'none', border: 'none', color: 'inherit', fontSize: '16px', cursor: 'pointer', marginLeft: '10px', padding: '0 4px', fontWeight: 'bold' },
   card: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 2px 5px rgba(0,0,0,0.03)', marginBottom: '30px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px' },
   trHead: { backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' },
