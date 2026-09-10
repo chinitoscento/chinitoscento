@@ -249,7 +249,7 @@ export default function MainLayout({ onLogout }) {
             </div>
           )}
 
-          {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations', 'SRP Control'])}
+          {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations'])}
           {!isManager && renderSection('Purchasing', ['Purchases', 'Purchase Cost Monitoring', 'Costing'])}
           {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods', 'Stock Ledger'])}
           {!isManager && renderSection('Production', ['Maceration', 'Packaging'])}
