@@ -29,6 +29,7 @@ export default function Formulations() {
     ];
   });
 
+  const [availableProducts, setAvailableProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -49,10 +50,32 @@ export default function Formulations() {
     price: ''
   });
 
+  // Load and listen to products changes from localStorage
+  useEffect(() => {
+    const fetchProducts = () => {
+      const savedProducts = localStorage.getItem('chinito_products');
+      if (savedProducts) {
+        setAvailableProducts(JSON.parse(savedProducts));
+      }
+    };
+    fetchProducts();
+    window.addEventListener('storage', fetchProducts);
+    return () => window.removeEventListener('storage', fetchProducts);
+  }, []);
+
   useEffect(() => {
     localStorage.setItem('chinito_formulations', JSON.stringify(formulations));
     window.dispatchEvent(new Event('chinito_formulations_updated'));
   }, [formulations]);
+
+  // Filter out products that are already added (unless we are editing the current one)
+  const unmappedProducts = availableProducts.filter(prod => {
+    if (editingId) {
+      const currentEditing = formulations.find(f => f.id === editingId);
+      if (currentEditing && currentEditing.scentName === prod.name) return true;
+    }
+    return !formulations.some(f => f.scentName.toLowerCase() === prod.name.toLowerCase());
+  });
 
   const handleOpenAddModal = () => {
     setEditingId(null);
@@ -98,6 +121,20 @@ export default function Formulations() {
   const handleDelete = (id) => {
     if (window.confirm('Remove this scent formulation mapping?')) {
       setFormulations(prev => prev.filter(f => f.id !== id));
+    }
+  };
+
+  const handleProductSelectChange = (e) => {
+    const selectedName = e.target.value;
+    const foundProd = availableProducts.find(p => p.name === selectedName);
+    if (foundProd) {
+      setFormData(prev => ({
+        ...prev,
+        scentName: foundProd.name,
+        productCode: foundProd.code || prev.productCode
+      }));
+    } else {
+      setFormData(prev => ({ ...prev, scentName: selectedName }));
     }
   };
 
@@ -214,6 +251,27 @@ export default function Formulations() {
 
             <form onSubmit={handleSubmit} style={styles.formStack}>
               <div style={styles.inputGroup}>
+                <label style={styles.label}>Select Scent from Products *</label>
+                <select 
+                  name="scentName"
+                  required
+                  value={formData.scentName}
+                  onChange={handleProductSelectChange}
+                  style={styles.input}
+                >
+                  <option value="">-- Choose unmapped product scent --</option>
+                  {unmappedProducts.map((prod) => (
+                    <option key={prod.id} value={prod.name}>
+                      {prod.name} ({prod.code})
+                    </option>
+                  ))}
+                </select>
+                {unmappedProducts.length === 0 && !editingId && (
+                  <span style={{ fontSize: '11px', color: '#d9534f' }}>All existing products have already been added to formulations. Create new ones in the Products page first.</span>
+                )}
+              </div>
+
+              <div style={styles.inputGroup}>
                 <label style={styles.label}>Product Code ID *</label>
                 <input 
                   type="text" 
@@ -222,22 +280,6 @@ export default function Formulations() {
                   placeholder="e.g. CS-ANT-01"
                   value={formData.productCode}
                   onChange={(e) => setFormData({ ...formData, productCode: e.target.value })}
-                  style={styles.input}
-                />
-              </div>
-
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Scent Name *</label>
-                <input 
-                  type="text" 
-                  name="scentName"
-                  required
-                  placeholder="e.g. ANTONITO"
-                  value={formData.scentName}
-                  onChange={(e) => {
-                    const val = e.target.value.toUpperCase();
-                    setFormData(prev => ({ ...prev, scentName: val }));
-                  }}
                   style={styles.input}
                 />
               </div>

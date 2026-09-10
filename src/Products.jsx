@@ -5,7 +5,6 @@ export default function Products() {
     const saved = localStorage.getItem('chinito_products');
     if (saved) {
       const parsed = JSON.parse(saved);
-      // Auto-assign product codes to legacy entries if they lack one
       return parsed.map((prod, index) => {
         if (!prod.code) {
           const name = prod.name || 'Scent';
@@ -33,6 +32,7 @@ export default function Products() {
 
   useEffect(() => {
     localStorage.setItem('chinito_products', JSON.stringify(products));
+    window.dispatchEvent(new Event('storage'));
   }, [products]);
 
   const handleInputChange = (e) => {
@@ -81,7 +81,6 @@ export default function Products() {
 
   const handleOpenAddModal = () => {
     setEditingId(null);
-    // Auto-generate a default code preview for new entry
     const autoClean = 'SNT';
     const autoNum = String(products.length + 1).padStart(2, '0');
     setFormData({ 
@@ -119,7 +118,6 @@ export default function Products() {
     const defaultImage = 'https://images.unsplash.com/photo-1523293182086-7651a899d37f?w=400&auto=format&fit=crop&q=80';
     const finalImage = formData.image.trim() !== '' ? formData.image : defaultImage;
 
-    // Fallback code generator if field was left blank
     let finalCode = formData.code.trim();
     if (!finalCode) {
       const clean = formData.name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
@@ -167,7 +165,6 @@ export default function Products() {
 
   return (
     <div style={styles.container}>
-      {/* Header Block */}
       <div style={styles.headerBlock}>
         <div>
           <h1 style={styles.pageTitle}>Product & Scent Catalog</h1>
@@ -176,14 +173,11 @@ export default function Products() {
         <button 
           style={styles.primaryButton}
           onClick={handleOpenAddModal}
-          onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
-          onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
         >
           + Add New Scent
         </button>
       </div>
 
-      {/* Toolbar / Search */}
       <div style={styles.toolbar}>
         <input 
           type="text" 
@@ -197,7 +191,6 @@ export default function Products() {
         </div>
       </div>
 
-      {/* Scent Grid */}
       <div style={styles.grid}>
         {filteredProducts.length === 0 ? (
           <div style={styles.emptyStateCard}>
@@ -241,7 +234,6 @@ export default function Products() {
         )}
       </div>
 
-      {/* Modal Form */}
       {isModalOpen && (
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
@@ -353,260 +345,36 @@ export default function Products() {
 const primaryGold = '#c5a059';
 
 const styles = {
-  container: {
-    width: '100%',
-    maxWidth: '100%',
-    boxSizing: 'border-box',
-  },
-  headerBlock: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '25px',
-  },
-  pageTitle: {
-    fontSize: '24px',
-    fontWeight: '600',
-    color: '#1a1a1a',
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-    letterSpacing: '1px',
-    margin: '0 0 6px 0',
-  },
-  pageSubtitle: {
-    fontSize: '14px',
-    color: '#666666',
-    margin: 0,
-    letterSpacing: '0.3px',
-  },
-  primaryButton: {
-    backgroundColor: primaryGold,
-    color: '#ffffff',
-    border: 'none',
-    padding: '10px 20px',
-    borderRadius: '4px',
-    fontWeight: '600',
-    fontSize: '13px',
-    letterSpacing: '0.8px',
-    cursor: 'pointer',
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-    boxShadow: '0 2px 8px rgba(197,160,89,0.3)',
-    transition: 'background-color 0.2s ease',
-  },
-  secondaryButton: {
-    backgroundColor: 'transparent',
-    color: '#555',
-    border: '1px solid #ccc',
-    padding: '10px 20px',
-    borderRadius: '4px',
-    fontWeight: '600',
-    fontSize: '13px',
-    cursor: 'pointer',
-  },
-  toolbar: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '25px',
-  },
-  searchInput: {
-    width: '320px',
-    padding: '10px 14px',
-    borderRadius: '4px',
-    border: '1px solid #dcd6cd',
-    backgroundColor: '#ffffff',
-    fontSize: '13.5px',
-    outline: 'none',
-  },
-  recordCount: {
-    fontSize: '13px',
-    color: '#666',
-  },
-  grid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(3, 1fr)',
-    gap: '24px',
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2ded8',
-    borderRadius: '8px',
-    overflow: 'hidden',
-    boxShadow: '0 4px 15px rgba(0, 0, 0, 0.03)',
-    display: 'flex',
-    flexDirection: 'column',
-    transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-  },
-  imageContainer: {
-    width: '100%',
-    height: '240px',
-    backgroundColor: '#f7f6f2',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    overflow: 'hidden',
-    padding: '10px',
-    boxSizing: 'border-box',
-  },
-  productImage: {
-    maxWidth: '100%',
-    maxHeight: '100%',
-    width: 'auto',
-    height: 'auto',
-    objectFit: 'contain',
-  },
-  cardContent: {
-    padding: '22px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '12px',
-    textAlign: 'left',
-  },
-  titleSection: {
-    display: 'flex',
-    flexDirection: 'column',
-    alignItems: 'center',
-    gap: '6px',
-  },
-  codeBadge: {
-    fontSize: '11px',
-    fontWeight: 'bold',
-    color: '#c5a059',
-    backgroundColor: '#fdfbf7',
-    padding: '2px 8px',
-    borderRadius: '4px',
-    border: '1px solid #e2ded8',
-    letterSpacing: '0.8px',
-    fontFamily: "'Cinzel', serif",
-  },
-  productName: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1a1a1a',
-    margin: 0,
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-    letterSpacing: '0.5px',
-    textAlign: 'center',
-  },
-  genderBadge: {
-    color: '#ffffff',
-    padding: '3px 10px',
-    borderRadius: '12px',
-    fontSize: '11px',
-    fontWeight: '700',
-    letterSpacing: '0.5px',
-    fontFamily: "'Segoe UI', sans-serif",
-  },
-  productRemarks: {
-    fontSize: '13px',
-    color: '#4a4a4a',
-    margin: 0,
-    lineHeight: '1.6',
-    textAlign: 'left',
-    whiteSpace: 'pre-line',
-  },
-  cardFooterActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '15px',
-    marginTop: '10px',
-    paddingTop: '10px',
-    borderTop: '1px solid #f0ece6',
-  },
-  textActionButton: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    fontSize: '12.5px',
-    fontWeight: '600',
-    color: '#555',
-    padding: 0,
-    transition: 'color 0.2s',
-  },
-  emptyStateCard: {
-    gridColumn: '1 / -1',
-    backgroundColor: '#fff',
-    padding: '50px',
-    textAlign: 'center',
-    border: '1px dashed #dcd6cd',
-    borderRadius: '8px',
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  modalCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: '6px',
-    width: '480px',
-    maxWidth: '90vw',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    padding: '30px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-    border: '1px solid #e2ded8',
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-    borderBottom: '1px solid #f0ece6',
-    paddingBottom: '12px',
-  },
-  modalTitle: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#1a1a1a',
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-    margin: 0,
-  },
-  closeButton: {
-    background: 'none',
-    border: 'none',
-    fontSize: '22px',
-    cursor: 'pointer',
-    color: '#888',
-  },
-  formStack: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '16px',
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px',
-  },
-  label: {
-    fontSize: '11px',
-    fontWeight: '700',
-    color: '#555555',
-    letterSpacing: '0.8px',
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-  },
-  input: {
-    padding: '10px 12px',
-    borderRadius: '4px',
-    border: '1px solid #dcd6cd',
-    fontSize: '13.5px',
-    backgroundColor: '#fff',
-    outline: 'none',
-    fontFamily: 'inherit',
-  },
-  modalFooter: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '12px',
-    marginTop: '10px',
-    borderTop: '1px solid #f0ece6',
-    paddingTop: '15px',
-  }
+  container: { width: '100%', maxWidth: '100%', boxSizing: 'border-box' },
+  headerBlock: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '25px' },
+  pageTitle: { fontSize: '22px', fontWeight: '600', color: '#1a1a1a', fontFamily: "'Cinzel', 'Segoe UI', serif", margin: '0 0 4px 0' },
+  pageSubtitle: { fontSize: '13.5px', color: '#666', margin: 0 },
+  primaryButton: { backgroundColor: primaryGold, color: '#fff', border: 'none', padding: '9px 16px', borderRadius: '4px', fontWeight: '600', fontSize: '12.5px', cursor: 'pointer', fontFamily: "'Cinzel', 'Segoe UI', serif" },
+  secondaryButton: { backgroundColor: 'transparent', color: '#555', border: '1px solid #ccc', padding: '9px 16px', borderRadius: '4px', fontWeight: '600', fontSize: '12.5px', cursor: 'pointer' },
+  toolbar: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' },
+  searchInput: { width: '300px', padding: '8px 12px', borderRadius: '4px', border: '1px solid #dcd6cd', fontSize: '13px', outline: 'none' },
+  recordCount: { fontSize: '13px', color: '#666' },
+  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '20px' },
+  card: { backgroundColor: '#fff', border: '1px solid #e2ded8', borderRadius: '8px', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 2px 8px rgba(0,0,0,0.02)' },
+  imageContainer: { width: '100%', height: '200px', backgroundColor: '#f9f8f6', overflow: 'hidden' },
+  productImage: { width: '100%', height: '100%', objectFit: 'cover' },
+  cardContent: { padding: '16px', display: 'flex', flexDirection: 'column', flex: 1 },
+  titleSection: { display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' },
+  codeBadge: { backgroundColor: '#f4f2ee', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '11px', fontWeight: '600', alignSelf: 'flex-start' },
+  productName: { fontSize: '16px', fontWeight: '600', color: '#1a1a1a', margin: 0, fontFamily: "'Cinzel', 'Segoe UI', serif" },
+  genderBadge: { color: '#fff', padding: '2px 8px', borderRadius: '12px', fontSize: '10px', fontWeight: '600', alignSelf: 'flex-start', textTransform: 'uppercase' },
+  productRemarks: { fontSize: '12.5px', color: '#555', margin: '0 0 16px 0', flex: 1, whiteSpace: 'pre-line' },
+  cardFooterActions: { display: 'flex', justifyContent: 'flex-end', gap: '12px', borderTop: '1px solid #eee', paddingTop: '10px' },
+  textActionButton: { background: 'none', border: 'none', cursor: 'pointer', fontSize: '12px', fontWeight: '600', color: '#333' },
+  emptyStateCard: { gridColumn: '1 / -1', padding: '40px', textAlign: 'center', backgroundColor: '#fff', border: '1px solid #e2ded8', borderRadius: '8px' },
+  modalOverlay: { position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 },
+  modalCard: { backgroundColor: '#fff', padding: '24px', borderRadius: '8px', width: '500px', maxWidth: '90%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 20px rgba(0,0,0,0.15)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', borderBottom: '1px solid #eee', paddingBottom: '10px' },
+  modalTitle: { fontSize: '18px', fontWeight: '600', color: '#111', margin: 0 },
+  closeButton: { background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' },
+  formStack: { display: 'flex', flexDirection: 'column', gap: '12px' },
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '5px' },
+  label: { fontSize: '11.5px', fontWeight: '700', color: '#444', textTransform: 'uppercase' },
+  input: { padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '13px', outline: 'none' },
+  modalFooter: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '15px', borderTop: '1px solid #eee', paddingTop: '12px' }
 };
