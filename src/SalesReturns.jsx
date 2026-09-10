@@ -302,7 +302,7 @@ export default function SalesReturns() {
         .from('invoices')
         .select('*')
         .eq('so_number', targetSr.soNumber)
-        .single();
+        .limit(1);
 
       if (existingInv) {
         await supabase

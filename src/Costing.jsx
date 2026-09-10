@@ -36,7 +36,7 @@ export default function Costing() {
         supabase.from('raw_materials_catalogue').select('*'),
         supabase.from('purchases').select('*'),
         supabase.from('formulations').select('*'),
-        supabase.from('settings').select('*').single()
+        supabase.from('settings').select('*').limit(1)
       ]);
 
       if (catalogError && catalogError.code !== 'PGRST116') console.error(catalogError);

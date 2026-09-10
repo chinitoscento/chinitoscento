@@ -16,7 +16,7 @@ export default function Login({ onLoginSuccess }) {
     let managerPass = 'Password123';
 
     try {
-      const { data, error: settingsError } = await supabase.from('settings').select('*').limit(1).single();
+      const { data, error: settingsError } = await supabase.from('settings').select('*').limit(1);
       if (!settingsError && data) {
         adminUser = data.login_username || data.loginUsername || adminUser;
         adminPass = data.login_password || data.loginPassword || adminPass;

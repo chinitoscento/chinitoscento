@@ -22,8 +22,7 @@ export default function SystemSettings() {
       const { data, error } = await supabase
         .from('system_settings')
         .select('*')
-        .limit(1)
-        .single();
+        .limit(1);
 
       if (error && error.code !== 'PGRST116') {
         throw error;
@@ -59,8 +58,7 @@ export default function SystemSettings() {
       const { data: existingData } = await supabase
         .from('system_settings')
         .select('id')
-        .limit(1)
-        .single();
+        .limit(1);
 
       const payload = {
         login_username: settings.loginUsername,
