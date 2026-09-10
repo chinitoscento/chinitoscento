@@ -1,5 +1,7 @@
+Dashboard.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Dashboard({ onNavigate }) {
   const [hasAlertRawMaterials, setHasAlertRawMaterials] = useState(false);
@@ -7,46 +9,43 @@ export default function Dashboard({ onNavigate }) {
   const [productionSummary, setProductionSummary] = useState({ text: '—', count: 0 });
 
   useEffect(() => {
-    loadDashboardData();
-  }, []);
-
-  const loadDashboardData = async () => {
+    // 1. Raw Materials Inventory Check
     try {
-      // Fetch data concurrently from Supabase tables
-      const [
-        { data: inventoryData, error: invError },
-        { data: fgData, error: fgError },
-        { data: macerationData, error: macError }
-      ] = await Promise.all([
-        supabase.from('inventory').select('*'),
-        supabase.from('finished_goods').select('*'),
-        supabase.from('maceration').select('*')
-      ]);
-
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
-      if (fgError && fgError.code !== 'PGRST116') console.error(fgError);
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
-
-      // 1. Raw Materials Inventory Check
-      const rawMaterials = inventoryData || [];
+      const rawMaterials = JSON.parse(
+        localStorage.getItem('chinito_raw_materials') || 
+        localStorage.getItem('chinito_inventory') || 
+        '[]'
+      );
       const hasAlert = rawMaterials.some(item => {
         const status = (item.status || '').toLowerCase();
-        const stock = parseFloat(item.stock || item.quantity || item.stock_qty || item.stockQty || 0);
-        const minStock = parseFloat(item.min_stock || item.minStock || item.threshold || 10);
+        const stock = parseFloat(item.stock || item.quantity || item.stockQty || 0);
+        const minStock = parseFloat(item.minStock || item.threshold || 10);
         return status.includes('alert') || stock <= minStock;
       });
       setHasAlertRawMaterials(hasAlert);
+    } catch (e) {
+      setHasAlertRawMaterials(false);
+    }
 
-      // 2. Finished Goods Inventory Total Available Qty
-      const fgInventory = fgData || [];
+    // 2. Finished Goods Inventory Total Available Qty
+    try {
+      const fgInventory = JSON.parse(
+        localStorage.getItem('chinito_finished_goods') || 
+        localStorage.getItem('chinito_packaging') || 
+        '[]'
+      );
       const totalFG = fgInventory.reduce((sum, item) => {
-        const qty = parseFloat(item.quantity || item.stock || item.available_qty || item.availableQty || item.actual_qty || item.actualQty || 0);
+        const qty = parseFloat(item.quantity || item.stock || item.availableQty || item.actualQty || 0);
         return sum + qty;
       }, 0);
       setTotalFinishedGoods(totalFG);
+    } catch (e) {
+      setTotalFinishedGoods(0);
+    }
 
-      // 3. Production Batches Status Check (Macerating vs Ready, excluding Bottled)
-      const macerationBatches = macerationData || [];
+    // 3. Production Batches Status Check (Macerating vs Ready, excluding Bottled)
+    try {
+      const macerationBatches = JSON.parse(localStorage.getItem('chinito_maceration') || '[]');
       let maceratingCount = 0;
       let readyCount = 0;
 
@@ -66,10 +65,10 @@ export default function Dashboard({ onNavigate }) {
       } else {
         setProductionSummary({ text: '—', count: 0 });
       }
-    } catch (err) {
-      console.error('Error loading dashboard data from Supabase:', err);
+    } catch (e) {
+      setProductionSummary({ text: '—', count: 0 });
     }
-  };
+  }, []);
 
   return (
     <div style={styles.container}>

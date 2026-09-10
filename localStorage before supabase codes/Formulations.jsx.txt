@@ -1,8 +1,37 @@
+Formulations.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Formulations() {
-  const [formulations, setFormulations] = useState([]);
+  const [formulations, setFormulations] = useState(() => {
+    const saved = localStorage.getItem('chinito_formulations');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return parsed.map((form, index) => {
+        if (!form.productCode) {
+          const name = form.scentName || 'Scent';
+          const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
+          const numStr = String(index + 1).padStart(2, '0');
+          return { ...form, productCode: `CS-${clean}-${numStr}` };
+        }
+        return form;
+      });
+    }
+    return [
+      { id: 1, productCode: 'CS-ANT-01', scentName: 'ANTONITO', oilId: 'RM-001', solventId: 'RM-011', bottleId: 'RM-012', bottleStickerId: 'RM-014', boxId: 'RM-024', boxStickerId: 'RM-025', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 2, productCode: 'CS-AUR-02', scentName: 'AURELIUS', oilId: 'RM-002', solventId: 'RM-011', bottleId: 'RM-012', bottleStickerId: 'RM-015', boxId: 'RM-024', boxStickerId: 'RM-026', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 3, productCode: 'CS-DWI-03', scentName: 'DWIGHT', oilId: 'RM-003', solventId: 'RM-011', bottleId: 'RM-012', bottleStickerId: 'RM-016', boxId: 'RM-024', boxStickerId: 'RM-027', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 4, productCode: 'CS-GAB-04', scentName: 'GAB', oilId: 'RM-004', solventId: 'RM-011', bottleId: 'RM-012', bottleStickerId: 'RM-017', boxId: 'RM-024', boxStickerId: 'RM-028', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 5, productCode: 'CS-REI-05', scentName: 'REINE DE NUIT', oilId: 'RM-005', solventId: 'RM-011', bottleId: 'RM-012', bottleStickerId: 'RM-018', boxId: 'RM-024', boxStickerId: 'RM-029', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 6, productCode: 'CS-BLA-06', scentName: 'BLANCHE', oilId: 'RM-006', solventId: 'RM-011', bottleId: 'RM-013', bottleStickerId: 'RM-019', boxId: 'RM-024', boxStickerId: 'RM-030', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 7, productCode: 'CS-CUC-07', scentName: 'CUCAMELLA', oilId: 'RM-007', solventId: 'RM-011', bottleId: 'RM-013', bottleStickerId: 'RM-020', boxId: 'RM-024', boxStickerId: 'RM-031', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 8, productCode: 'CS-EMI-08', scentName: 'EMILY', oilId: 'RM-008', solventId: 'RM-011', bottleId: 'RM-013', bottleStickerId: 'RM-021', boxId: 'RM-024', boxStickerId: 'RM-032', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 9, productCode: 'CS-KIT-09', scentName: 'KITTY', oilId: 'RM-009', solventId: 'RM-011', bottleId: 'RM-013', bottleStickerId: 'RM-022', boxId: 'RM-024', boxStickerId: 'RM-033', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+      { id: 10, productCode: 'CS-VEL-10', scentName: 'VELOURA', oilId: 'RM-010', solventId: 'RM-011', bottleId: 'RM-013', bottleStickerId: 'RM-023', boxId: 'RM-024', boxStickerId: 'RM-034', wrappingId: 'RM-035', sizeValue: 50, oilPercentage: 20, solventPercentage: 80 },
+    ];
+  });
+
   const [availableProducts, setAvailableProducts] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -24,81 +53,31 @@ export default function Formulations() {
     price: ''
   });
 
+  // Load and listen to products changes from localStorage
   useEffect(() => {
-    loadFormulationsData();
+    const fetchProducts = () => {
+      const savedProducts = localStorage.getItem('chinito_products');
+      if (savedProducts) {
+        setAvailableProducts(JSON.parse(savedProducts));
+      }
+    };
+    fetchProducts();
+    window.addEventListener('storage', fetchProducts);
+    return () => window.removeEventListener('storage', fetchProducts);
   }, []);
 
-  const loadFormulationsData = async () => {
-    try {
-      const [
-        { data: formRows, error: formError },
-        { data: prodRows, error: prodError }
-      ] = await Promise.all([
-        supabase.from('formulations').select('*').order('id', { ascending: true }),
-        supabase.from('products').select('*')
-      ]);
-
-      if (formError && formError.code !== 'PGRST116') console.error(formError);
-      if (prodError && prodError.code !== 'PGRST116') console.error(prodError);
-
-      const loadedForms = formRows || [];
-      const formattedForms = loadedForms.map((form, index) => {
-        const prodCode = form.product_code || form.productCode;
-        const scentName = form.scent_name || form.scentName;
-        if (!prodCode) {
-          const name = scentName || 'Scent';
-          const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
-          const numStr = String(index + 1).padStart(2, '0');
-          return {
-            id: form.id,
-            productCode: `CS-${clean}-${numStr}`,
-            scentName: scentName,
-            sizeValue: form.size_value || form.sizeValue,
-            oilPercentage: form.oil_percentage ?? form.oilPercentage,
-            solventPercentage: form.solvent_percentage ?? form.solventPercentage,
-            oilId: form.oil_id || form.oilId,
-            solventId: form.solvent_id || form.solventId,
-            bottleId: form.bottle_id || form.bottleId,
-            bottleStickerId: form.bottle_sticker_id || form.bottleStickerId,
-            boxId: form.box_id || form.boxId,
-            boxStickerId: form.box_sticker_id || form.boxStickerId,
-            wrappingId: form.wrapping_id || form.wrappingId,
-            price: form.price
-          };
-        }
-        return {
-          id: form.id,
-          productCode: prodCode,
-          scentName: scentName,
-          sizeValue: form.size_value || form.sizeValue,
-          oilPercentage: form.oil_percentage ?? form.oilPercentage,
-          solventPercentage: form.solvent_percentage ?? form.solventPercentage,
-          oilId: form.oil_id || form.oilId,
-          solventId: form.solvent_id || form.solventId,
-          bottleId: form.bottle_id || form.bottleId,
-          bottleStickerId: form.bottle_sticker_id || form.bottleStickerId,
-          boxId: form.box_id || form.boxId,
-          boxStickerId: form.box_sticker_id || form.boxStickerId,
-          wrappingId: form.wrapping_id || form.wrappingId,
-          price: form.price
-        };
-      });
-
-      setFormulations(formattedForms);
-      setAvailableProducts(prodRows || []);
-    } catch (err) {
-      console.error('Error loading formulations from Supabase:', err);
-    }
-  };
+  useEffect(() => {
+    localStorage.setItem('chinito_formulations', JSON.stringify(formulations));
+    window.dispatchEvent(new Event('chinito_formulations_updated'));
+  }, [formulations]);
 
   // Filter out products that are already added (unless we are editing the current one)
   const unmappedProducts = availableProducts.filter(prod => {
-    const prodName = prod.name || prod.scent || '';
     if (editingId) {
       const currentEditing = formulations.find(f => f.id === editingId);
-      if (currentEditing && currentEditing.scentName.toLowerCase() === prodName.toLowerCase()) return true;
+      if (currentEditing && currentEditing.scentName === prod.name) return true;
     }
-    return !formulations.some(f => f.scentName.toLowerCase() === prodName.toLowerCase());
+    return !formulations.some(f => f.scentName.toLowerCase() === prod.name.toLowerCase());
   });
 
   const handleOpenAddModal = () => {
@@ -142,34 +121,27 @@ export default function Formulations() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (window.confirm('Remove this scent formulation mapping?')) {
-      try {
-        const { error } = await supabase.from('formulations').delete().eq('id', id);
-        if (error) throw error;
-        await loadFormulationsData();
-      } catch (err) {
-        console.error('Error deleting formulation:', err);
-        alert('Failed to delete formulation.');
-      }
+      setFormulations(prev => prev.filter(f => f.id !== id));
     }
   };
 
   const handleProductSelectChange = (e) => {
     const selectedName = e.target.value;
-    const foundProd = availableProducts.find(p => (p.name || p.scent) === selectedName);
+    const foundProd = availableProducts.find(p => p.name === selectedName);
     if (foundProd) {
       setFormData(prev => ({
         ...prev,
-        scentName: foundProd.name || foundProd.scent,
-        productCode: foundProd.code || foundProd.product_code || prev.productCode
+        scentName: foundProd.name,
+        productCode: foundProd.code || prev.productCode
       }));
     } else {
       setFormData(prev => ({ ...prev, scentName: selectedName }));
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.scentName) return;
 
@@ -180,46 +152,22 @@ export default function Formulations() {
       finalCode = `CS-${clean}-${numStr}`;
     }
 
-    const dbPayload = {
-      product_code: finalCode,
-      scent_name: formData.scentName,
-      size_value: String(formData.sizeValue),
-      oil_id: formData.oilId,
-      oil_percentage: Number(formData.oilPercentage),
-      solvent_id: formData.solventId,
-      solvent_percentage: Number(formData.solventPercentage),
-      bottle_id: formData.bottleId,
-      bottle_sticker_id: formData.bottleStickerId,
-      box_id: formData.boxId,
-      box_sticker_id: formData.boxStickerId,
-      wrapping_id: formData.wrappingId,
-      price: formData.price !== '' ? Number(formData.price) : null
+    const payload = { 
+      ...formData, 
+      productCode: finalCode,
+      price: formData.price !== '' ? Number(formData.price) : undefined 
     };
 
-    try {
-      if (editingId) {
-        const { error } = await supabase
-          .from('formulations')
-          .update(dbPayload)
-          .eq('id', editingId);
-        if (error) throw error;
-      } else {
-        const { error } = await supabase
-          .from('formulations')
-          .insert([dbPayload]);
-        if (error) throw error;
-      }
-
-      await loadFormulationsData();
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Error saving formulation to Supabase:', err);
-      alert('Failed to save formulation.');
+    if (editingId) {
+      setFormulations(prev => prev.map(f => f.id === editingId ? { ...payload, id: editingId } : f));
+    } else {
+      setFormulations(prev => [...prev, { ...payload, id: Date.now() }]);
     }
+    setIsModalOpen(false);
   };
 
   const filteredFormulations = formulations.filter(f => 
-    (f.scentName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    f.scentName.toLowerCase().includes(searchTerm.toLowerCase()) ||
     (f.productCode && f.productCode.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 

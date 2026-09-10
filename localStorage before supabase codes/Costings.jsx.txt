@@ -1,6 +1,8 @@
+Costings.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient'; // Adjust path to your supabase client file
 
 // Helper function to parse volume size into mL
 const parseVolumeInMl = (volumeStr) => {
@@ -22,226 +24,201 @@ export default function Costing() {
 
   useEffect(() => {
     loadCostingData();
+    window.addEventListener('storage', loadCostingData);
+    window.addEventListener('chinito_purchases_updated', loadCostingData);
+    window.addEventListener('chinito_formulations_updated', loadCostingData);
+    window.addEventListener('chinito_raw_materials_updated', loadCostingData);
+    return () => {
+      window.removeEventListener('storage', loadCostingData);
+      window.removeEventListener('chinito_purchases_updated', loadCostingData);
+      window.removeEventListener('chinito_formulations_updated', loadCostingData);
+      window.removeEventListener('chinito_raw_materials_updated', loadCostingData);
+    };
   }, []);
 
-  const loadCostingData = async () => {
-    try {
-      // 1. Fetch Catalog, Purchases, Formulations, and Settings from Supabase tables
-      const [
-        { data: catalogData, error: catalogError },
-        { data: purchasesData, error: purchasesError },
-        { data: formulationsData, error: formulationsError },
-        { data: settingsData, error: settingsError }
-      ] = await Promise.all([
-        supabase.from('raw_materials_catalogue').select('*'),
-        supabase.from('purchases').select('*'),
-        supabase.from('formulations').select('*'),
-        supabase.from('settings').select('*').single()
-      ]);
+  const loadCostingData = () => {
+    // 1. Load Catalog & Unit Costs via PurchaseCostMonitoring logic
+    const catalogItems = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
+    const savedPurchases = JSON.parse(localStorage.getItem('chinito_purchases') || '[]');
+    const savedFormulations = JSON.parse(localStorage.getItem('chinito_formulations') || '[]');
+    const savedSettings = JSON.parse(localStorage.getItem('chinito_settings') || '{}');
 
-      if (catalogError && catalogError.code !== 'PGRST116') console.error(catalogError);
-      if (purchasesError && purchasesError.code !== 'PGRST116') console.error(purchasesError);
-      if (formulationsError && formulationsError.code !== 'PGRST116') console.error(formulationsError);
-
-      const catalogItems = catalogData || [];
-      const savedPurchases = purchasesData || [];
-      const savedFormulations = formulationsData || [];
-      const savedSettings = settingsData || {};
-
-      // Flatten all purchases for lot-based unit cost lookup
-      const allLots = [];
-      savedPurchases.forEach(pur => {
-        const purDate = pur.date || pur.purchaseDate || '2026-01-01';
-        const items = pur.items || pur.lineItems || (Array.isArray(pur) ? pur : []);
-        if (Array.isArray(items)) {
-          items.forEach(it => {
-            allLots.push({
-              date: purDate,
-              code: String(it.code || it.materialId || it.id || '').trim().toUpperCase(),
-              name: String(it.itemName || it.name || it.description || '').trim().toLowerCase(),
-              containerVolume: it.containerVolume || it.volumePurchased || it.qty || it.quantity || 1,
-              unitCost: Number(it.unitCost || it.cost || it.price || 0),
-              quantity: Number(it.qty || it.quantity || 1)
-            });
+    // Flatten all purchases for lot-based unit cost lookup
+    const allLots = [];
+    savedPurchases.forEach(pur => {
+      const purDate = pur.date || pur.purchaseDate || '2026-01-01';
+      const items = pur.items || pur.lineItems || (Array.isArray(pur) ? pur : []);
+      if (Array.isArray(items)) {
+        items.forEach(it => {
+          allLots.push({
+            date: purDate,
+            code: String(it.code || it.materialId || it.id || '').trim().toUpperCase(),
+            name: String(it.itemName || it.name || it.description || '').trim().toLowerCase(),
+            containerVolume: it.containerVolume || it.volumePurchased || it.qty || it.quantity || 1,
+            unitCost: Number(it.unitCost || it.cost || it.price || 0),
+            quantity: Number(it.qty || it.quantity || 1)
           });
-        }
-      });
+        });
+      }
+    });
 
-      // Sort descending by date to fetch the latest purchase entry
-      allLots.sort((a, b) => new Date(b.date || '2026-01-01') - new Date(a.date || '2026-01-01'));
+    // Sort descending by date to fetch the latest purchase entry
+    allLots.sort((a, b) => new Date(b.date || '2026-01-01') - new Date(a.date || '2026-01-01'));
 
-      // Build a lookup map for exact unit costs per material code/name
-      const unitCostMap = {};
-      catalogItems.forEach(mat => {
-        const matId = mat.id || mat.code || '';
-        const matName = mat.raw_material || mat.rawMaterial || mat.name || '';
-        const matUnit = mat.base_unit || mat.baseUnit || mat.unit || 'pcs';
-        const matVolumeSize = mat.volume_size || mat.volumeSize;
+    // Build a lookup map for exact unit costs per material code/name
+    const unitCostMap = {};
+    catalogItems.forEach(mat => {
+      const code = String(mat.id || mat.code || '').trim().toUpperCase();
+      const name = String(mat.rawMaterial || mat.name || '').trim().toLowerCase();
+      const unit = String(mat.baseUnit || mat.unit || 'pcs').toLowerCase();
+      const isLiquidMl = unit === 'ml';
 
-        const code = String(matId).trim().toUpperCase();
-        const name = String(matName).trim().toLowerCase();
-        const unit = String(matUnit).toLowerCase();
-        const isLiquidMl = unit === 'ml';
+      const matchingLot = allLots.find(lot => lot.code === code || (name && lot.name === name));
 
-        const matchingLot = allLots.find(lot => lot.code === code || (name && lot.name === name));
+      let volumePurchased = 1;
+      let purchaseCost = 0;
 
-        let volumePurchased = 1;
-        let purchaseCost = 0;
-
-        if (matchingLot) {
-          const rawContainerVolStr = matchingLot.containerVolume;
-          const parsedMlPerContainer = parseVolumeInMl(rawContainerVolStr);
-          const lotQty = Number(matchingLot.quantity || 1);
-          
-          if (isLiquidMl) {
-            volumePurchased = parsedMlPerContainer > 1 ? (parsedMlPerContainer * (lotQty > 1 && parsedMlPerContainer !== lotQty ? lotQty : 1)) : (parsedMlPerContainer * lotQty);
-          } else {
-            volumePurchased = Number(matchingLot.containerVolume || lotQty || 1);
-          }
-          purchaseCost = Number(matchingLot.unitCost || 0);
+      if (matchingLot) {
+        const rawContainerVolStr = matchingLot.containerVolume;
+        const parsedMlPerContainer = parseVolumeInMl(rawContainerVolStr);
+        const lotQty = Number(matchingLot.quantity || 1);
+        
+        if (isLiquidMl) {
+          volumePurchased = parsedMlPerContainer > 1 ? (parsedMlPerContainer * (lotQty > 1 && parsedMlPerContainer !== lotQty ? lotQty : 1)) : (parsedMlPerContainer * lotQty);
         } else {
-          volumePurchased = isLiquidMl ? parseVolumeInMl(matVolumeSize) : 1;
-          purchaseCost = 0.00;
+          volumePurchased = Number(matchingLot.containerVolume || lotQty || 1);
         }
-
-        if (isLiquidMl && matchingLot) {
-          const lotQty = Number(matchingLot.quantity || 1);
-          const mlPerUnit = parseVolumeInMl(matchingLot.containerVolume);
-          volumePurchased = mlPerUnit * (lotQty > 0 ? lotQty : 1);
-        } else if (isLiquidMl && !matchingLot) {
-          volumePurchased = parseVolumeInMl(matVolumeSize || '250ml');
-        }
-
-        const costPerUnit = volumePurchased > 0 ? purchaseCost / volumePurchased : 0;
-
-        if (code) unitCostMap[code] = costPerUnit;
-        if (name) unitCostMap[name] = costPerUnit;
-      });
-
-      // Helper to get unit cost with fallbacks matching settings
-      const getResolvedUnitCost = (matId, fallbackCost, isLiquid, requiredVolumeMl) => {
-        if (!matId) return fallbackCost * (isLiquid ? requiredVolumeMl : 1);
-        const key = String(matId).trim().toUpperCase();
-        const lowerKey = key.toLowerCase();
-        
-        let unitCost = 0;
-        if (unitCostMap[key] !== undefined) {
-          unitCost = unitCostMap[key];
-        } else if (unitCostMap[lowerKey] !== undefined) {
-          unitCost = unitCostMap[lowerKey];
-        } else {
-          unitCost = fallbackCost;
-        }
-
-        return isLiquid ? unitCost * requiredVolumeMl : unitCost;
-      };
-
-      // 2. Process Formulations and compute total cost per product
-      const processed = savedFormulations.map((item, idx) => {
-        const productCode = item.product_code || item.productCode || item.code || `CS-PROD-0${idx + 1}`;
-        
-        const idOil = item.oil_id || item.oilId || item.oil || 'RM-002';
-        const idSolvent = item.solvent_id || item.solventId || item.solvent || 'RM-011';
-        const idBottle = item.bottle_id || item.bottleId || item.bottle || '';
-        const idBottleSticker = item.bottle_sticker_id || item.bottleStickerId || item.bottleSticker || '';
-        const idBox = item.box_id || item.boxId || item.box || '';
-        const idBoxSticker = item.box_sticker_id || item.boxStickerId || item.boxSticker || '';
-        const idShrinkWrap = item.wrapping_id || item.shrinkWrap || item.shrinkingWrap || item.wrappingId || '';
-
-        const rawSize = String(item.size_value || item.sizeValue || item.size || '50').replace(/[^0-9]/g, '');
-        const volumeMl = Number(rawSize) || 50;
-
-        const oilPercent = Number(item.oil_percentage || item.oilPercentage || item.oilRatio || 20);
-        const solventPercent = Number(item.solvent_percentage || item.solventPercentage || item.solventRatio || 80);
-
-        const oilMl = volumeMl * (oilPercent / 100);
-        const solventMl = volumeMl * (solventPercent / 100);
-
-        const unitCostOil = getResolvedUnitCost(idOil, Number(savedSettings.default_oil_cost ?? savedSettings.defaultOilCost ?? 4.5), true, oilMl);
-        const unitCostSolvent = getResolvedUnitCost(idSolvent, Number(savedSettings.default_solvent_cost ?? savedSettings.defaultSolventCost ?? 0.38), true, solventMl);
-        
-        const unitCostBottle = getResolvedUnitCost(idBottle, Number(savedSettings.default_bottle_cost ?? savedSettings.defaultBottleCost ?? 25), false, 1);
-        const unitCostBottleSticker = getResolvedUnitCost(idBottleSticker, Number(savedSettings.default_bottle_sticker ?? savedSettings.defaultBottleSticker ?? 3), false, 1);
-        const unitCostBox = getResolvedUnitCost(idBox, Number(savedSettings.default_box_cost ?? savedSettings.defaultBoxCost ?? 12), false, 1);
-        const unitCostBoxSticker = getResolvedUnitCost(idBoxSticker, Number(savedSettings.default_box_sticker ?? savedSettings.defaultBoxSticker ?? 3), false, 1);
-        const unitCostShrinkWrap = getResolvedUnitCost(idShrinkWrap, Number(savedSettings.default_shrink_wrap ?? savedSettings.defaultShrinkWrap ?? 2), false, 1);
-
-        const totalCost = unitCostOil + unitCostSolvent + unitCostBottle + unitCostBottleSticker + unitCostBox + unitCostBoxSticker + unitCostShrinkWrap;
-        
-        // Check if price is explicitly defined in formulation or fallback to default markup/settings
-        let price = 0;
-        if (item.price !== undefined && item.price !== null && item.price !== '') {
-          price = Number(item.price);
-        } else {
-          price = Number(savedSettings.default_price ?? savedSettings.defaultPrice ?? (totalCost > 0 ? totalCost * 1.5 : 350));
-        }
-
-        const netMargin = price - totalCost;
-        const netMarginPercentage = price > 0 ? (netMargin / price) * 100 : 0;
-
-        return {
-          id: item.id,
-          code: productCode,
-          name: item.scent_name || item.scentName || item.name || `Scent ${idx + 1}`,
-          volume: volumeMl + 'ml',
-          oil: unitCostOil,
-          solvent: unitCostSolvent,
-          bottle: unitCostBottle,
-          bottleSticker: unitCostBottleSticker,
-          box: unitCostBox,
-          boxSticker: unitCostBoxSticker,
-          shrinkWrap: unitCostShrinkWrap,
-          totalCost,
-          price,
-          netMargin,
-          netMarginPercentage
-        };
-      });
-
-      setCostingData(processed);
-    } catch (err) {
-      console.error('Error loading costing data from Supabase:', err);
-    }
-  };
-
-  // Function to apply bulk price update across all scents and save back to Formulations in Supabase
-  const handleApplyBulkPricing = async (e) => {
-    e.preventDefault();
-    try {
-      const { data: formulationsData, error: fetchError } = await supabase.from('formulations').select('*');
-      if (fetchError) throw fetchError;
-
-      const savedFormulations = formulationsData || [];
-
-      for (let idx = 0; idx < savedFormulations.length; idx++) {
-        const form = savedFormulations[idx];
-        const calculatedItem = costingData[idx];
-        const totalCost = calculatedItem ? calculatedItem.totalCost : 0;
-        
-        let newPrice = 0;
-        if (priceUpdateMode === 'markup') {
-          const markup = parseFloat(markupValue) || 0;
-          newPrice = totalCost * (1 + markup / 100);
-        } else {
-          newPrice = parseFloat(fixedPriceValue) || 0;
-        }
-
-        const roundedPrice = Number(newPrice.toFixed(2));
-
-        const { error: updateError } = await supabase
-          .from('formulations')
-          .update({ price: roundedPrice })
-          .eq('id', form.id);
-
-        if (updateError) throw updateError;
+        purchaseCost = Number(matchingLot.unitCost || 0);
+      } else {
+        volumePurchased = isLiquidMl ? parseVolumeInMl(mat.volumeSize) : 1;
+        purchaseCost = 0.00;
       }
 
-      setIsPriceModalOpen(false);
-      loadCostingData();
-    } catch (err) {
-      console.error('Error updating bulk prices in Supabase:', err);
-      alert('Failed to update prices.');
-    }
+      if (isLiquidMl && matchingLot) {
+        const lotQty = Number(matchingLot.quantity || 1);
+        const mlPerUnit = parseVolumeInMl(matchingLot.containerVolume);
+        volumePurchased = mlPerUnit * (lotQty > 0 ? lotQty : 1);
+      } else if (isLiquidMl && !matchingLot) {
+        volumePurchased = parseVolumeInMl(mat.volumeSize || '250ml');
+      }
+
+      const costPerUnit = volumePurchased > 0 ? purchaseCost / volumePurchased : 0;
+
+      if (code) unitCostMap[code] = costPerUnit;
+      if (name) unitCostMap[name] = costPerUnit;
+    });
+
+    // Helper to get unit cost with fallbacks matching settings
+    const getResolvedUnitCost = (matId, fallbackCost, isLiquid, requiredVolumeMl) => {
+      if (!matId) return fallbackCost * (isLiquid ? requiredVolumeMl : 1);
+      const key = String(matId).trim().toUpperCase();
+      const lowerKey = key.toLowerCase();
+      
+      let unitCost = 0;
+      if (unitCostMap[key] !== undefined) {
+        unitCost = unitCostMap[key];
+      } else if (unitCostMap[lowerKey] !== undefined) {
+        unitCost = unitCostMap[lowerKey];
+      } else {
+        unitCost = fallbackCost;
+      }
+
+      return isLiquid ? unitCost * requiredVolumeMl : unitCost;
+    };
+
+    // 2. Process Formulations and compute total cost per product
+    const processed = savedFormulations.map((item, idx) => {
+      const productCode = item.productCode || item.code || `CS-PROD-0${idx + 1}`;
+      
+      const idOil = item.oilId || item.oil || 'RM-002';
+      const idSolvent = item.solventId || item.solvent || 'RM-011';
+      const idBottle = item.bottleId || item.bottle || '';
+      const idBottleSticker = item.bottleStickerId || item.bottleSticker || '';
+      const idBox = item.boxId || item.box || '';
+      const idBoxSticker = item.boxStickerId || item.boxSticker || '';
+      const idShrinkWrap = item.wrappingId || item.shrinkWrap || item.shrinkingWrap || '';
+
+      const rawSize = String(item.sizeValue || item.size || '50').replace(/[^0-9]/g, '');
+      const volumeMl = Number(rawSize) || 50;
+
+      const oilPercent = Number(item.oilPercentage || item.oilRatio || 20);
+      const solventPercent = Number(item.solventPercentage || item.solventRatio || 80);
+
+      const oilMl = volumeMl * (oilPercent / 100);
+      const solventMl = volumeMl * (solventPercent / 100);
+
+      const unitCostOil = getResolvedUnitCost(idOil, Number(savedSettings.defaultOilCost ?? 4.5), true, oilMl);
+      const unitCostSolvent = getResolvedUnitCost(idSolvent, Number(savedSettings.defaultSolventCost ?? 0.38), true, solventMl);
+      
+      const unitCostBottle = getResolvedUnitCost(idBottle, Number(savedSettings.defaultBottleCost ?? 25), false, 1);
+      const unitCostBottleSticker = getResolvedUnitCost(idBottleSticker, Number(savedSettings.defaultBottleSticker ?? 3), false, 1);
+      const unitCostBox = getResolvedUnitCost(idBox, Number(savedSettings.defaultBoxCost ?? 12), false, 1);
+      const unitCostBoxSticker = getResolvedUnitCost(idBoxSticker, Number(savedSettings.defaultBoxSticker ?? 3), false, 1);
+      const unitCostShrinkWrap = getResolvedUnitCost(idShrinkWrap, Number(savedSettings.defaultShrinkWrap ?? 2), false, 1);
+
+      const totalCost = unitCostOil + unitCostSolvent + unitCostBottle + unitCostBottleSticker + unitCostBox + unitCostBoxSticker + unitCostShrinkWrap;
+      
+      // Check if price is explicitly defined in formulation or fallback to default markup/settings
+      let price = 0;
+      if (item.price !== undefined && item.price !== null && item.price !== '') {
+        price = Number(item.price);
+      } else {
+        price = Number(savedSettings.defaultPrice ?? (totalCost > 0 ? totalCost * 1.5 : 350));
+      }
+
+      const netMargin = price - totalCost;
+      const netMarginPercentage = price > 0 ? (netMargin / price) * 100 : 0;
+
+      return {
+        id: item.id,
+        code: productCode,
+        name: item.scentName || item.name || `Scent ${idx + 1}`,
+        volume: volumeMl + 'ml',
+        oil: unitCostOil,
+        solvent: unitCostSolvent,
+        bottle: unitCostBottle,
+        bottleSticker: unitCostBottleSticker,
+        box: unitCostBox,
+        boxSticker: unitCostBoxSticker,
+        shrinkWrap: unitCostShrinkWrap,
+        totalCost,
+        price,
+        netMargin,
+        netMarginPercentage
+      };
+    });
+
+    setCostingData(processed);
+  };
+
+  // Function to apply bulk price update across all scents and save back to Formulations
+  const handleApplyBulkPricing = (e) => {
+    e.preventDefault();
+    const savedFormulations = JSON.parse(localStorage.getItem('chinito_formulations') || '[]');
+
+    const updatedFormulations = savedFormulations.map((form, idx) => {
+      // Find matching calculated cost
+      const calculatedItem = costingData[idx];
+      const totalCost = calculatedItem ? calculatedItem.totalCost : 0;
+      
+      let newPrice = 0;
+      if (priceUpdateMode === 'markup') {
+        const markup = parseFloat(markupValue) || 0;
+        newPrice = totalCost * (1 + markup / 100);
+      } else {
+        newPrice = parseFloat(fixedPriceValue) || 0;
+      }
+
+      return {
+        ...form,
+        price: Number(newPrice.toFixed(2))
+      };
+    });
+
+    localStorage.setItem('chinito_formulations', JSON.stringify(updatedFormulations));
+    window.dispatchEvent(new Event('chinito_formulations_updated'));
+    setIsPriceModalOpen(false);
+    loadCostingData();
   };
 
   return (

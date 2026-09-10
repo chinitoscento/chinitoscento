@@ -1,8 +1,15 @@
+Customers.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Customers() {
-  const [customers, setCustomers] = useState([]);
+  // Load initial data from localStorage if available, otherwise default to empty array
+  const [customers, setCustomers] = useState(() => {
+    const saved = localStorage.getItem('chinito_customers');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -17,78 +24,46 @@ export default function Customers() {
     status: 'Active'
   });
 
+  // Save to localStorage whenever customers state changes
   useEffect(() => {
-    loadCustomers();
-  }, []);
-
-  const loadCustomers = async () => {
-    try {
-      const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      
-      const mapped = (data || []).map(c => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        category: c.category,
-        creditLimit: c.credit_limit || c.creditLimit,
-        status: c.status
-      }));
-      setCustomers(mapped);
-    } catch (err) {
-      console.error('Error loading customers from Supabase:', err);
-    }
-  };
+    localStorage.setItem('chinito_customers', JSON.stringify(customers));
+  }, [customers]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name) return;
 
-    const generatedCode = formData.code || `CUST-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newRecord = {
-      code: generatedCode,
-      name: formData.name,
-      phone: formData.phone,
-      email: formData.email,
-      category: formData.category,
-      credit_limit: formData.creditLimit ? Number(formData.creditLimit) : 0,
-      status: formData.status
-    };
+    setCustomers(prev => [
+      ...prev, 
+      { 
+        ...formData, 
+        id: Date.now(), 
+        code: formData.code || `CUST-${Math.floor(1000 + Math.random() * 9000)}` 
+      }
+    ]);
 
-    try {
-      const { error } = await supabase.from('customers').insert([newRecord]);
-      if (error) throw error;
-
-      await loadCustomers();
-
-      // Reset form and close modal
-      setFormData({
-        code: '',
-        name: '',
-        phone: '',
-        email: '',
-        category: 'VIP Boutique',
-        creditLimit: '',
-        status: 'Active'
-      });
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Error saving customer to Supabase:', err);
-      alert('Failed to save customer.');
-    }
+    // Reset form and close modal
+    setFormData({
+      code: '',
+      name: '',
+      phone: '',
+      email: '',
+      category: 'VIP Boutique',
+      creditLimit: '',
+      status: 'Active'
+    });
+    setIsModalOpen(false);
   };
 
   const filteredCustomers = customers.filter(c => 
-    (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ((c.email || '').toLowerCase().includes(searchTerm.toLowerCase()))
+    c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    c.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (c.email && c.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (

@@ -1,5 +1,7 @@
+Packaging.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Packaging() {
   const [packagingList, setPackagingList] = useState([]);
@@ -13,10 +15,6 @@ export default function Packaging() {
   const [reason, setReason] = useState('');
   const [packagingStockStatus, setPackagingStockStatus] = useState(null);
 
-  // Data sources from Supabase
-  const [formulations, setFormulations] = useState([]);
-  const [inventoryList, setInventoryList] = useState([]);
-
   useEffect(() => {
     loadData();
   }, []);
@@ -27,7 +25,7 @@ export default function Packaging() {
     }
     let maxNum = 0;
     existingList.forEach(item => {
-      const codeToCheck = item.packCode || item.pack_code || item.code || '';
+      const codeToCheck = item.packCode || item.code || '';
       if (codeToCheck) {
         const parts = codeToCheck.split('-');
         const num = parseInt(parts[1], 10);
@@ -40,74 +38,55 @@ export default function Packaging() {
     return `PACK-${String(nextNum).padStart(6, '0')}`;
   };
 
-  const loadData = async () => {
-    try {
-      const [
-        { data: packData, error: packError },
-        { data: macData, error: macError },
-        { data: formRows, error: formError },
-        { data: invRows, error: invError }
-      ] = await Promise.all([
-        supabase.from('packaging').select('*').order('id', { ascending: false }),
-        supabase.from('maceration').select('*'),
-        supabase.from('formulations').select('*'),
-        supabase.from('inventory').select('*')
-      ]);
+  const loadData = () => {
+    const savedPack = JSON.parse(localStorage.getItem('chinito_packaging') || '[]');
+    
+    const savedMac = JSON.parse(
+      localStorage.getItem('chinito_maceration') || 
+      localStorage.getItem('chinito_production') || 
+      '[]'
+    );
 
-      if (packError && packError.code !== 'PGRST116') console.error(packError);
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
-      if (formError && formError.code !== 'PGRST116') console.error(formError);
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
+    const readyItems = savedMac.filter(item => {
+      const st = (item.status || '').toLowerCase();
+      return st === 'ready';
+    });
 
-      const savedPack = packData || [];
-      const savedMac = macData || [];
-
-      const readyItems = savedMac.filter(item => {
-        const st = (item.status || '').toLowerCase();
-        return st === 'ready';
-      });
-
-      const formattedForms = (formRows || []).map(f => ({
-        id: f.id,
-        productCode: f.product_code || f.productCode,
-        scentName: f.scent_name || f.scentName,
-        bottleId: f.bottle_id || f.bottleId,
-        bottleStickerId: f.bottle_sticker_id || f.bottleStickerId,
-        boxId: f.box_id || f.boxId,
-        boxStickerId: f.box_sticker_id || f.boxStickerId,
-        wrappingId: f.wrapping_id || f.wrappingId
-      }));
-
-      setPackagingList(savedPack);
-      setReadyMacerations(readyItems);
-      setFormulations(formattedForms);
-      setInventoryList(invRows || []);
-      setPackCode(generateNextPackCode(savedPack));
-    } catch (err) {
-      console.error('Error loading packaging data from Supabase:', err);
-    }
+    setPackagingList(savedPack);
+    setReadyMacerations(readyItems);
+    setPackCode(generateNextPackCode(savedPack));
   };
 
   const handleSelectMac = (macId) => {
     const found = readyMacerations.find(m => String(m.id) === String(macId));
     setSelectedMac(found || null);
     if (found) {
-      setActualQty(found.expectedQty || found.expected_qty || '');
+      setActualQty(found.expectedQty || '');
     } else {
       setActualQty('');
     }
   };
 
+  // Comprehensive formulation finder supporting all possible property name variations
   const getFormulationForMac = (mac) => {
     if (!mac) return {};
+    const formulationsData = JSON.parse(localStorage.getItem('chinito_formulations') || '[]');
+    
     const macScent = (mac.scent || mac.perfume || mac.perfumeName || mac.productName || mac.name || '').trim().toLowerCase();
-    const macCode = (mac.productCode || mac.product_code || mac.code || mac.macCode || mac.productionCode || '').trim().toLowerCase();
+    const macCode = (mac.productCode || mac.code || mac.macCode || mac.productionCode || '').trim().toLowerCase();
 
-    return formulations.find(f => {
-      const fScent = (f.scentName || '').trim().toLowerCase();
-      const fCode = (f.productCode || '').trim().toLowerCase();
-      return (macScent && fScent === macScent) || (macCode && fCode === macCode);
-    }) || {};
+    if (Array.isArray(formulationsData)) {
+      return formulationsData.find(f => {
+        const fScent = (f.scentName || f.scent || f.perfumeName || f.name || '').trim().toLowerCase();
+        const fCode = (f.productCode || f.code || f.itemCode || '').trim().toLowerCase();
+        return (macScent && fScent === macScent) || (macCode && fCode === macCode);
+      }) || {};
+    } else if (typeof formulationsData === 'object' && formulationsData !== null) {
+      if (mac.scent && formulationsData[mac.scent]) return formulationsData[mac.scent];
+      const foundKey = Object.keys(formulationsData).find(k => k.toLowerCase() === macScent);
+      return foundKey ? formulationsData[foundKey] : {};
+    }
+    return {};
   };
 
   useEffect(() => {
@@ -115,8 +94,7 @@ export default function Packaging() {
       setPackagingStockStatus(null);
       return;
     }
-    const expectedQ = selectedMac.expectedQty || selectedMac.expected_qty || 0;
-    const qtyNeeded = parseInt(actualQty, 10) || expectedQ;
+    const qtyNeeded = parseInt(actualQty, 10) || selectedMac.expectedQty || 0;
     if (qtyNeeded <= 0) {
       setPackagingStockStatus(null);
       return;
@@ -124,11 +102,11 @@ export default function Packaging() {
 
     const formulation = getFormulationForMac(selectedMac);
 
-    const targetBottleId = formulation?.bottleId || '';
-    const targetBottleStickerId = formulation?.bottleStickerId || '';
-    const targetBoxId = formulation?.boxId || '';
-    const targetBoxLabelId = formulation?.boxStickerId || '';
-    const targetShrinkWrapId = formulation?.wrappingId || '';
+    const targetBottleId = formulation?.bottleId || formulation?.bottle || formulation?.bottle_id || formulation?.bottleCode || formulation?.bottleRM || '';
+    const targetBottleStickerId = formulation?.bottleStickerId || formulation?.bottleSticker || formulation?.bottleSticker_id || formulation?.bottleStickerCode || '';
+    const targetBoxId = formulation?.boxId || formulation?.box || formulation?.box_id || formulation?.boxCode || '';
+    const targetBoxLabelId = formulation?.boxStickerId || formulation?.boxStickerLabel || formulation?.boxLabel || formulation?.boxSticker || '';
+    const targetShrinkWrapId = formulation?.wrappingId || formulation?.shrinkingWrap || formulation?.shrinkWrap || formulation?.wrapId || formulation?.shrinkWrapId || '';
 
     const componentIds = [
       { id: targetBottleId, name: 'Bottle' },
@@ -138,13 +116,15 @@ export default function Packaging() {
       { id: targetShrinkWrapId, name: 'Shrink Wrap' }
     ].filter(c => Boolean(c.id));
 
+    const inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    
     let allSufficient = true;
     const details = componentIds.map(comp => {
-      const invItem = inventoryList.find(i => {
+      const invItem = inventory.find(i => {
         const rawId = (i.id || i.itemCode || i.code || '').trim().toUpperCase();
         return rawId === String(comp.id).trim().toUpperCase();
       });
-      const available = invItem ? Number(invItem.stock_qty || invItem.stockQty || invItem.quantity || 0) : 0;
+      const available = invItem ? Number(invItem.stockQty || invItem.quantity || 0) : 0;
       const sufficient = available >= qtyNeeded;
       if (!sufficient) allSufficient = false;
       return {
@@ -161,9 +141,9 @@ export default function Packaging() {
       details,
       qtyNeeded
     });
-  }, [selectedMac, actualQty, inventoryList, formulations]);
+  }, [selectedMac, actualQty]);
 
-  const handleSavePackaging = async (e) => {
+  const handleSavePackaging = (e) => {
     e.preventDefault();
     if (!selectedMac) {
       alert('Please select a Maceration record.');
@@ -182,12 +162,15 @@ export default function Packaging() {
 
     const formulation = getFormulationForMac(selectedMac);
 
-    const targetBottleId = formulation?.bottleId || '';
-    const targetBottleStickerId = formulation?.bottleStickerId || '';
-    const targetBoxId = formulation?.boxId || '';
-    const targetBoxLabelId = formulation?.boxStickerId || '';
-    const targetShrinkWrapId = formulation?.wrappingId || '';
+    const targetBottleId = formulation?.bottleId || formulation?.bottle || formulation?.bottle_id || formulation?.bottleCode || formulation?.bottleRM || '';
+    const targetBottleStickerId = formulation?.bottleStickerId || formulation?.bottleSticker || formulation?.bottleSticker_id || formulation?.bottleStickerCode || '';
+    const targetBoxId = formulation?.boxId || formulation?.box || formulation?.box_id || formulation?.boxCode || '';
+    const targetBoxLabelId = formulation?.boxStickerId || formulation?.boxStickerLabel || formulation?.boxLabel || formulation?.boxSticker || '';
+    const targetShrinkWrapId = formulation?.wrappingId || formulation?.shrinkingWrap || formulation?.shrinkWrap || formulation?.wrapId || formulation?.shrinkWrapId || '';
 
+    // 1. Deduct raw materials from chinito_inventory
+    let inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    
     const requiredMaterialIds = [
       targetBottleId,
       targetBottleStickerId,
@@ -196,68 +179,81 @@ export default function Packaging() {
       targetShrinkWrapId
     ].filter(id => Boolean(id)).map(id => id.toUpperCase());
 
-    try {
-      // 1. Deduct raw materials from Supabase inventory
-      for (const item of inventoryList) {
-        const rawId = (item.id || item.itemCode || item.code || '').trim().toUpperCase();
-        if (requiredMaterialIds.includes(rawId)) {
-          const currentQty = Number(item.stock_qty || item.stockQty || item.quantity || 0);
-          const newQty = Math.max(0, currentQty - parsedActual);
-          await supabase.from('inventory').update({ stock_qty: newQty }).eq('id', item.id);
-        }
+    inventory = inventory.map(item => {
+      const rawId = (item.id || item.itemCode || item.code || '').trim().toUpperCase();
+
+      if (requiredMaterialIds.includes(rawId)) {
+        const currentQty = Number(item.stockQty || item.quantity || 0);
+        return { ...item, stockQty: Math.max(0, currentQty - parsedActual) };
       }
+      return item;
+    });
 
-      // 2. Add or update finished goods in Supabase finished_goods
-      const fgProductCode = selectedMac.productCode || selectedMac.product_code || selectedMac.code || 'CS-GEN-00';
-      const fgScentName = selectedMac.scent || selectedMac.perfumeName || 'Finished Perfume';
+    localStorage.setItem('chinito_inventory', JSON.stringify(inventory));
 
-      const { data: fgRows, error: fgFetchError } = await supabase.from('finished_goods').select('*');
-      if (fgFetchError && fgFetchError.code !== 'PGRST116') console.error(fgFetchError);
+    // 2. Add or update finished goods in chinito_finishedgoods
+    let finishedGoods = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
+    const fgProductCode = selectedMac.productCode || selectedMac.code || 'CS-GEN-00';
+    const fgScentName = selectedMac.scent || selectedMac.perfumeName || 'Finished Perfume';
 
-      const existingFg = (fgRows || []).find(fg => {
-        const itemCode = (fg.code || fg.productCode || fg.product_code || '').trim().toUpperCase();
-        return itemCode === fgProductCode.toUpperCase();
+    let fgFound = false;
+    finishedGoods = finishedGoods.map(item => {
+      const itemCode = (item.code || item.productCode || '').trim().toUpperCase();
+      if (itemCode === fgProductCode.toUpperCase()) {
+        fgFound = true;
+        const currentStock = Number(item.stockQty || item.availableQty || 0);
+        return { ...item, stockQty: currentStock + parsedActual };
+      }
+      return item;
+    });
+
+    if (!fgFound) {
+      finishedGoods.push({
+        code: fgProductCode,
+        name: fgScentName,
+        stockQty: parsedActual
       });
-
-      if (existingFg) {
-        const currentStock = Number(existingFg.stock_qty || existingFg.stockQty || 0);
-        await supabase.from('finished_goods').update({ stock_qty: currentStock + parsedActual }).eq('id', existingFg.id);
-      } else {
-        await supabase.from('finished_goods').insert([{
-          code: fgProductCode,
-          name: fgScentName,
-          stock_qty: parsedActual
-        }]);
-      }
-
-      // 3. Save packaging record in Supabase
-      const newRecord = {
-        pack_code: packCode,
-        mac_code: selectedMac.productionCode || selectedMac.production_code || selectedMac.macCode,
-        scent: fgScentName,
-        macerated_volume: selectedMac.volumeDesired || selectedMac.volume_desired || selectedMac.maceratedVolume,
-        expected_qty: selectedMac.expectedQty || selectedMac.expected_qty,
-        actual_qty: parsedActual,
-        reason: reason || 'Standard Packaging',
-        date: new Date().toISOString().split('T')[0]
-      };
-
-      const { error: insertError } = await supabase.from('packaging').insert([newRecord]);
-      if (insertError) throw insertError;
-
-      // 4. Update maceration status to 'Bottled'
-      await supabase.from('maceration').update({ status: 'Bottled' }).eq('id', selectedMac.id);
-
-      setIsModalOpen(false);
-      setSelectedMac(null);
-      setActualQty('');
-      setReason('');
-      setPackagingStockStatus(null);
-      loadData();
-    } catch (err) {
-      console.error('Error saving packaging record to Supabase:', err);
-      alert('Failed to save packaging process.');
     }
+    localStorage.setItem('chinito_finishedgoods', JSON.stringify(finishedGoods));
+
+    // 3. Save packaging record
+    const newRecord = {
+      id: Date.now(),
+      packCode,
+      macCode: selectedMac.productionCode || selectedMac.macCode,
+      scent: fgScentName,
+      maceratedVolume: selectedMac.volumeDesired || selectedMac.maceratedVolume,
+      expectedQty: selectedMac.expectedQty,
+      actualQty: parsedActual,
+      reason: reason || 'Standard Packaging',
+      date: new Date().toISOString().split('T')[0]
+    };
+
+    const updatedList = [newRecord, ...packagingList];
+    setPackagingList(updatedList);
+    localStorage.setItem('chinito_packaging', JSON.stringify(updatedList));
+
+    // 4. Update maceration status
+    ['chinito_maceration', 'chinito_production'].forEach(storageKey => {
+      const storedData = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      if (storedData.length > 0) {
+        const updatedStoredData = storedData.map(p => {
+          if (String(p.id) === String(selectedMac.id)) {
+            return { ...p, status: 'Bottled' };
+          }
+          return p;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updatedStoredData));
+      }
+    });
+
+    setIsModalOpen(false);
+    setSelectedMac(null);
+    setActualQty('');
+    setReason('');
+    setPackagingStockStatus(null);
+    setPackCode(generateNextPackCode(updatedList));
+    loadData();
   };
  
 

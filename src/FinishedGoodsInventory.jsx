@@ -1,125 +1,136 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient';
 
 export default function FinishedGoodsInventory() {
   const [finishedGoods, setFinishedGoods] = useState([]);
 
   useEffect(() => {
     loadFinishedGoods();
-    const syncData = () => loadFinishedGoods();
-    window.addEventListener('storage', syncData);
-    window.addEventListener('chinito_finishedgoods_updated', syncData);
-    window.addEventListener('chinito_sales_updated', syncData);
-    window.addEventListener('chinito_sales_returns_updated', syncData);
-    return () => {
-      window.removeEventListener('storage', syncData);
-      window.removeEventListener('chinito_finishedgoods_updated', syncData);
-      window.removeEventListener('chinito_sales_updated', syncData);
-      window.removeEventListener('chinito_sales_returns_updated', syncData);
-    };
   }, []);
 
-  const loadFinishedGoods = () => {
-    const packagingList = JSON.parse(localStorage.getItem('chinito_packaging') || '[]');
-    const productsList = JSON.parse(localStorage.getItem('chinito_products') || '[]');
-    const directFGList = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
-    const salesReturnsList = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
-    const productionList = JSON.parse(
-      localStorage.getItem('chinito_maceration') || 
-      localStorage.getItem('chinito_production') || 
-      '[]'
-    );
+  const loadFinishedGoods = async () => {
+    try {
+      const [
+        { data: packagingData, error: packError },
+        { data: productsData, error: prodError },
+        { data: directFGData, error: fgError },
+        { data: salesReturnsData, error: srError },
+        { data: macerationData, error: macError }
+      ] = await Promise.all([
+        supabase.from('packaging').select('*'),
+        supabase.from('products').select('*'),
+        supabase.from('finished_goods').select('*'),
+        supabase.from('sales_returns').select('*'),
+        supabase.from('maceration').select('*')
+      ]);
 
-    const fgMap = new Map();
+      if (packError && packError.code !== 'PGRST116') console.error(packError);
+      if (prodError && prodError.code !== 'PGRST116') console.error(prodError);
+      if (fgError && fgError.code !== 'PGRST116') console.error(fgError);
+      if (srError && srError.code !== 'PGRST116') console.error(srError);
+      if (macError && macError.code !== 'PGRST116') console.error(macError);
 
-    // 1. Include products with 0 stock from masters first as a base structure
-    productsList.forEach(prod => {
-      const scent = prod.name || prod.scent || prod.itemName;
-      const code = prod.code || prod.productCode || 'CS-GEN-01';
-      const key = (scent || '').toLowerCase();
-      if (scent && !fgMap.has(key)) {
+      const packagingList = packagingData || [];
+      const productsList = productsData || [];
+      const directFGList = directFGData || [];
+      const salesReturnsList = salesReturnsData || [];
+      const productionList = macerationData || [];
+
+      const fgMap = new Map();
+
+      // 1. Include products with 0 stock from masters first as a base structure
+      productsList.forEach(prod => {
+        const scent = prod.name || prod.scent || prod.item_name || prod.itemName;
+        const code = prod.code || prod.product_code || prod.productCode || 'CS-GEN-01';
+        const key = (scent || '').toLowerCase();
+        if (scent && !fgMap.has(key)) {
+          fgMap.set(key, {
+            productCode: code,
+            scent: scent.toUpperCase(),
+            availableQty: Number(prod.stock_qty || prod.stockQty || prod.available_qty || prod.availableQty || 0),
+            threshold: prod.threshold || 15
+          });
+        }
+      });
+
+      // 2. Aggregate from packaging list
+      packagingList.forEach(pack => {
+        const scent = pack.scent || 'Unknown';
+        const actual = Number(pack.actual_qty || pack.actualQty || 0);
+
+        let prodCode = pack.product_code || pack.productCode || '';
+        if (!prodCode) {
+          const matchedProd = productionList.find(p => p.scent === scent || p.production_code === pack.mac_code || p.productionCode === pack.macCode);
+          prodCode = matchedProd?.product_code || matchedProd?.productCode || '';
+        }
+        if (!prodCode) {
+          const matchedMaster = productsList.find(p => (p.name || p.scent || '').toLowerCase() === scent.toLowerCase());
+          prodCode = matchedMaster?.code || matchedMaster?.product_code || matchedMaster?.productCode || 'CS-GEN-01';
+        }
+
+        const key = scent.toLowerCase();
+        if (!fgMap.has(key)) {
+          fgMap.set(key, {
+            productCode: prodCode,
+            scent: scent.toUpperCase(),
+            availableQty: 0,
+            threshold: 15
+          });
+        }
+
+        const current = fgMap.get(key);
+        current.availableQty += actual;
+        if (!current.productCode && prodCode) {
+          current.productCode = prodCode;
+        }
+      });
+
+      // 3. Ensure approved sales returns are accounted for
+      salesReturnsList.forEach(sr => {
+        const items = sr.items || [];
+        if (Array.isArray(items)) {
+          items.forEach(returnItem => {
+            const scent = returnItem.product_name || returnItem.productName || 'Unknown';
+            const code = returnItem.product_id || returnItem.productId || 'CS-GEN-01';
+            const returnQty = Number(returnItem.return_qty || returnItem.returnQty || 0);
+            const key = scent.toLowerCase();
+
+            if (!fgMap.has(key)) {
+              fgMap.set(key, {
+                productCode: code,
+                scent: scent.toUpperCase(),
+                availableQty: returnQty,
+                threshold: 15
+              });
+            }
+          });
+        }
+      });
+
+      // 4. Load from direct finished_goods store LAST to override with authoritative stock values
+      directFGList.forEach(fg => {
+        const scent = fg.name || fg.scent || fg.product_name || fg.productName || 'Unknown';
+        const code = fg.code || fg.product_code || fg.productCode || 'CS-GEN-01';
+        const qty = Number(fg.stock_qty || fg.stockQty || fg.available_qty || fg.availableQty || 0);
+        const key = scent.toLowerCase();
+
         fgMap.set(key, {
           productCode: code,
           scent: scent.toUpperCase(),
-          availableQty: Number(prod.stockQty || prod.availableQty || 0),
-          threshold: prod.threshold || 15
+          availableQty: qty,
+          threshold: fg.threshold || 15
         });
-      }
-    });
-
-    // 2. Aggregate from packaging list
-    packagingList.forEach(pack => {
-      const scent = pack.scent || 'Unknown';
-      const actual = Number(pack.actualQty || 0);
-
-      let prodCode = pack.productCode || '';
-      if (!prodCode) {
-        const matchedProd = productionList.find(p => p.scent === scent || p.productionCode === pack.macCode);
-        prodCode = matchedProd?.productCode || '';
-      }
-      if (!prodCode) {
-        const matchedMaster = productsList.find(p => (p.name || p.scent || '').toLowerCase() === scent.toLowerCase());
-        prodCode = matchedMaster?.code || matchedMaster?.productCode || 'CS-GEN-01';
-      }
-
-      const key = scent.toLowerCase();
-      if (!fgMap.has(key)) {
-        fgMap.set(key, {
-          productCode: prodCode,
-          scent: scent.toUpperCase(),
-          availableQty: 0,
-          threshold: 15
-        });
-      }
-
-      const current = fgMap.get(key);
-      current.availableQty += actual;
-      if (!current.productCode && prodCode) {
-        current.productCode = prodCode;
-      }
-    });
-
-    // 3. Ensure approved sales returns are accounted for
-    salesReturnsList.forEach(sr => {
-      if (sr.items && Array.isArray(sr.items)) {
-        sr.items.forEach(returnItem => {
-          const scent = returnItem.productName || 'Unknown';
-          const code = returnItem.productId || 'CS-GEN-01';
-          const returnQty = Number(returnItem.returnQty || 0);
-          const key = scent.toLowerCase();
-
-          if (!fgMap.has(key)) {
-            fgMap.set(key, {
-              productCode: code,
-              scent: scent.toUpperCase(),
-              availableQty: returnQty,
-              threshold: 15
-            });
-          }
-        });
-      }
-    });
-
-    // 4. Load from direct chinito_finishedgoods store LAST to override with authoritative stock values
-    directFGList.forEach(fg => {
-      const scent = fg.name || fg.scent || fg.productName || 'Unknown';
-      const code = fg.code || fg.productCode || 'CS-GEN-01';
-      const qty = Number(fg.stockQty || fg.availableQty || 0);
-      const key = scent.toLowerCase();
-
-      fgMap.set(key, {
-        productCode: code,
-        scent: scent.toUpperCase(),
-        availableQty: qty,
-        threshold: fg.threshold || 15
       });
-    });
 
-    // Sort ascending by product code
-    const sortedGoods = Array.from(fgMap.values()).sort((a, b) => 
-      (a.productCode || '').localeCompare(b.productCode || '')
-    );
+      // Sort ascending by product code
+      const sortedGoods = Array.from(fgMap.values()).sort((a, b) => 
+        (a.productCode || '').localeCompare(b.productCode || '')
+      );
 
-    setFinishedGoods(sortedGoods);
+      setFinishedGoods(sortedGoods);
+    } catch (err) {
+      console.error('Error loading finished goods data from Supabase:', err);
+    }
   };
 
   return (

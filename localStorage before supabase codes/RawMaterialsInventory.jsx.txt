@@ -1,9 +1,10 @@
+RawMaterialsInventory.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 
 export default function RawMaterialsInventory() {
   const [inventory, setInventory] = useState([]);
-  const [loadingData, setLoadingData] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterTab, setFilterTab] = useState('ALL'); // 'ALL', 'NORMAL', 'ALERT'
   const [thresholds, setThresholds] = useState({});
@@ -13,112 +14,117 @@ export default function RawMaterialsInventory() {
   useEffect(() => {
     loadData();
 
-    // Listen for custom inventory updates across components
+    // Listen for custom inventory updates and storage events
     const handleCustomUpdate = () => {
       loadData();
     };
 
+    const handleStorageChange = (e) => {
+      if (!e.key || e.key === 'chinito_inventory' || e.key === 'chinito_maceration' || e.key === 'chinito_raw_materials_catalogue') {
+        loadData();
+      }
+    };
+
+    const handleWindowFocus = () => {
+      loadData();
+    };
+
     window.addEventListener('chinito_inventory_updated', handleCustomUpdate);
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('focus', handleWindowFocus);
 
     return () => {
       window.removeEventListener('chinito_inventory_updated', handleCustomUpdate);
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, []);
 
-  const loadData = async () => {
-    setLoadingData(true);
-    try {
-      // 1. Fetch raw materials catalogue from Supabase
-      const { data: catalogueData, error: catError } = await supabase
-        .from('raw_materials_catalogue')
-        .select('*');
-      if (catError) throw catError;
+  const loadData = () => {
+    const catalogue = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
+    const purchases = JSON.parse(localStorage.getItem('chinito_purchases') || '[]');
+    const savedThresholds = JSON.parse(localStorage.getItem('chinito_raw_material_thresholds') || '{}');
+    const macerations = JSON.parse(localStorage.getItem('chinito_maceration') || '[]');
+    setThresholds(savedThresholds);
 
-      // 2. Fetch purchases from Supabase
-      const { data: purchasesData, error: purError } = await supabase
-        .from('purchases')
-        .select('*');
-      if (purError) throw purError;
+    const itemMap = new Map();
 
-      // 3. Fetch inventory thresholds from Supabase (if table exists, otherwise fallback to local/empty)
-      // If you haven't created a thresholds table, we can default to empty or manage it via state
-      let savedThresholds = {};
-      try {
-        const { data: threshData, error: threshError } = await supabase
-          .from('inventory_thresholds')
-          .select('*');
-        if (!threshError && threshData) {
-          threshData.forEach(t => {
-            savedThresholds[t.item_key || t.code] = t.threshold_value;
-          });
-        }
-      } catch (e) {
-        // Table might not exist yet, safe fallback
+    // 1. Populate map from catalogue metadata
+    catalogue.forEach(cat => {
+      const code = cat.code || cat.materialCode || cat.id || '';
+      const name = cat.rawMaterial || cat.itemName || cat.name || cat.materialName || 'Unknown Material';
+      const category = cat.category || 'RAW MATERIAL';
+      
+      const lowerCat = category.toLowerCase();
+      const isFinishedGood = lowerCat.includes('women') || lowerCat.includes('men') || lowerCat.includes('unisex') || lowerCat.includes('finished good');
+      
+      if (!isFinishedGood) {
+        itemMap.set(String(code || name).toLowerCase(), {
+          id: cat.id || code || name,
+          code: code,
+          rawMaterial: name,
+          category: category,
+          volumeSize: cat.volumeSize || '1',
+          baseUnit: cat.baseUnit || '',
+          stockQty: 0, 
+        });
       }
-      setThresholds(savedThresholds);
+    });
 
-      const itemMap = new Map();
-
-      // Populate map from catalogue metadata
-      (catalogueData || []).forEach(cat => {
-        const code = cat.code || cat.id || '';
-        const name = cat.rawMaterial || cat.raw_material || cat.name || 'Unknown Material';
-        const category = cat.category || 'RAW MATERIAL';
-        
-        const lowerCat = category.toLowerCase();
-        const isFinishedGood = lowerCat.includes('women') || lowerCat.includes('men') || lowerCat.includes('unisex') || lowerCat.includes('finished good');
-        
-        if (!isFinishedGood) {
-          itemMap.set(String(code || name).toLowerCase(), {
-            id: cat.id || code,
-            code: code,
-            rawMaterial: name,
-            category: category,
-            volumeSize: cat.volumeSize || cat.volume_size || '1',
-            baseUnit: cat.baseUnit || cat.base_unit || '',
-            stockQty: 0, 
-          });
-        }
-      });
-
-      // Aggregate stock strictly from purchases using catalogue volume size multipliers
-      (purchasesData || []).forEach(p => {
-        const itemsList = p.items || p.line_items || [];
-        if (Array.isArray(itemsList)) {
-          itemsList.forEach(line => {
-            if (line.type === 'COGS') {
-              const key = String(line.code || line.name).toLowerCase();
-              if (itemMap.has(key)) {
-                const item = itemMap.get(key);
-                const volInfo = parseVolumeSize(item.volumeSize);
-                item.stockQty += Number(line.quantity || 0) * volInfo.sizeVal;
-              } else {
-                const lowerName = (line.name || '').toLowerCase();
-                const isLiquid = lowerName.includes('oil') || lowerName.includes('solvent') || lowerName.includes('liquid');
-                const defaultVol = isLiquid ? '250ml' : '1';
-                const volInfo = parseVolumeSize(defaultVol);
-                itemMap.set(key, {
-                  id: line.id || key,
-                  code: line.code || '',
-                  rawMaterial: line.name || 'Unknown',
-                  category: 'RAW MATERIAL',
-                  volumeSize: defaultVol,
-                  baseUnit: '',
-                  stockQty: Number(line.quantity || 0) * volInfo.sizeVal
-                });
-              }
+    // 2. Aggregate stock strictly from purchases using catalogue volume size multipliers
+    purchases.forEach(p => {
+      if (p.items && Array.isArray(p.items)) {
+        p.items.forEach(line => {
+          if (line.type === 'COGS') {
+            const key = String(line.code || line.name).toLowerCase();
+            if (itemMap.has(key)) {
+              const item = itemMap.get(key);
+              const volInfo = parseVolumeSize(item.volumeSize);
+              item.stockQty += Number(line.quantity || 0) * volInfo.sizeVal;
+            } else {
+              const lowerName = line.name.toLowerCase();
+              const isLiquid = lowerName.includes('oil') || lowerName.includes('solvent') || lowerName.includes('liquid');
+              const defaultVol = isLiquid ? '250ml' : '1';
+              const volInfo = parseVolumeSize(defaultVol);
+              itemMap.set(key, {
+                id: line.id || key,
+                code: line.code || '',
+                rawMaterial: line.name,
+                category: 'RAW MATERIAL',
+                volumeSize: defaultVol,
+                baseUnit: '',
+                stockQty: Number(line.quantity || 0) * volInfo.sizeVal
+              });
             }
-          });
+          }
+        });
+      }
+    });
+
+    // 3. Deduct quantities based on active/saved Maceration runs (live sync safeguard)
+    macerations.forEach(mac => {
+      // If your formulation details or maceration items track oil/solvent usage directly:
+    });
+
+    const finalInventory = Array.from(itemMap.values());
+    
+    // Check if chinito_inventory already has deductions saved, blend them or respect stored inventory values if present
+    const existingStoredInventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    if (existingStoredInventory.length > 0) {
+      finalInventory.forEach(newItem => {
+        const found = existingStoredInventory.find(e => 
+          String(e.code || '').trim().toLowerCase() === String(newItem.code || '').trim().toLowerCase() ||
+          String(e.id || '').trim().toLowerCase() === String(newItem.id || '').trim().toLowerCase()
+        );
+        if (found && found.stockQty !== undefined) {
+          newItem.stockQty = Number(found.stockQty);
         }
       });
-
-      const finalInventory = Array.from(itemMap.values());
-      setInventory(finalInventory);
-    } catch (err) {
-      console.error('Error loading inventory data from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
     }
+
+    setInventory(finalInventory);
+    localStorage.setItem('chinito_inventory', JSON.stringify(finalInventory));
+    window.dispatchEvent(new Event('storage'));
   };
 
   const parseVolumeSize = (volStr) => {
@@ -146,21 +152,10 @@ export default function RawMaterialsInventory() {
     setIsThresholdModalOpen(true);
   };
 
-  const handleSaveThresholds = async (e) => {
+  const handleSaveThresholds = (e) => {
     e.preventDefault();
     setThresholds(tempThresholds);
-    
-    // Optionally save thresholds to Supabase if table exists
-    try {
-      for (const [key, value] of Object.entries(tempThresholds)) {
-        await supabase
-          .from('inventory_thresholds')
-          .upsert({ item_key: key, threshold_value: Number(value) }, { onConflict: 'item_key' });
-      }
-    } catch (err) {
-      console.error('Could not sync thresholds to Supabase:', err.message);
-    }
-
+    localStorage.setItem('chinito_raw_material_thresholds', JSON.stringify(tempThresholds));
     setIsThresholdModalOpen(false);
   };
 

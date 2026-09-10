@@ -1,5 +1,7 @@
+Purchases.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 
 // Helper function to parse volume size (e.g., "500ml", "1L") into mL
 const parseVolumeInMl = (volumeStr) => {
@@ -12,6 +14,20 @@ const parseVolumeInMl = (volumeStr) => {
   return num; // Default to given number (assumed mL or unit multiplier)
 };
 
+// Helper function to generate sequential reference numbers for audit trails
+const getNextRefId = (history) => {
+  if (!history || history.length === 0) return 'PUR-000001';
+  let maxNum = 0;
+  history.forEach(item => {
+    if (item.id && item.id.startsWith('PUR-')) {
+      const num = parseInt(item.id.replace('PUR-', ''), 10);
+      if (!isNaN(num) && num > maxNum) maxNum = num;
+    }
+  });
+  const next = Math.max(history.length, maxNum) + 1;
+  return `PUR-${String(next).padStart(6, '0')}`;
+};
+
 export default function Purchases() {
   // --- STATE FOR FORM FIELDS ---
   const [suppliers, setSuppliers] = useState([]);
@@ -22,7 +38,7 @@ export default function Purchases() {
   
   // Item entry state
   const [purchaseType, setPurchaseType] = useState('COGS'); // 'COGS' or 'OPEX'
-  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); // Stores strict Raw Material ID or Code
+  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); // Stores the strict Raw Material ID (e.g., RM-001)
   const [opexDescription, setOpexDescription] = useState('');
   const [containerVolume, setContainerVolume] = useState(''); // Editable container size/volume per batch
   const [quantity, setQuantity] = useState('');
@@ -39,94 +55,40 @@ export default function Purchases() {
   const [totalAmountDueInput, setTotalAmountDueInput] = useState(''); // User encodes total amount due for One-Time credit
 
   // Saved purchases history state
-  const [purchaseHistory, setPurchaseHistory] = useState([]);
+  const [purchaseHistory, setPurchaseHistory] = useState(() => {
+    const saved = localStorage.getItem('chinito_purchases');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   // Modal Visibility States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [submittedModalData, setSubmittedModalData] = useState(null);
-  const [loadingData, setLoadingData] = useState(true);
 
-  // Fetch initial data from Supabase on mount
+  // Load suppliers and raw materials catalogue from local storage on mount
   useEffect(() => {
-    fetchInitialData();
+    const loadedSuppliers = localStorage.getItem('chinito_suppliers');
+    if (loadedSuppliers) {
+      try { setSuppliers(JSON.parse(loadedSuppliers)); } catch (e) { console.error(e); }
+    }
+
+    // Directly load from the standardized chinito_raw_materials_catalogue storage key
+    const loadedCatalogue = localStorage.getItem('chinito_raw_materials_catalogue');
+    if (loadedCatalogue) {
+      try { 
+        const parsed = JSON.parse(loadedCatalogue);
+        if (Array.isArray(parsed)) {
+          setRawCatalogue(parsed);
+        }
+      } catch (e) { 
+        console.error(e); 
+      }
+    }
   }, []);
 
-  const fetchInitialData = async () => {
-    setLoadingData(true);
-    try {
-      // 1. Fetch Suppliers
-      const { data: supData, error: supError } = await supabase
-        .from('suppliers')
-        .select('*')
-        .order('name', { ascending: true });
-      if (supError) throw supError;
-      setSuppliers(supData || []);
-
-      // 2. Fetch Raw Materials Catalogue
-      const { data: catData, error: catError } = await supabase
-        .from('raw_materials_catalogue')
-        .select('*');
-      if (catError) throw catError;
-      setRawCatalogue(catData || []);
-
-      // 3. Fetch Purchase History with nested line items
-      const { data: purchData, error: purchError } = await supabase
-        .from('purchase_transactions')
-        .select(`
-          *,
-          purchase_line_items (*)
-        `)
-        .order('created_at', { ascending: false });
-      
-      if (purchError) throw purchError;
-
-      // Map snake_case database schema back cleanly to UI state objects if necessary
-      const formattedHistory = (purchData || []).map(p => ({
-        id: p.ref_id,
-        supplier: p.supplier_name,
-        date: p.transaction_date,
-        paymentMode: p.payment_mode,
-        creditOption: p.credit_option,
-        monthlyAmortization: p.monthly_amortization,
-        installmentCount: p.installment_count,
-        totalAmountDueInput: p.total_amount_due_input,
-        totalPurchaseAmount: p.total_purchase_amount,
-        computedInterest: p.computed_interest,
-        computedRate: p.computed_rate,
-        totalAmountDue: p.total_amount_due,
-        items: (p.purchase_line_items || []).map(li => ({
-          id: li.id,
-          type: li.type,
-          code: li.code,
-          name: li.name,
-          containerVolume: li.container_volume,
-          quantity: li.quantity,
-          unitCost: li.unit_cost,
-          total: li.total
-        }))
-      }));
-
-      setPurchaseHistory(formattedHistory);
-    } catch (err) {
-      console.error('Error loading purchase data from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
-    }
-  };
-
-  // Generate next sequence reference ID from existing state or database count
-  const getNextRefId = () => {
-    if (!purchaseHistory || purchaseHistory.length === 0) return 'PUR-000001';
-    let maxNum = 0;
-    purchaseHistory.forEach(item => {
-      if (item.id && item.id.startsWith('PUR-')) {
-        const num = parseInt(item.id.replace('PUR-', ''), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-    });
-    const next = Math.max(purchaseHistory.length, maxNum) + 1;
-    return `PUR-${String(next).padStart(6, '0')}`;
-  };
+  // Save purchase history updates to local storage
+  useEffect(() => {
+    localStorage.setItem('chinito_purchases', JSON.stringify(purchaseHistory));
+  }, [purchaseHistory]);
 
   // When catalogue selection changes, auto-populate container volume if available
   const handleCatalogueChange = (e) => {
@@ -134,8 +96,8 @@ export default function Purchases() {
     setSelectedCatalogueItem(itemId);
     if (itemId) {
       const foundCat = rawCatalogue.find(cat => String(cat.id) === String(itemId));
-      if (foundCat && (foundCat.volumeSize || foundCat.volume_size)) {
-        setContainerVolume(foundCat.volumeSize || foundCat.volume_size);
+      if (foundCat && foundCat.volumeSize) {
+        setContainerVolume(foundCat.volumeSize);
       } else {
         setContainerVolume('');
       }
@@ -166,9 +128,10 @@ export default function Purchases() {
 
     if (purchaseType === 'COGS') {
       const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
-      itemCode = selectedCatalogueItem; 
-      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
-      parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || foundCat?.volume_size || '1');
+
+      itemCode = selectedCatalogueItem; // e.g. "RM-001"
+      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || 'Unknown Material') : 'Unknown Material';
+      parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || '1');
     } else {
       itemName = opexDescription.trim();
       itemCode = 'OPEX';
@@ -236,8 +199,8 @@ export default function Purchases() {
     }
   }
 
-  // Handle final submission of transaction to Supabase
-  const handleSubmitTransaction = async (e) => {
+  // Handle final submission of transaction
+  const handleSubmitTransaction = (e) => {
     e.preventDefault();
     if (!selectedSupplier) {
       alert('Please select a supplier.');
@@ -248,122 +211,64 @@ export default function Purchases() {
       return;
     }
 
-    const newRefId = getNextRefId();
-
-    const transactionPayload = {
-      ref_id: newRefId,
-      supplier_name: selectedSupplier,
-      transaction_date: transactionDate,
-      payment_mode: paymentMode,
-      credit_option: paymentMode === 'Credit' ? creditOption : 'N/A',
-      monthly_amortization: paymentMode === 'Credit' && creditOption === 'Installment' ? Number(monthlyAmortization) || null : null,
-      installment_count: paymentMode === 'Credit' && creditOption === 'Installment' ? Number(installmentCount) || null : null,
-      total_amount_due_input: paymentMode === 'Credit' && creditOption === 'One-Time' ? Number(totalAmountDueInput) || null : null,
-      total_purchase_amount: totalPurchaseAmount,
-      computed_interest: computedInterest,
-      computed_rate: computedRate,
-      total_amount_due: totalAmountDue
+    const transactionRecord = {
+      id: getNextRefId(purchaseHistory),
+      supplier: selectedSupplier,
+      date: transactionDate,
+      paymentMode,
+      creditOption: paymentMode === 'Credit' ? creditOption : 'N/A',
+      monthlyAmortization: paymentMode === 'Credit' && creditOption === 'Installment' ? monthlyAmortization : null,
+      installmentCount: paymentMode === 'Credit' && creditOption === 'Installment' ? installmentCount : null,
+      totalAmountDueInput: paymentMode === 'Credit' && creditOption === 'One-Time' ? totalAmountDueInput : null,
+      items: lineItems,
+      totalPurchaseAmount,
+      computedInterest,
+      computedRate,
+      totalAmountDue
     };
 
-    try {
-      // 1. Insert Transaction Header
-      const { data: insertedHeader, error: headerError } = await supabase
-        .from('purchase_transactions')
-        .insert([transactionPayload])
-        .select()
-        .single();
+    // --- INTEGRATED CATALOGUE & INVENTORY STORAGE LOGIC ---
+    const inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    const rawCat = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
 
-      if (headerError) throw headerError;
+    // Update catalogue stock quantities based on purchase lines using standardized properties (id, rawMaterial, volumeSize, baseUnit)
+    transactionRecord.items.forEach(line => {
+      if (line.type === 'COGS') {
+        const catMeta = rawCat.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name);
+        const volumeStr = line.containerVolume || (catMeta ? catMeta.volumeSize : '1');
+        const multiplier = parseVolumeInMl(volumeStr);
+        const totalToAdd = Number(line.quantity || 0) * multiplier;
 
-      // 2. Prepare & Insert Line Items
-      const lineItemsPayload = lineItems.map(item => ({
-        transaction_id: insertedHeader.id,
-        type: item.type,
-        code: item.code,
-        name: item.name,
-        container_volume: item.containerVolume,
-        quantity: item.quantity,
-        unit_cost: item.unitCost,
-        total: item.total
-      }));
-
-      const { error: linesError } = await supabase
-        .from('purchase_line_items')
-        .insert(lineItemsPayload);
-
-      if (linesError) throw linesError;
-
-      // 3. Update Inventory Stock Quantities in Supabase
-      for (const line of lineItems) {
-        if (line.type === 'COGS') {
-          const catMeta = rawCatalogue.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name || c.raw_material === line.name);
-          const volumeStr = line.containerVolume || (catMeta ? (catMeta.volumeSize || catMeta.volume_size) : '1');
-          const multiplier = parseVolumeInMl(volumeStr);
-          const totalToAdd = Number(line.quantity || 0) * multiplier;
-
-          // Check if item already exists in inventory table
-          const { data: existingInv, error: fetchInvErr } = await supabase
-            .from('inventory')
-            .select('*')
-            .or(`code.eq.${line.code},raw_material.eq.${line.name}`)
-            .maybeSingle();
-
-          if (fetchInvErr) console.error('Error checking inventory:', fetchInvErr);
-
-          if (existingInv) {
-            // Update existing stock quantity
-            const updatedStock = Number(existingInv.stockQty || existingInv.stock_qty || 0) + totalToAdd;
-            await supabase
-              .from('inventory')
-              .update({ stockQty: updatedStock, stock_qty: updatedStock })
-              .eq('id', existingInv.id);
-          } else {
-            // Insert new inventory record
-            const newInvItem = {
-              code: line.code,
-              raw_material: line.name,
-              category: catMeta ? (catMeta.category || 'RAW MATERIAL') : 'RAW MATERIAL',
-              volumeSize: volumeStr,
-              volume_size: volumeStr,
-              stockQty: totalToAdd,
-              stock_qty: totalToAdd,
-              unit: catMeta ? (catMeta.baseUnit || catMeta.unit || 'ml') : 'ml'
-            };
-            await supabase.from('inventory').insert([newInvItem]);
-          }
+        const matchIndex = inventory.findIndex(i => String(i.code || i.id) === String(line.code) || i.rawMaterial === line.name);
+        if (matchIndex !== -1) {
+          const invItem = inventory[matchIndex];
+          invItem.stockQty = Number(invItem.stockQty || 0) + totalToAdd;
+        } else {
+          inventory.push({
+            id: catMeta ? catMeta.id : (Date.now() + Math.random()),
+            code: line.code,
+            rawMaterial: line.name,
+            category: catMeta ? catMeta.category : 'RAW MATERIAL',
+            volumeSize: volumeStr,
+            stockQty: totalToAdd,
+            unit: catMeta ? (catMeta.baseUnit || catMeta.unit || 'ml') : 'ml'
+          });
         }
       }
+    });
 
-      const transactionRecord = {
-        id: newRefId,
-        supplier: selectedSupplier,
-        date: transactionDate,
-        paymentMode,
-        creditOption: paymentMode === 'Credit' ? creditOption : 'N/A',
-        monthlyAmortization: paymentMode === 'Credit' && creditOption === 'Installment' ? monthlyAmortization : null,
-        installmentCount: paymentMode === 'Credit' && creditOption === 'Installment' ? installmentCount : null,
-        totalAmountDueInput: paymentMode === 'Credit' && creditOption === 'One-Time' ? totalAmountDueInput : null,
-        items: lineItems,
-        totalPurchaseAmount,
-        computedInterest,
-        computedRate,
-        totalAmountDue
-      };
+    localStorage.setItem('chinito_inventory', JSON.stringify(inventory));
+    setPurchaseHistory(prev => [transactionRecord, ...prev]);
+    
+    setIsAddModalOpen(false);
+    setSubmittedModalData(transactionRecord);
 
-      setPurchaseHistory(prev => [transactionRecord, ...prev]);
-      setIsAddModalOpen(false);
-      setSubmittedModalData(transactionRecord);
-
-      // Reset Form State
-      setLineItems([]);
-      setSelectedSupplier('');
-      setMonthlyAmortization('');
-      setInstallmentCount('');
-      setTotalAmountDueInput('');
-    } catch (err) {
-      console.error('Error saving transaction to Supabase:', err.message);
-      alert('Failed to save purchase transaction: ' + err.message);
-    }
+    // Reset Form State
+    setLineItems([]);
+    setSelectedSupplier('');
+    setMonthlyAmortization('');
+    setInstallmentCount('');
+    setTotalAmountDueInput('');
   };
 
   return (
@@ -384,66 +289,62 @@ export default function Purchases() {
       {/* Recorded Purchase Transactions History Table */}
       <div style={{ marginTop: '25px' }}>
         <h3 style={styles.listHeading}>Recorded Purchase Transactions History</h3>
-        {loadingData ? (
-          <p style={{ color: '#666', fontStyle: 'italic' }}>Loading purchase history from database...</p>
-        ) : (
-          <table style={styles.historyTable}>
-            <colgroup>
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '20%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '25%' }} />
-              <col style={{ width: '12%' }} />
-              <col style={{ width: '13%' }} />
-            </colgroup>
-            <thead>
-              <tr style={styles.trHead}>
-                <th style={styles.thLeft}>Ref / Date</th>
-                <th style={styles.thLeft}>Supplier</th>
-                <th style={styles.thLeft}>Terms</th>
-                <th style={styles.thLeft}>Items</th>
-                <th style={styles.thLeft}>Total Purchase</th>
-                <th style={styles.thLeft}>Total Amount Due</th>
+        <table style={styles.historyTable}>
+          <colgroup>
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '20%' }} />
+            <col style={{ width: '15%' }} />
+            <col style={{ width: '25%' }} />
+            <col style={{ width: '12%' }} />
+            <col style={{ width: '13%' }} />
+          </colgroup>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.thLeft}>Ref / Date</th>
+              <th style={styles.thLeft}>Supplier</th>
+              <th style={styles.thLeft}>Terms</th>
+              <th style={styles.thLeft}>Items</th>
+              <th style={styles.thLeft}>Total Purchase</th>
+              <th style={styles.thLeft}>Total Amount Due</th>
+            </tr>
+          </thead>
+          <tbody>
+            {purchaseHistory.length === 0 ? (
+              <tr>
+                <td colSpan="6" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
               </tr>
-            </thead>
-            <tbody>
-              {purchaseHistory.length === 0 ? (
-                <tr>
-                  <td colSpan="6" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
-                </tr>
-              ) : (
-                purchaseHistory.map(p => (
-                  <tr key={p.id} style={styles.trBody}>
-                    <td style={styles.td}>
-                      <div style={{ fontWeight: 'bold' }}>{p.id}</div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>{p.date}</div>
-                    </td>
-                    <td style={styles.td}><b>{p.supplier}</b></td>
-                    <td style={styles.td}>
-                      <div>{p.paymentMode}</div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>
-                        {p.creditOption === 'Installment' && p.installmentCount
-                          ? `Installment (${p.installmentCount} mos)`
-                          : p.creditOption}
+            ) : (
+              purchaseHistory.map(p => (
+                <tr key={p.id} style={styles.trBody}>
+                  <td style={styles.td}>
+                    <div style={{ fontWeight: 'bold' }}>{p.id}</div>
+                    <div style={{ fontSize: '13px', color: '#666' }}>{p.date}</div>
+                  </td>
+                  <td style={styles.td}><b>{p.supplier}</b></td>
+                  <td style={styles.td}>
+                    <div>{p.paymentMode}</div>
+                    <div style={{ fontSize: '13px', color: '#666' }}>
+                      {p.creditOption === 'Installment' && p.installmentCount
+                        ? `Installment (${p.installmentCount} mos)`
+                        : p.creditOption}
+                    </div>
+                  </td>
+                  <td style={styles.td}>
+                    {p.items && p.items.map((i, idx) => (
+                      <div key={idx} style={{ fontSize: '14px', marginBottom: '4px' }}>
+                        &bull; {i.code && i.code !== 'OPEX' ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
+                        {i.containerVolume ? ` (${i.containerVolume})` : ''} 
+                        {' '}({i.quantity} x ₱{i.unitCost})
                       </div>
-                    </td>
-                    <td style={styles.td}>
-                      {p.items && p.items.map((i, idx) => (
-                        <div key={idx} style={{ fontSize: '14px', marginBottom: '4px' }}>
-                          &bull; {i.code && i.code !== 'OPEX' ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
-                          {i.containerVolume ? ` (${i.containerVolume})` : ''} 
-                          {' '}({i.quantity} x ₱{i.unitCost})
-                        </div>
-                      ))}
-                    </td>
-                    <td style={styles.td}>₱{Number(p.totalPurchaseAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td style={styles.td}><strong>₱{Number(p.totalAmountDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        )}
+                    ))}
+                  </td>
+                  <td style={styles.td}>₱{p.totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                  <td style={styles.td}><strong>₱{p.totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </div>
 
       {/* ADD PURCHASE TRANSACTION MODAL */}
@@ -519,13 +420,11 @@ export default function Purchases() {
                       >
                         <option value="">-- Select Raw Material --</option>
                         {rawCatalogue.map((cat, idx) => {
-                          const itemName = cat.rawMaterial || cat.name || cat.raw_material;
-                          const itemId = cat.id; // e.g. RM-001 or UUID
-                          const volSize = cat.volumeSize || cat.volume_size;
-                          const bUnit = cat.baseUnit || cat.unit;
+                          const itemName = cat.rawMaterial || cat.name;
+                          const itemId = cat.id; // e.g. RM-001
                           return (
                             <option key={cat.id || idx} value={itemId}>
-                              {itemId ? `[${itemId}] ` : ''}{itemName} {volSize ? `(${volSize})` : bUnit ? `(${bUnit})` : ''}
+                              {itemId ? `[${itemId}] ` : ''}{itemName} {cat.volumeSize ? `(${cat.volumeSize})` : cat.baseUnit ? `(${cat.baseUnit})` : ''}
                             </option>
                           );
                         })}
@@ -828,6 +727,8 @@ export default function Purchases() {
   );
 }
 
+const primaryGold = '#c5a059';
+
 const styles = {
   container: {
     backgroundColor: '#ffffff',
@@ -870,33 +771,77 @@ const styles = {
     color: '#333',
     margin: '0 0 12px 0'
   },
+  sectionBox: {
+    backgroundColor: '#fbf9f6',
+    border: '1px solid #eae5de',
+    borderRadius: '6px',
+    padding: '20px',
+    marginTop: '20px',
+    marginBottom: '20px'
+  },
+  historyTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#fff',
+    fontSize: '15px',
+    textAlign: 'left'
+  },
+  table: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#fff',
+    fontSize: '15px',
+    textAlign: 'left'
+  },
+  trHead: {
+    borderBottom: '2px solid #e2ded8',
+    backgroundColor: '#f4f1eb',
+    textAlign: 'left'
+  },
+  thLeft: {
+    padding: '14px 16px',
+    fontSize: '14px',
+    fontWeight: '700',
+    color: '#444',
+    textAlign: 'left',
+    letterSpacing: '0.5px'
+  },
+  trBody: {
+    borderBottom: '1px solid #eee',
+    textAlign: 'left'
+  },
+  td: {
+    padding: '16px',
+    verticalAlign: 'top',
+    textAlign: 'left',
+    fontSize: '15px'
+  },
+  emptyTd: {
+    padding: '25px',
+    textAlign: 'center',
+    color: '#777',
+    fontStyle: 'italic',
+    fontSize: '15px'
+  },
   primaryBtn: {
-    backgroundColor: '#c5a059',
-    color: '#fff',
+    backgroundColor: primaryGold,
+    color: '#ffffff',
     border: 'none',
     borderRadius: '6px',
-    padding: '10px 18px',
+    padding: '12px 20px',
     fontSize: '15px',
     fontWeight: '600',
-    cursor: 'pointer'
+    cursor: 'pointer',
+    boxShadow: '0 2px 5px rgba(197,160,89,0.3)'
   },
   secondaryBtn: {
-    backgroundColor: '#f4f0ea',
-    color: '#333',
-    border: '1px solid #dcd6ce',
+    backgroundColor: '#444',
+    color: '#ffffff',
+    border: 'none',
     borderRadius: '6px',
-    padding: '8px 14px',
+    padding: '10px 16px',
     fontSize: '14px',
     fontWeight: '600',
-    cursor: 'pointer'
-  },
-  removeBtn: {
-    backgroundColor: '#ff4d4f',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    padding: '4px 8px',
-    fontSize: '12px',
     cursor: 'pointer'
   },
   cancelBtn: {
@@ -904,98 +849,84 @@ const styles = {
     color: '#333',
     border: 'none',
     borderRadius: '6px',
-    padding: '10px 18px',
+    padding: '12px 20px',
     fontSize: '15px',
     fontWeight: '600',
     cursor: 'pointer'
   },
-  historyTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginTop: '10px'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginTop: '8px',
-    marginBottom: '15px'
-  },
-  trHead: {
-    borderBottom: '2px solid #e2ded8',
-    backgroundColor: '#faf8f5'
-  },
-  thLeft: {
-    textAlign: 'left',
-    padding: '12px',
+  removeBtn: {
+    backgroundColor: '#d9534f',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '4px',
+    padding: '6px 10px',
     fontSize: '13px',
-    fontWeight: '600',
-    color: '#555',
-    textTransform: 'uppercase'
+    cursor: 'pointer'
   },
-  trBody: {
-    borderBottom: '1px solid #eee'
+  cogsBadge: {
+    backgroundColor: '#e6f4ea',
+    color: '#137333',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700'
   },
-  td: {
-    padding: '12px',
-    verticalAlign: 'top',
-    fontSize: '14px',
-    color: '#333'
-  },
-  emptyTd: {
-    textAlign: 'center',
-    padding: '30px',
-    color: '#888',
-    fontStyle: 'italic'
+  opexBadge: {
+    backgroundColor: '#fce8e6',
+    color: '#c5221f',
+    padding: '5px 10px',
+    borderRadius: '4px',
+    fontSize: '13px',
+    fontWeight: '700'
   },
   modalOverlay: {
     position: 'fixed',
     top: 0,
     left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     display: 'flex',
     justifyContent: 'center',
     alignItems: 'center',
     zIndex: 1000,
-    overflowY: 'auto',
     padding: '20px'
   },
   modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: '8px',
+    backgroundColor: '#ffffff',
+    borderRadius: '10px',
     width: '100%',
-    maxWidth: '850px',
+    maxWidth: '900px',
     maxHeight: '90vh',
     overflowY: 'auto',
     padding: '30px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.15)'
+    boxShadow: '0 10px 30px rgba(0,0,0,0.2)'
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: '20px',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '15px'
+    borderBottom: '1px solid #eae5de',
+    paddingBottom: '15px',
+    marginBottom: '20px'
   },
   modalTitle: {
-    fontSize: '20px',
+    fontSize: '22px',
     fontWeight: '700',
-    margin: 0,
-    color: '#1a1a1a'
+    color: '#1a1a1a',
+    margin: 0
   },
   closeBtnIcon: {
-    background: 'none',
+    backgroundColor: 'transparent',
     border: 'none',
-    fontSize: '18px',
+    fontSize: '20px',
     cursor: 'pointer',
     color: '#666'
   },
   formCard: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '20px'
+    gap: '15px'
   },
   gridTwo: {
     display: 'grid',
@@ -1013,105 +944,88 @@ const styles = {
     gap: '6px'
   },
   label: {
-    fontSize: '13px',
+    fontSize: '14px',
     fontWeight: '600',
     color: '#444'
   },
   input: {
-    padding: '10px',
+    padding: '11px 14px',
     borderRadius: '6px',
     border: '1px solid #ccc',
-    fontSize: '14px',
+    fontSize: '15px',
     outline: 'none',
     backgroundColor: '#fff'
-  },
-  sectionBox: {
-    backgroundColor: '#faf8f5',
-    border: '1px solid #eadece',
-    borderRadius: '6px',
-    padding: '15px'
   },
   btnRowRight: {
     display: 'flex',
     justifyContent: 'flex-end',
-    marginTop: '10px'
-  },
-  cogsBadge: {
-    backgroundColor: '#e6f4ea',
-    color: '#137333',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600'
-  },
-  opexBadge: {
-    backgroundColor: '#fce8e6',
-    color: '#c5221f',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600'
+    marginTop: '5px'
   },
   summaryCard: {
-    backgroundColor: '#1a1a1a',
-    color: '#fff',
-    borderRadius: '6px',
-    padding: '18px 22px',
+    backgroundColor: '#f4f1eb',
+    border: '1px solid #e2ded8',
+    borderRadius: '8px',
+    padding: '20px',
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center'
+    alignItems: 'center',
+    marginTop: '20px'
   },
   summaryLabel: {
-    fontSize: '11px',
+    fontSize: '13px',
+    fontWeight: '700',
+    color: '#666',
     letterSpacing: '0.5px',
-    color: '#aaa',
     marginBottom: '4px'
   },
   summaryMainVal: {
-    fontSize: '22px',
+    fontSize: '24px',
     fontWeight: '700',
-    color: '#c5a059'
+    color: '#1a1a1a'
   },
   summaryDueVal: {
-    fontSize: '22px',
+    fontSize: '24px',
     fontWeight: '700',
-    color: '#fff'
+    color: primaryGold
   },
   summarySubText: {
-    fontSize: '12px',
-    color: '#bbb',
+    fontSize: '13px',
+    color: '#666',
     marginTop: '4px'
   },
   modalFooterActions: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '10px',
-    marginTop: '10px'
+    gap: '12px',
+    marginTop: '25px',
+    borderTop: '1px solid #eae5de',
+    paddingTop: '20px'
   },
   modalBadge: {
     backgroundColor: '#e6f4ea',
     color: '#137333',
-    padding: '4px 10px',
-    borderRadius: '4px',
-    fontSize: '12px',
+    padding: '6px 12px',
+    borderRadius: '6px',
+    fontSize: '13px',
     fontWeight: '700'
   },
   modalMetaGrid: {
     display: 'grid',
     gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '10px',
-    backgroundColor: '#faf8f5',
-    padding: '12px',
+    gap: '15px',
+    backgroundColor: '#fbf9f6',
+    padding: '15px',
     borderRadius: '6px',
-    border: '1px solid #eee'
+    border: '1px solid #eae5de'
   },
   modalSubLabel: {
-    fontSize: '12px',
-    color: '#666'
+    fontSize: '13px',
+    color: '#666',
+    display: 'block',
+    marginBottom: '2px'
   },
   modalMetaVal: {
-    fontSize: '14px',
-    color: '#222',
-    marginTop: '2px'
+    fontSize: '15px',
+    color: '#1a1a1a'
   }
 };

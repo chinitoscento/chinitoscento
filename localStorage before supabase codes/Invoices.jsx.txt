@@ -1,6 +1,8 @@
+Invoices.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient';
 
 export default function Invoices() {
   const [invoices, setInvoices] = useState([]);
@@ -8,66 +10,51 @@ export default function Invoices() {
 
   useEffect(() => {
     loadInvoices();
+    const syncData = () => loadInvoices();
+    window.addEventListener('storage', syncData);
+    window.addEventListener('chinito_sales_updated', syncData);
+    window.addEventListener('chinito_collections_updated', syncData);
+    return () => {
+      window.removeEventListener('storage', syncData);
+      window.removeEventListener('chinito_sales_updated', syncData);
+      window.removeEventListener('chinito_collections_updated', syncData);
+    };
   }, []);
 
-  const loadInvoices = async () => {
-    try {
-      const [
-        { data: invData, error: invError },
-        { data: soData, error: soError },
-        { data: colData, error: colError }
-      ] = await Promise.all([
-        supabase.from('invoices').select('*'),
-        supabase.from('sales_orders').select('*'),
-        supabase.from('collections').select('*')
-      ]);
+  const loadInvoices = () => {
+    const savedInvoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]');
+    const collections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
+    
+    const activeSOs = savedSOs.filter(so => so.status !== 'Declined');
 
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
-      if (soError && soError.code !== 'PGRST116') console.error(soError);
-      if (colError && colError.code !== 'PGRST116') console.error(colError);
-
-      const savedInvoices = invData || [];
-      const savedSOs = soData || [];
-      const collections = colData || [];
+    const combined = activeSOs.map(so => {
+      const existingInv = savedInvoices.find(inv => inv.soNumber === so.soNumber);
+      const isCash = (so.paymentMode || '').toUpperCase() === 'CASH';
       
-      const activeSOs = savedSOs.filter(so => (so.status || so.order_status) !== 'Declined');
+      // Calculate total paid from collections
+      const paidSoCollections = collections.filter(c => c.invoiceNo === so.soNumber);
+      const totalPaidSo = paidSoCollections.reduce((sum, c) => sum + Number(c.amountPaid || 0), 0);
+      const totalDue = Number(so.totalDue || 0);
 
-      const combined = activeSOs.map(so => {
-        const soNum = so.soNumber || so.so_number || so.invoice_no;
-        const existingInv = savedInvoices.find(inv => (inv.soNumber || inv.so_number || inv.invoice_no) === soNum);
-        const paymentMode = so.paymentMode || so.payment_mode || '';
-        const isCash = paymentMode.toUpperCase() === 'CASH';
-        
-        // Calculate total paid from collections
-        const paidSoCollections = collections.filter(c => (c.invoiceNo || c.invoice_no || c.soNumber || c.so_number) === soNum);
-        const totalPaidSo = paidSoCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.amount_paid || c.credit || 0), 0);
-        const totalDue = Number(so.totalDue || so.total_due || 0);
+      let computedStatus = 'UNPAID';
+      if (isCash || totalPaidSo >= totalDue) {
+        computedStatus = 'PAID';
+      } else if (totalPaidSo > 0) {
+        computedStatus = 'PARTIAL';
+      }
 
-        let computedStatus = 'UNPAID';
-        if (isCash || totalPaidSo >= totalDue) {
-          computedStatus = 'PAID';
-        } else if (totalPaidSo > 0) {
-          computedStatus = 'PARTIAL';
-        }
+      return {
+        ...so,
+        ...(existingInv || {}),
+        invoiceStatus: computedStatus,
+        totalPaid: totalPaidSo,
+        balanceDue: Math.max(0, totalDue - totalPaidSo),
+        remarks: so.remarks || existingInv?.remarks || ''
+      };
+    });
 
-        return {
-          ...so,
-          soNumber: soNum,
-          customerName: so.customerName || so.customer_name,
-          totalDue: totalDue,
-          paymentMode: paymentMode,
-          ...(existingInv || {}),
-          invoiceStatus: computedStatus,
-          totalPaid: totalPaidSo,
-          balanceDue: Math.max(0, totalDue - totalPaidSo),
-          remarks: so.remarks || existingInv?.remarks || ''
-        };
-      });
-
-      setInvoices(combined);
-    } catch (err) {
-      console.error('Error loading invoices from Supabase:', err);
-    }
+    setInvoices(combined);
   };
 
   const handlePrint = () => window.print();

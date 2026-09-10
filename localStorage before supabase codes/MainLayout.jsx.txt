@@ -1,3 +1,6 @@
+MainLayout.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import Dashboard from './Dashboard.jsx';
 import Customers from './Customers.jsx';
@@ -19,7 +22,6 @@ import Collections from './Collections.jsx';
 import CustomerLedger from './CustomerLedger.jsx';
 import SystemSettings from './SystemSettings.jsx';
 import logo from './logo.png';
-import { supabase } from './supabaseClient';
 
 // Luxury Atelier Welcome view for non-owner roles
 function AtelierWorkspace({ userName, onNavigate }) {
@@ -86,11 +88,7 @@ export default function MainLayout({ onLogout }) {
   const isOwnerOrAdmin = normalizedRole === 'admin' || normalizedRole === 'owner';
   const isManager = normalizedRole === 'manager' || !isOwnerOrAdmin;
 
-  const [activePage, setActivePage] = useState(() => {
-    const savedPage = localStorage.getItem('chinito_active_page');
-    if (savedPage) return savedPage;
-    return isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace';
-  });
+  const [activePage, setActivePage] = useState(isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace');
   
   // All sidebar sections collapsed by default
   const [openSections, setOpenSections] = useState({
@@ -104,21 +102,14 @@ export default function MainLayout({ onLogout }) {
     Settings: false,
   });
 
-  const [batches, setBatches] = useState([]);
+  const [batches, setBatches] = useState(() => {
+    const saved = localStorage.getItem('chinito_batches');
+    return saved ? JSON.parse(saved) : [];
+  });
 
   useEffect(() => {
-    loadBatches();
-  }, []);
-
-  const loadBatches = async () => {
-    try {
-      const { data, error } = await supabase.from('batches').select('*');
-      if (error && error.code !== 'PGRST116') console.error(error);
-      setBatches(data || []);
-    } catch (err) {
-      console.error('Error loading batches from Supabase:', err);
-    }
-  };
+    localStorage.setItem('chinito_batches', JSON.stringify(batches));
+  }, [batches]);
 
   const [currentDate] = useState(() => {
     const options = { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' };
@@ -134,9 +125,8 @@ export default function MainLayout({ onLogout }) {
     }));
   };
 
-const handleNavClick = (pageName, sectionName) => {
+  const handleNavClick = (pageName, sectionName) => {
     setActivePage(pageName);
-    localStorage.setItem('chinito_active_page', pageName);
     if (sectionName) {
       setOpenSections(prev => ({
         ...prev,
@@ -264,7 +254,7 @@ const handleNavClick = (pageName, sectionName) => {
 
           {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations'])}
           {!isManager && renderSection('Purchasing', ['Purchases', 'Purchase Cost Monitoring', 'Costing'])}
-          {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods'])}
+          {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods', 'Stock Ledger'])}
           {!isManager && renderSection('Production', ['Maceration', 'Packaging'])}
           
           {renderSection('Sales', ['Sales Order', 'Invoices', 'Sales Returns'])}

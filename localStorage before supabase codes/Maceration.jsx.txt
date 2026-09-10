@@ -1,5 +1,7 @@
+Maceration.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Maceration() {
   const [productionList, setProductionList] = useState([]);
@@ -16,7 +18,6 @@ export default function Maceration() {
   // Data sources
   const [formulations, setFormulations] = useState([]);
   const [rawCatalogue, setRawCatalogue] = useState([]);
-  const [inventoryList, setInventoryList] = useState([]);
   const [stockAvailability, setStockAvailability] = useState(null);
 
   useEffect(() => {
@@ -27,7 +28,7 @@ export default function Maceration() {
     if (!existingList || existingList.length === 0) return 'MAC-000001';
     let maxNum = 0;
     existingList.forEach(item => {
-      const codeToCheck = item.productionCode || item.production_code || '';
+      const codeToCheck = item.productionCode || '';
       if (codeToCheck.startsWith('MAC-')) {
         const num = parseInt(codeToCheck.split('-')[1], 10);
         if (!isNaN(num) && num > maxNum) maxNum = num;
@@ -36,67 +37,37 @@ export default function Maceration() {
     return `MAC-${String(maxNum + 1).padStart(6, '0')}`;
   };
 
-  const loadData = async () => {
-    try {
-      const [
-        { data: macData, error: macError },
-        { data: formRows, error: formError },
-        { data: catRows, error: catError },
-        { data: invRows, error: invError }
-      ] = await Promise.all([
-        supabase.from('maceration').select('*').order('id', { ascending: false }),
-        supabase.from('formulations').select('*'),
-        supabase.from('raw_materials_catalogue').select('*'),
-        supabase.from('inventory').select('*')
-      ]);
+  const loadData = () => {
+    const savedProd = JSON.parse(localStorage.getItem('chinito_maceration') || '[]');
+    const savedFormulations = JSON.parse(
+      localStorage.getItem('chinito_formulations') || 
+      localStorage.getItem('chinito_inventory') || '[]'
+    );
+    const savedCatalogue = JSON.parse(localStorage.getItem('chinito_raw_materials_catalogue') || '[]');
 
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
-      if (formError && formError.code !== 'PGRST116') console.error(formError);
-      if (catError && catError.code !== 'PGRST116') console.error(catError);
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
+    const todayStr = new Date().toISOString().split('T')[0];
 
-      const savedProd = macData || [];
-      const todayStr = new Date().toISOString().split('T')[0];
+    // Automatically check and update status to READY if today's date >= readyDate
+    const evaluatedProd = savedProd.map(item => {
+      if (item.status === 'Macerating' && item.readyDate && todayStr >= item.readyDate) {
+        return { ...item, status: 'Ready' };
+      }
+      return item;
+    });
 
-      // Automatically check and update status to READY if today's date >= readyDate
-      const evaluatedProd = await Promise.all(
-        savedProd.map(async (item) => {
-          const itemStatus = item.status || 'Macerating';
-          const rDate = item.readyDate || item.ready_date;
-          if (itemStatus === 'Macerating' && rDate && todayStr >= rDate) {
-            // Update in DB
-            await supabase.from('maceration').update({ status: 'Ready' }).eq('id', item.id);
-            return { ...item, status: 'Ready' };
-          }
-          return item;
-        })
-      );
+    localStorage.setItem('chinito_maceration', JSON.stringify(evaluatedProd));
 
-      const formattedForms = (formRows || []).map(f => ({
-        id: f.id,
-        productCode: f.product_code || f.productCode,
-        scentName: f.scent_name || f.scentName,
-        sizeValue: f.size_value || f.sizeValue,
-        oilPercentage: f.oil_percentage ?? f.oilPercentage,
-        solventPercentage: f.solvent_percentage ?? f.solventPercentage,
-        oilId: f.oil_id || f.oilId,
-        solventId: f.solvent_id || f.solventId
-      }));
-
-      setProductionList(evaluatedProd);
-      setFormulations(formattedForms);
-      setRawCatalogue(catRows || []);
-      setInventoryList(invRows || []);
-      setProductionCode(generateNextProductionCode(evaluatedProd));
-    } catch (err) {
-      console.error('Error loading maceration data from Supabase:', err);
-    }
+    setProductionList(evaluatedProd);
+    setFormulations(savedFormulations);
+    setRawCatalogue(savedCatalogue);
+    setProductionCode(generateNextProductionCode(evaluatedProd));
   };
 
   const getFormulationForScent = (scentName) => {
     if (!scentName || !Array.isArray(formulations)) return null;
     return formulations.find(f => 
-      ((f.scentName || '').toLowerCase() === scentName.toLowerCase())
+      (f.scentName && f.scentName.toLowerCase() === scentName.toLowerCase()) ||
+      (f.name && f.name.toLowerCase() === scentName.toLowerCase())
     );
   };
 
@@ -108,12 +79,15 @@ export default function Maceration() {
 
     const formulationData = getFormulationForScent(selectedScent);
     if (!formulationData) return;
+
+    const inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
     
+    // Match directly using exact IDs/codes (e.g., "RM-001") from chinito_formulations
     const oilId = String(formulationData.oilId || '').trim();
     const solventId = String(formulationData.solventId || 'RM-011').trim();
 
     const findItem = (targetId) => {
-      return inventoryList.find(i => {
+      return inventory.find(i => {
         const code = String(i.code || '').trim();
         const id = String(i.id || '').trim();
         return code === targetId || id === targetId;
@@ -123,8 +97,8 @@ export default function Maceration() {
     const oilItem = findItem(oilId);
     const solventItem = findItem(solventId);
 
-    const availableOil = oilItem ? Number(oilItem.stock_qty || oilItem.stockQty || 0) : 0;
-    const availableSolvent = solventItem ? Number(solventItem.stock_qty || solventItem.stockQty || 0) : 0;
+    const availableOil = oilItem ? Number(oilItem.stockQty || 0) : 0;
+    const availableSolvent = solventItem ? Number(solventItem.stockQty || 0) : 0;
 
     const oilPct = Number(formulationData.oilPercentage || 20) / 100;
     const solventPct = Number(formulationData.solventPercentage || 80) / 100;
@@ -142,10 +116,10 @@ export default function Maceration() {
       maxPossibleVolume,
       oilId,
       solventId,
-      oilName: catalogueOil ? (catalogueOil.raw_material || catalogueOil.rawMaterial || catalogueOil.name) : (oilItem ? (oilItem.raw_material || oilItem.rawMaterial || oilItem.name) : oilId),
-      solventName: catalogueSolvent ? (catalogueSolvent.raw_material || catalogueSolvent.rawMaterial || catalogueSolvent.name) : (solventItem ? (solventItem.raw_material || solventItem.rawMaterial || solventItem.name) : solventId)
+      oilName: catalogueOil ? (catalogueOil.rawMaterial || catalogueOil.name) : (oilItem ? (oilItem.rawMaterial || oilItem.name) : oilId),
+      solventName: catalogueSolvent ? (catalogueSolvent.rawMaterial || catalogueSolvent.name) : (solventItem ? (solventItem.rawMaterial || solventItem.name) : solventId)
     });
-  }, [selectedScent, rawCatalogue, inventoryList, formulations]);
+  }, [selectedScent, rawCatalogue]);
 
   const handleScentChange = (scentName) => {
     setSelectedScent(scentName);
@@ -155,7 +129,7 @@ export default function Maceration() {
     }
   };
 
-  const handleSaveProduction = async (e) => {
+  const handleSaveProduction = (e) => {
     e.preventDefault();
     if (!selectedScent) {
       alert('Please select a perfume scent.');
@@ -182,80 +156,80 @@ export default function Maceration() {
     const requiredOil = desiredVol * oilPct;
     const requiredSolvent = desiredVol * solventPct;
 
-    let oilMatchedItem = null;
-    let solventMatchedItem = null;
+    let inventory = JSON.parse(localStorage.getItem('chinito_inventory') || '[]');
+    let oilMatched = false;
+    let solventMatched = false;
 
-    inventoryList.forEach(item => {
+    inventory = inventory.map(item => {
       const code = String(item.code || '').trim();
       const id = String(item.id || '').trim();
 
       if (oilId && (code === oilId || id === oilId)) {
-        oilMatchedItem = item;
+        oilMatched = true;
+        const currentQty = Number(item.stockQty || 0);
+        return { ...item, stockQty: Math.max(0, currentQty - requiredOil) };
       }
+
       if (solventId && (code === solventId || id === solventId)) {
-        solventMatchedItem = item;
+        solventMatched = true;
+        const currentQty = Number(item.stockQty || 0);
+        return { ...item, stockQty: Math.max(0, currentQty - requiredSolvent) };
       }
+
+      return item;
     });
 
-    if (!oilMatchedItem) {
-      alert(`Warning: Oil ID/Code "${oilId}" was not found in inventory!`);
+    if (!oilMatched) {
+      alert(`Warning: Oil ID/Code "${oilId}" was not found in chinito_inventory!`);
       return;
     }
-    if (!solventMatchedItem) {
-      alert(`Warning: Solvent ID/Code "${solventId}" was not found in inventory!`);
+    if (!solventMatched) {
+      alert(`Warning: Solvent ID/Code "${solventId}" was not found in chinito_inventory!`);
       return;
     }
 
-    try {
-      // Update inventory stock in Supabase
-      const newOilStock = Math.max(0, Number(oilMatchedItem.stock_qty || oilMatchedItem.stockQty || 0) - requiredOil);
-      const newSolventStock = Math.max(0, Number(solventMatchedItem.stock_qty || solventMatchedItem.stockQty || 0) - requiredSolvent);
+    localStorage.setItem('chinito_inventory', JSON.stringify(inventory));
+    window.dispatchEvent(new Event('storage'));
 
-      await supabase.from('inventory').update({ stock_qty: newOilStock }).eq('id', oilMatchedItem.id);
-      await supabase.from('inventory').update({ stock_qty: newSolventStock }).eq('id', solventMatchedItem.id);
+    const prodDateObj = new Date(productionDate || Date.now());
+    const readyDateObj = new Date(prodDateObj);
+    readyDateObj.setDate(readyDateObj.getDate() + 30);
+    const readyDateFormatted = readyDateObj.toISOString().split('T')[0];
 
-      const prodDateObj = new Date(productionDate || Date.now());
-      const readyDateObj = new Date(prodDateObj);
-      readyDateObj.setDate(readyDateObj.getDate() + 30);
-      const readyDateFormatted = readyDateObj.toISOString().split('T')[0];
-
-      const todayStr = new Date().toISOString().split('T')[0];
-      let finalStatus = status;
-      if (finalStatus === 'Macerating' && todayStr >= readyDateFormatted) {
-        finalStatus = 'Ready';
-      }
-
-      const expectedUnits = Math.ceil(desiredVol / Number(formulationData.sizeValue || 50));
-
-      const newRecord = {
-        production_code: productionCode,
-        scent: selectedScent,
-        product_code: formulationData.productCode,
-        volume_desired: desiredVol,
-        expected_qty: expectedUnits,
-        status: finalStatus,
-        date: productionDate,
-        ready_date: readyDateFormatted
-      };
-
-      const { error: insertError } = await supabase.from('maceration').insert([newRecord]);
-      if (insertError) throw insertError;
-
-      await loadData();
-
-      setIsModalOpen(false);
-      setSelectedScent('');
-      setProductCode('');
-      setVolumeDesired('');
-      setStockAvailability(null);
-    } catch (err) {
-      console.error('Error saving production record to Supabase:', err);
-      alert('Failed to save production batch.');
+    const todayStr = new Date().toISOString().split('T')[0];
+    let finalStatus = status;
+    if (finalStatus === 'Macerating' && todayStr >= readyDateFormatted) {
+      finalStatus = 'Ready';
     }
+
+    const expectedUnits = Math.ceil(desiredVol / Number(formulationData.sizeValue || 50));
+
+    const newRecord = {
+      id: Date.now(),
+      productionCode,
+      scent: selectedScent,
+      productCode: formulationData.productCode,
+      volumeDesired: desiredVol,
+      expectedQty: expectedUnits,
+      status: finalStatus,
+      date: productionDate,
+      readyDate: readyDateFormatted
+    };
+
+    const updatedList = [newRecord, ...productionList];
+    setProductionList(updatedList);
+    localStorage.setItem('chinito_maceration', JSON.stringify(updatedList));
+
+    setIsModalOpen(false);
+    setSelectedScent('');
+    setProductCode('');
+    setVolumeDesired('');
+    setStockAvailability(null);
+    setProductionCode(generateNextProductionCode(updatedList));
   };
 
   const scentOptions = Array.isArray(formulations) 
-    ? formulations.map(f => f.scentName).filter(Boolean)
+    ? formulations.map(f => f.scentName || f.name).filter(Boolean)
     : [];
 
   return (

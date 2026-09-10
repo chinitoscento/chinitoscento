@@ -1,6 +1,8 @@
+CustomerLedger.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient';
 
 export default function CustomerLedger() {
   const [ledgerSummary, setLedgerSummary] = useState([]);
@@ -9,80 +11,62 @@ export default function CustomerLedger() {
 
   useEffect(() => {
     loadLedgerData();
+    window.addEventListener('storage', loadLedgerData);
+    window.addEventListener('chinito_collections_updated', loadLedgerData);
+    return () => {
+      window.removeEventListener('storage', loadLedgerData);
+      window.removeEventListener('chinito_collections_updated', loadLedgerData);
+    };
   }, []);
 
-  const loadLedgerData = async () => {
-    try {
-      const [
-        { data: customersData, error: custError },
-        { data: soData, error: soError },
-        { data: collectionsData, error: colError }
-      ] = await Promise.all([
-        supabase.from('customers').select('*'),
-        supabase.from('sales_orders').select('*'),
-        supabase.from('collections').select('*')
-      ]);
+  const loadLedgerData = () => {
+    const savedCustomers = JSON.parse(localStorage.getItem('chinito_customers') || '[]');
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]').filter(so => so.status !== 'Declined');
+    const savedCollections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
 
-      if (custError && custError.code !== 'PGRST116') console.error(custError);
-      if (soError && soError.code !== 'PGRST116') console.error(soError);
-      if (colError && colError.code !== 'PGRST116') console.error(colError);
+    const summary = savedCustomers.map((cust, idx) => {
+      const custSOs = savedSOs.filter(so => so.customerName === cust.name);
+      const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || 0), 0);
+      
+      const custCollections = savedCollections.filter(c => c.customerName === cust.name);
+      // Sum up amounts whether they are regular payments or sales return credits
+      const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.credit || 0), 0);
+      const totalDue = Math.max(0, totalTrans - totalPaid);
 
-      const savedCustomers = customersData || [];
-      const savedSOs = (soData || []).filter(so => (so.status || so.order_status) !== 'Declined');
-      const savedCollections = collectionsData || [];
+      return {
+        code: cust.code || `CUST-00${idx + 1}`,
+        name: cust.name,
+        totalTrans,
+        totalPaid,
+        totalDue,
+        transactions: custSOs,
+        collections: custCollections
+      };
+    });
 
-      const summary = savedCustomers.map((cust, idx) => {
-        const custName = cust.name || cust.customer_name || '';
-        const custSOs = savedSOs.filter(so => (so.customerName || so.customer_name) === custName);
-        const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || so.total_due || 0), 0);
-        
-        const custCollections = savedCollections.filter(c => (c.customerName || c.customer_name) === custName);
-        const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.amount_paid || c.credit || 0), 0);
-        const totalDue = Math.max(0, totalTrans - totalPaid);
-
-        return {
-          code: cust.code || `CUST-00${idx + 1}`,
-          name: custName,
-          totalTrans,
-          totalPaid,
-          totalDue,
-          transactions: custSOs,
-          collections: custCollections
-        };
-      });
-
-      setLedgerSummary(summary);
-    } catch (err) {
-      console.error('Error loading customer ledger data from Supabase:', err);
-    }
+    setLedgerSummary(summary);
   };
 
   const openLedgerDetails = (custSummary) => {
     const invoiceMap = {};
 
     custSummary.transactions.forEach(so => {
-      const soNum = so.soNumber || so.so_number || so.invoice_no;
-      const soDate = so.date || so.order_date;
-      const totalDue = Number(so.totalDue || so.total_due || 0);
-
-      invoiceMap[soNum] = {
-        ref: soNum,
-        date: soDate,
-        debit: totalDue,
+      invoiceMap[so.soNumber] = {
+        ref: so.soNumber,
+        date: so.date,
+        debit: Number(so.totalDue || 0),
         credit: 0,
         payments: []
       };
     });
 
     custSummary.collections.forEach(col => {
-      const targetRef = col.invoiceNo || col.invoice_no || col.soNumber || col.so_number;
-      const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
-      const txnType = col.transactionType || col.transaction_type;
-      const refOrRemarks = col.reference || col.remarks || '';
-      
-      const labelType = txnType === 'Sales Return' 
-        ? `Sales Return (${refOrRemarks})` 
-        : `Payment (${refOrRemarks})`;
+      // Determine the identifier mapping (supports invoiceNo or soNumber)
+      const targetRef = col.invoiceNo || col.soNumber;
+      const creditVal = Number(col.amountPaid || col.credit || 0);
+      const labelType = col.transactionType === 'Sales Return' 
+        ? `Sales Return (${col.reference || col.remarks})` 
+        : `Payment (${col.remarks})`;
 
       if (invoiceMap[targetRef]) {
         invoiceMap[targetRef].credit += creditVal;
@@ -107,7 +91,7 @@ export default function CustomerLedger() {
     });
 
     const uniqueEntries = Object.values(invoiceMap);
-    uniqueEntries.sort((a, b) => new Date(a.date || '2026-01-01') - new Date(b.date || '2026-01-01'));
+    uniqueEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
     let runningBalance = 0;
     const consolidatedEntries = uniqueEntries.map(entry => {
@@ -122,70 +106,53 @@ export default function CustomerLedger() {
     setSelectedSubledgerInvoice(null);
   };
 
-  const openSubledger = async (custName, invoiceRef) => {
-    try {
-      const [
-        { data: soData, error: soError },
-        { data: collectionsData, error: colError }
-      ] = await Promise.all([
-        supabase.from('sales_orders').select('*'),
-        supabase.from('collections').select('*')
-      ]);
+  const openSubledger = (custName, invoiceRef) => {
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]');
+    const savedCollections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
 
-      if (soError) console.error(soError);
-      if (colError) console.error(colError);
+    const so = savedSOs.find(s => s.soNumber === invoiceRef);
+    const collections = savedCollections.filter(c => (c.invoiceNo === invoiceRef || c.soNumber === invoiceRef));
 
-      const savedSOs = soData || [];
-      const savedCollections = collectionsData || [];
+    const subledgerEntries = [];
 
-      const so = savedSOs.find(s => (s.soNumber || s.so_number || s.invoice_no) === invoiceRef);
-      const collections = savedCollections.filter(c => (c.invoiceNo || c.invoice_no || c.soNumber || c.so_number) === invoiceRef);
-
-      const subledgerEntries = [];
-
-      if (so) {
-        subledgerEntries.push({
-          date: so.date || so.order_date,
-          soNumber: so.soNumber || so.so_number || so.invoice_no,
-          transaction: 'Sales Order / Invoice',
-          debit: Number(so.totalDue || so.total_due || 0),
-          credit: 0
-        });
-      }
-
-      collections.forEach(col => {
-        const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
-        const txnType = col.transactionType || col.transaction_type;
-        const refOrRemarks = col.reference || col.remarks || '';
-        const txnLabel = txnType === 'Sales Return'
-          ? `Sales Return Credit (${refOrRemarks})`
-          : `Payment Collection (${refOrRemarks})`;
-
-        subledgerEntries.push({
-          date: col.date,
-          soNumber: col.invoiceNo || col.invoice_no || col.soNumber || col.so_number,
-          transaction: txnLabel,
-          debit: 0,
-          credit: creditVal
-        });
+    if (so) {
+      subledgerEntries.push({
+        date: so.date,
+        soNumber: so.soNumber,
+        transaction: 'Sales Order / Invoice',
+        debit: Number(so.totalDue || 0),
+        credit: 0
       });
-
-      subledgerEntries.sort((a, b) => new Date(a.date || '2026-01-01') - new Date(b.date || '2026-01-01'));
-
-      let runningBalance = 0;
-      const entriesWithBalance = subledgerEntries.map(entry => {
-        runningBalance += (entry.debit - entry.credit);
-        return { ...entry, runningBalance };
-      });
-
-      setSelectedSubledgerInvoice({
-        customerName: custName,
-        invoiceNo: invoiceRef,
-        entries: entriesWithBalance
-      });
-    } catch (err) {
-      console.error('Error opening subledger from Supabase:', err);
     }
+
+    collections.forEach(col => {
+      const creditVal = Number(col.amountPaid || col.credit || 0);
+      const txnLabel = col.transactionType === 'Sales Return'
+        ? `Sales Return Credit (${col.reference || col.remarks})`
+        : `Payment Collection (${col.remarks})`;
+
+      subledgerEntries.push({
+        date: col.date,
+        soNumber: col.invoiceNo || col.soNumber,
+        transaction: txnLabel,
+        debit: 0,
+        credit: creditVal
+      });
+    });
+
+    subledgerEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    let runningBalance = 0;
+    const entriesWithBalance = subledgerEntries.map(entry => {
+      runningBalance += (entry.debit - entry.credit);
+      return { ...entry, runningBalance };
+    });
+
+    setSelectedSubledgerInvoice({
+      customerName: custName,
+      invoiceNo: invoiceRef,
+      entries: entriesWithBalance
+    });
   };
 
   return (

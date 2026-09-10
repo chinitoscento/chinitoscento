@@ -1,5 +1,7 @@
+SystemSettings.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 
 export default function SystemSettings() {
   const [settings, setSettings] = useState({
@@ -9,40 +11,14 @@ export default function SystemSettings() {
     managerPassword: 'managerpassword123'
   });
 
-  const [loadingData, setLoadingData] = useState(true);
   const [savedMessage, setSavedMessage] = useState('');
 
   useEffect(() => {
-    loadSettings();
-  }, []);
-
-  const loadSettings = async () => {
-    setLoadingData(true);
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .select('*')
-        .limit(1)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-
-      if (data) {
-        setSettings({
-          loginUsername: data.login_username || data.loginUsername || 'Edson',
-          loginPassword: data.login_password || data.loginPassword || 'Edsontan1988.',
-          managerUsername: data.manager_username || data.managerUsername || 'Romel',
-          managerPassword: data.manager_password || data.managerPassword || 'Password123'
-        });
-      }
-    } catch (err) {
-      console.error('Error loading settings from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
+    const saved = JSON.parse(localStorage.getItem('chinito_settings') || '{}');
+    if (Object.keys(saved).length > 0) {
+      setSettings(prev => ({ ...prev, ...saved }));
     }
-  };
+  }, []);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -52,47 +28,12 @@ export default function SystemSettings() {
     }));
   };
 
-  const handleSave = async (e) => {
+  const handleSave = (e) => {
     e.preventDefault();
-    try {
-      // Check if a row already exists in system_settings
-      const { data: existingData } = await supabase
-        .from('system_settings')
-        .select('id')
-        .limit(1)
-        .single();
-
-      const payload = {
-        login_username: settings.loginUsername,
-        login_password: settings.loginPassword,
-        manager_username: settings.managerUsername,
-        manager_password: settings.managerPassword,
-        updated_at: new Date().toISOString()
-      };
-
-      let error;
-      if (existingData && existingData.id) {
-        const { error: updateError } = await supabase
-          .from('system_settings')
-          .update(payload)
-          .eq('id', existingData.id);
-        error = updateError;
-      } else {
-        const { error: insertError } = await supabase
-          .from('system_settings')
-          .insert([payload]);
-        error = insertError;
-      }
-
-      if (error) throw error;
-
-      setSavedMessage('Settings saved successfully to Supabase!');
-      setTimeout(() => setSavedMessage(''), 3000);
-    } catch (err) {
-      console.error('Error saving settings to Supabase:', err.message);
-      setSavedMessage('Failed to save settings: ' + err.message);
-      setTimeout(() => setSavedMessage(''), 4000);
-    }
+    localStorage.setItem('chinito_settings', JSON.stringify(settings));
+    window.dispatchEvent(new Event('storage'));
+    setSavedMessage('Settings saved successfully!');
+    setTimeout(() => setSavedMessage(''), 3000);
   };
 
   return (

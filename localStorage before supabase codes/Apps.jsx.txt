@@ -1,36 +1,27 @@
+Apps.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import Login from './Login.jsx';
 import MainLayout from './MainLayout.jsx';
-import { supabase } from './supabaseClient'; // Adjust path to your supabase client file
 
 export default function App() {
-  // Initialize state for Supabase auth session
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    // Check active sessions from Supabase on mount
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setIsAuthenticated(!!session);
-      setLoading(false);
-    });
-
-    // Listen for changes on auth state (login, logout, token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setIsAuthenticated(!!session);
-      setLoading(false);
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
+  // Initialize state by checking if a session exists in localStorage
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return !!localStorage.getItem('chinito_user_role') || !!localStorage.getItem('chinito_username');
+  });
 
   const handleLoginSuccess = () => {
     setIsAuthenticated(true);
   };
 
-  const handleLogout = async () => {
-    // Clear Supabase auth session on logout
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    // Clear session storage items on logout
+    localStorage.removeItem('chinito_user_role');
+    localStorage.removeItem('chinito_username');
+    localStorage.removeItem('chinito_current_user');
+    localStorage.removeItem('chinito_logged_in_user');
+    localStorage.removeItem('chinito_user');
     setIsAuthenticated(false);
   };
 
@@ -81,10 +72,6 @@ export default function App() {
     window.addEventListener('keydown', handleGlobalKeyDown);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [isAuthenticated]);
-
-  if (loading) {
-    return null; // Render nothing or a loading spinner while checking the session
-  }
 
   return (
     <div style={{ width: '100vw', height: '100vh', margin: 0, padding: 0, overflow: 'hidden' }}>

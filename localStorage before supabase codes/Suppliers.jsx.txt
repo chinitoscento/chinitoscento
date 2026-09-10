@@ -1,94 +1,61 @@
-import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
+Suppliers.jsx
+before supabase
 
-export default function Customers() {
-  const [customers, setCustomers] = useState([]);
+import React, { useState, useEffect } from 'react';
+
+export default function Suppliers() {
+  const [suppliers, setSuppliers] = useState(() => {
+    const saved = localStorage.getItem('chinito_suppliers');
+    return saved ? JSON.parse(saved) : [];
+  });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Form state matching your specifications
   const [formData, setFormData] = useState({
     code: '',
     name: '',
     phone: '',
     email: '',
-    category: 'VIP Boutique',
-    creditLimit: '',
-    status: 'Active'
+    address: ''
   });
 
   useEffect(() => {
-    loadCustomers();
-  }, []);
-
-  const loadCustomers = async () => {
-    try {
-      const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
-      if (error) throw error;
-      
-      const mapped = (data || []).map(c => ({
-        id: c.id,
-        code: c.code,
-        name: c.name,
-        phone: c.phone,
-        email: c.email,
-        category: c.category,
-        creditLimit: c.credit_limit || c.creditLimit,
-        status: c.status
-      }));
-      setCustomers(mapped);
-    } catch (err) {
-      console.error('Error loading customers from Supabase:', err);
-    }
-  };
+    localStorage.setItem('chinito_suppliers', JSON.stringify(suppliers));
+  }, [suppliers]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name) return;
 
-    const generatedCode = formData.code || `CUST-${Math.floor(1000 + Math.random() * 9000)}`;
-    const newRecord = {
-      code: generatedCode,
-      name: formData.name,
-      phone: formData.phone,
-      email: formData.email,
-      category: formData.category,
-      credit_limit: formData.creditLimit ? Number(formData.creditLimit) : 0,
-      status: formData.status
-    };
+    setSuppliers(prev => [
+      ...prev, 
+      { 
+        ...formData, 
+        id: Date.now(), 
+        code: formData.code || `SUPP-${Math.floor(1000 + Math.random() * 9000)}` 
+      }
+    ]);
 
-    try {
-      const { error } = await supabase.from('customers').insert([newRecord]);
-      if (error) throw error;
-
-      await loadCustomers();
-
-      // Reset form and close modal
-      setFormData({
-        code: '',
-        name: '',
-        phone: '',
-        email: '',
-        category: 'VIP Boutique',
-        creditLimit: '',
-        status: 'Active'
-      });
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Error saving customer to Supabase:', err);
-      alert('Failed to save customer.');
-    }
+    setFormData({
+      code: '',
+      name: '',
+      phone: '',
+      email: '',
+      address: ''
+    });
+    setIsModalOpen(false);
   };
 
-  const filteredCustomers = customers.filter(c => 
-    (c.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (c.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    ((c.email || '').toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    s.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.email && s.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -96,8 +63,8 @@ export default function Customers() {
       {/* Header Block */}
       <div style={styles.headerBlock}>
         <div>
-          <h1 style={styles.pageTitle}>Customer Maintenance</h1>
-          <p style={styles.pageSubtitle}>Manage your fragrance boutique clients, profiles, and credit parameters.</p>
+          <h1 style={styles.pageTitle}>Supplier Maintenance</h1>
+          <p style={styles.pageSubtitle}>Manage your raw material partners, essence providers, and vendor details.</p>
         </div>
         <button 
           style={styles.primaryButton}
@@ -105,7 +72,7 @@ export default function Customers() {
           onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
           onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
         >
-          + Add New Customer
+          + Add New Supplier
         </button>
       </div>
 
@@ -113,13 +80,13 @@ export default function Customers() {
       <div style={styles.toolbar}>
         <input 
           type="text" 
-          placeholder="Search by name, code, or email..." 
+          placeholder="Search by supplier name, code, or email..." 
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           style={styles.searchInput}
         />
         <div style={styles.recordCount}>
-          Total Records: <strong>{filteredCustomers.length}</strong>
+          Total Records: <strong>{filteredSuppliers.length}</strong>
         </div>
       </div>
 
@@ -129,47 +96,31 @@ export default function Customers() {
           <thead>
             <tr style={styles.tableHeaderRow}>
               <th style={styles.th}>CODE</th>
-              <th style={styles.th}>CUSTOMER NAME</th>
+              <th style={styles.th}>SUPPLIER NAME</th>
               <th style={styles.th}>CONTACT NUMBER & EMAIL</th>
-              <th style={styles.th}>CATEGORY</th>
-              <th style={styles.th}>CREDIT LIMIT</th>
-              <th style={styles.th}>STATUS</th>
+              <th style={styles.th}>ADDRESS</th>
               <th style={{ ...styles.th, textAlign: 'right' }}>ACTIONS</th>
             </tr>
           </thead>
           <tbody>
-            {filteredCustomers.length === 0 ? (
+            {filteredSuppliers.length === 0 ? (
               <tr>
-                <td colSpan="7" style={styles.emptyState}>
-                  No customer records found. Click "+ Add New Customer" to register your first client.
+                <td colSpan="5" style={styles.emptyState}>
+                  No supplier records found. Click "+ Add New Supplier" to register your first partner.
                 </td>
               </tr>
             ) : (
-              filteredCustomers.map((cust) => (
-                <tr key={cust.id} style={styles.tableRow}>
-                  <td style={styles.tdCode}>{cust.code}</td>
-                  <td style={styles.tdMain}>{cust.name}</td>
+              filteredSuppliers.map((supp) => (
+                <tr key={supp.id} style={styles.tableRow}>
+                  <td style={styles.tdCode}>{supp.code}</td>
+                  <td style={styles.tdMain}>{supp.name}</td>
                   <td style={styles.td}>
                     <div style={styles.contactStack}>
-                      <span>{cust.phone || '—'}</span>
-                      <span style={styles.subEmail}>{cust.email || '—'}</span>
+                      <span>{supp.phone || '—'}</span>
+                      <span style={styles.subEmail}>{supp.email || '—'}</span>
                     </div>
                   </td>
-                  <td style={styles.td}>
-                    <span style={styles.categoryBadge}>{cust.category}</span>
-                  </td>
-                  <td style={styles.td}>
-                    {cust.creditLimit ? `₱${Number(cust.creditLimit).toLocaleString()}` : '—'}
-                  </td>
-                  <td style={styles.td}>
-                    <span style={{
-                      ...styles.statusBadge,
-                      backgroundColor: cust.status === 'Active' ? 'rgba(46, 125, 50, 0.1)' : 'rgba(198, 40, 40, 0.1)',
-                      color: cust.status === 'Active' ? '#2e7d32' : '#c62828'
-                    }}>
-                      {cust.status}
-                    </span>
-                  </td>
+                  <td style={styles.td}>{supp.address || '—'}</td>
                   <td style={styles.tdActions}>
                     <button style={styles.actionLink}>Edit</button>
                   </td>
@@ -185,13 +136,13 @@ export default function Customers() {
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Register New Customer</h2>
+              <h2 style={styles.modalTitle}>Register New Supplier</h2>
               <button style={styles.closeButton} onClick={() => setIsModalOpen(false)}>×</button>
             </div>
 
             <form onSubmit={handleSubmit} style={styles.formGrid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Customer Code (Optional)</label>
+                <label style={styles.label}>Supplier Code (Optional)</label>
                 <input 
                   type="text" 
                   name="code" 
@@ -203,12 +154,12 @@ export default function Customers() {
               </div>
 
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Customer Name *</label>
+                <label style={styles.label}>Supplier Name *</label>
                 <input 
                   type="text" 
                   name="name" 
                   required
-                  placeholder="e.g. Maison de Scent" 
+                  placeholder="e.g. Grasse Fragrance Extracts" 
                   value={formData.name}
                   onChange={handleInputChange}
                   style={styles.input}
@@ -232,51 +183,23 @@ export default function Customers() {
                 <input 
                   type="email" 
                   name="email" 
-                  placeholder="e.g. contact@maison.com" 
+                  placeholder="e.g. orders@grasse.com" 
                   value={formData.email}
                   onChange={handleInputChange}
                   style={styles.input}
                 />
               </div>
 
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Category</label>
-                <select 
-                  name="category" 
-                  value={formData.category}
+              <div style={{ ...styles.inputGroup, gridColumn: '1 / -1' }}>
+                <label style={styles.label}>Address</label>
+                <textarea 
+                  name="address" 
+                  rows="2"
+                  placeholder="Street, City, Country" 
+                  value={formData.address}
                   onChange={handleInputChange}
-                  style={styles.input}
-                >
-                  <option value="VIP Boutique">VIP Boutique</option>
-                  <option value="Wholesale Partner">Wholesale Partner</option>
-                  <option value="Retail Client">Retail Client</option>
-                  <option value="Distributor">Distributor</option>
-                </select>
-              </div>
-
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Credit Limit (₱)</label>
-                <input 
-                  type="number" 
-                  name="creditLimit" 
-                  placeholder="e.g. 50000" 
-                  value={formData.creditLimit}
-                  onChange={handleInputChange}
-                  style={styles.input}
+                  style={{ ...styles.input, resize: 'vertical' }}
                 />
-              </div>
-
-              <div style={styles.inputGroup}>
-                <label style={styles.label}>Status</label>
-                <select 
-                  name="status" 
-                  value={formData.status}
-                  onChange={handleInputChange}
-                  style={styles.input}
-                >
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
               </div>
 
               <div style={styles.modalFooter}>
@@ -291,7 +214,7 @@ export default function Customers() {
                   type="submit" 
                   style={styles.primaryButton}
                 >
-                  Save Customer
+                  Save Supplier
                 </button>
               </div>
             </form>
@@ -429,20 +352,6 @@ const styles = {
   subEmail: {
     fontSize: '12px',
     color: '#777777',
-  },
-  categoryBadge: {
-    backgroundColor: 'rgba(197, 160, 89, 0.1)',
-    color: '#b08d42',
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: '600',
-  },
-  statusBadge: {
-    padding: '4px 8px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: '600',
   },
   tdActions: {
     padding: '14px 16px',

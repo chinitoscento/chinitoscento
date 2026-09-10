@@ -1,6 +1,8 @@
+Collections.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient'; // Adjust path to your supabase client file
 
 export default function Collections() {
   const [unpaidInvoices, setUnpaidInvoices] = useState([]);
@@ -20,65 +22,45 @@ export default function Collections() {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('storage', loadData);
+    return () => window.removeEventListener('storage', loadData);
   }, []);
 
-  const loadData = async () => {
-    try {
-      // 1. Fetch Sales Orders, Customers, and Collections from Supabase tables
-      const [{ data: sosData, error: sosError }, { data: custsData, error: custsError }, { data: colData, error: colError }] = await Promise.all([
-        supabase.from('sales_orders').select('*'),
-        supabase.from('customers').select('*'),
-        supabase.from('collections').select('*').order('created_at', { ascending: false })
-      ]);
+  const loadData = () => {
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]');
+    const savedCusts = JSON.parse(localStorage.getItem('chinito_customers') || '[]');
+    const savedCollections = JSON.parse(localStorage.getItem('chinito_collections') || '[]').reverse();
+    
+    setCustomers(savedCusts);
+    setCollectionsHistory(savedCollections);
 
-      if (sosError) throw sosError;
-      if (custsError) throw custsError;
-      if (colError) throw colError;
+    // Compute unpaid / partial invoices
+    const activeUnpaid = [];
+    savedSOs.filter(so => so.status !== 'Declined').forEach(so => {
+      const isCash = (so.paymentMode || '').toUpperCase() === 'CASH';
+      const paidSoCollections = savedCollections.filter(c => c.invoiceNo === so.soNumber);
+      const totalPaid = paidSoCollections.reduce((sum, c) => sum + Number(c.amountPaid || 0), 0);
+      const totalDue = Number(so.totalDue || 0);
+      const balanceDue = totalDue - totalPaid;
 
-      const savedSOs = sosData || [];
-      const savedCusts = custsData || [];
-      const savedCollections = colData || [];
+      if (!isCash && balanceDue > 0) {
+        const dueDateObj = new Date(so.dueDate || so.date);
+        const today = new Date();
+        const diffTime = today - dueDateObj;
+        const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-      setCustomers(savedCusts);
-      setCollectionsHistory(savedCollections);
+        activeUnpaid.push({
+          ...so,
+          amountDue: balanceDue,
+          originalTotal: totalDue,
+          totalPaid,
+          daysPastDue: diffDays,
+          remarks: totalPaid > 0 ? `PARTIAL PAYMENT (Balance: ₱${balanceDue.toFixed(2)})` : 'UNPAID'
+        });
+      }
+    });
 
-      // Compute unpaid / partial invoices
-      const activeUnpaid = [];
-      savedSOs.filter(so => so.status !== 'Declined').forEach(so => {
-        const paymentMode = so.payment_mode || so.paymentMode || '';
-        const isCash = paymentMode.toUpperCase() === 'CASH';
-        const soNumber = so.so_number || so.soNumber;
-        
-        const paidSoCollections = savedCollections.filter(c => (c.invoice_no || c.invoiceNo) === soNumber);
-        const totalPaid = paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || 0), 0);
-        const totalDue = Number(so.total_due || so.totalDue || 0);
-        const balanceDue = totalDue - totalPaid;
-
-        if (!isCash && balanceDue > 0) {
-          const dueDateStr = so.due_date || so.dueDate || so.date;
-          const dueDateObj = new Date(dueDateStr);
-          const today = new Date();
-          const diffTime = today - dueDateObj;
-          const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
-
-          const customerNameVal = so.customer_name || so.customerName;
-          activeUnpaid.push({
-            ...so,
-            soNumber: soNumber,
-            customerName: customerNameVal,
-            amountDue: balanceDue,
-            originalTotal: totalDue,
-            totalPaid,
-            daysPastDue: diffDays,
-            remarks: totalPaid > 0 ? `PARTIAL PAYMENT (Balance: ₱${balanceDue.toFixed(2)})` : 'UNPAID'
-          });
-        }
-      });
-
-      setUnpaidInvoices(activeUnpaid);
-    } catch (err) {
-      console.error('Error loading collections data from Supabase:', err);
-    }
+    setUnpaidInvoices(activeUnpaid);
   };
 
   const handleCustomerChange = (custName) => {
@@ -112,7 +94,7 @@ export default function Collections() {
     window.scrollTo({ top: 500, behavior: 'smooth' });
   };
 
-  const handleSaveCollection = async (e) => {
+  const handleSaveCollection = (e) => {
     e.preventDefault();
     if (!selectedCustomer || !selectedInvoiceNo || !amountPaid) {
       alert('Please fill out all required collection details.');
@@ -131,41 +113,26 @@ export default function Collections() {
     const newRecord = {
       code: collectionCode,
       date: new Date().toISOString().split('T')[0],
-      customer_name: selectedCustomer,
-      invoice_no: selectedInvoiceNo,
-      amount_due: amountDue,
-      amount_paid: paidNum,
-      balance_after: Math.max(0, balanceAfter),
+      customerName: selectedCustomer,
+      invoiceNo: selectedInvoiceNo,
+      amountDue: amountDue,
+      amountPaid: paidNum,
+      balanceAfter: Math.max(0, balanceAfter),
       remarks: remarksText
     };
 
-    try {
-      const { error } = await supabase.from('collections').insert([newRecord]);
-      if (error) throw error;
+    const existingCollections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
+    const updatedCollections = [newRecord, ...existingCollections];
+    localStorage.setItem('chinito_collections', JSON.stringify(updatedCollections));
 
-      // Map back to camelCase layout for frontend state consistency if needed
-      const clientFormattedRecord = {
-        code: newRecord.code,
-        date: newRecord.date,
-        customerName: newRecord.customer_name,
-        invoiceNo: newRecord.invoice_no,
-        amountDue: newRecord.amount_due,
-        amountPaid: newRecord.amount_paid,
-        balanceAfter: newRecord.balance_after,
-        remarks: newRecord.remarks
-      };
+    window.dispatchEvent(new Event('storage'));
+    setPreviewReceipt(newRecord);
+    loadData();
 
-      setPreviewReceipt(clientFormattedRecord);
-      await loadData();
-
-      setSelectedCustomer('');
-      setSelectedInvoiceNo('');
-      setAmountDue(0);
-      setAmountPaid('');
-    } catch (err) {
-      console.error('Error saving collection to Supabase:', err);
-      alert('Failed to save collection record.');
-    }
+    setSelectedCustomer('');
+    setSelectedInvoiceNo('');
+    setAmountDue(0);
+    setAmountPaid('');
   };
 
   return (

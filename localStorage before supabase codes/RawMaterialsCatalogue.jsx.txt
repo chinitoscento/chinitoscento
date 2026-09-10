@@ -1,9 +1,23 @@
+RawMaterialsCatalogue.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 
 export default function RawMaterialsCatalogue() {
-  const [materials, setMaterials] = useState([]);
-  const [loadingData, setLoadingData] = useState(true);
+  const [materials, setMaterials] = useState(() => {
+    const saved = localStorage.getItem('chinito_raw_materials_catalogue');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+        }
+      } catch (e) {
+        console.error("Error loading raw materials catalogue", e);
+      }
+    }
+    return [];
+  });
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -23,36 +37,11 @@ export default function RawMaterialsCatalogue() {
     'WRAP - PACKAGING'
   ];
 
-  // Fetch catalogue data from Supabase on mount
   useEffect(() => {
-    fetchCatalogue();
-  }, []);
-
-  const fetchCatalogue = async () => {
-    setLoadingData(true);
-    try {
-      const { data, error } = await supabase
-        .from('raw_materials_catalogue')
-        .select('*');
-
-      if (error) throw error;
-
-      // Map snake_case database schema back cleanly to UI state fields if necessary
-      const formatted = (data || []).map(item => ({
-        id: item.id || item.code,
-        rawMaterial: item.rawMaterial || item.raw_material || item.name,
-        category: item.category || 'OIL',
-        baseUnit: item.baseUnit || item.base_unit || item.unit || 'ml'
-      }));
-
-      formatted.sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }));
-      setMaterials(formatted);
-    } catch (err) {
-      console.error('Error fetching raw materials catalogue from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
-    }
-  };
+    localStorage.setItem('chinito_raw_materials_catalogue', JSON.stringify(materials));
+    window.dispatchEvent(new Event('chinito_raw_materials_updated'));
+    window.dispatchEvent(new Event('storage'));
+  }, [materials]);
 
   const handleOpenAdd = () => {
     setEditingItem(null);
@@ -73,72 +62,40 @@ export default function RawMaterialsCatalogue() {
     setIsModalOpen(true);
   };
 
-  const handleSave = async (e) => {
+  const handleSave = (e) => {
     e.preventDefault();
     if (!rawMaterial.trim() || !code.trim()) {
       alert('Please fill out Code and Raw Material name.');
       return;
     }
 
-    const payload = {
-      id: code.trim(),
-      code: code.trim(),
-      rawMaterial: rawMaterial.trim(),
-      raw_material: rawMaterial.trim(),
-      category: category,
-      baseUnit: baseUnit.trim(),
-      base_unit: baseUnit.trim()
-    };
-
-    try {
-      if (editingItem) {
-        // Update existing record in Supabase
-        const { error } = await supabase
-          .from('raw_materials_catalogue')
-          .update(payload)
-          .eq('id', editingItem.id);
-
-        if (error) throw error;
-
-        setMaterials(prev => 
-          prev.map(m => m.id === editingItem.id ? { ...m, ...payload } : m)
-              .sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
-        );
-      } else {
-        // Insert new record into Supabase
-        const { error } = await supabase
-          .from('raw_materials_catalogue')
-          .insert([payload]);
-
-        if (error) throw error;
-
-        setMaterials(prev => 
-          [...prev, payload].sort((a, b) => String(a.id).localeCompare(String(b.id), undefined, { numeric: true }))
-        );
-      }
-
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Error saving raw material to Supabase:', err.message);
-      alert('Failed to save record: ' + err.message);
+    let updatedList;
+    if (editingItem) {
+      updatedList = materials.map(m => m.id === editingItem.id ? {
+        ...m,
+        id: code.trim(),
+        rawMaterial: rawMaterial.trim(),
+        category,
+        baseUnit: baseUnit.trim()
+      } : m);
+    } else {
+      const newItem = {
+        id: code.trim(),
+        rawMaterial: rawMaterial.trim(),
+        category,
+        baseUnit: baseUnit.trim()
+      };
+      updatedList = [newItem, ...materials];
     }
+
+    updatedList.sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    setMaterials(updatedList);
+    setIsModalOpen(false);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (window.confirm('Are you sure you want to delete this raw material record?')) {
-      try {
-        const { error } = await supabase
-          .from('raw_materials_catalogue')
-          .delete()
-          .eq('id', id);
-
-        if (error) throw error;
-
-        setMaterials(prev => prev.refine ? prev : prev.filter(m => m.id !== id));
-      } catch (err) {
-        console.error('Error deleting raw material from Supabase:', err.message);
-        alert('Failed to delete record: ' + err.message);
-      }
+      setMaterials(prev => prev.filter(m => m.id !== id));
     }
   };
 

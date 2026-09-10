@@ -1,8 +1,26 @@
+Products.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
 
 export default function Products() {
-  const [products, setProducts] = useState([]);
+  const [products, setProducts] = useState(() => {
+    const saved = localStorage.getItem('chinito_products');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return parsed.map((prod, index) => {
+        if (!prod.code) {
+          const name = prod.name || 'Scent';
+          const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
+          const numStr = String(index + 1).padStart(2, '0');
+          return { ...prod, code: `CS-${clean}-${numStr}` };
+        }
+        return prod;
+      });
+    }
+    return [];
+  });
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,30 +34,9 @@ export default function Products() {
   });
 
   useEffect(() => {
-    loadProducts();
-  }, []);
-
-  const loadProducts = async () => {
-    try {
-      const { data, error } = await supabase.from('products').select('*').order('id', { ascending: false });
-      if (error && error.code !== 'PGRST116') console.error(error);
-      
-      const loaded = (data || []).map((prod, index) => {
-        const pCode = prod.code || prod.product_code;
-        if (!pCode) {
-          const name = prod.name || 'Scent';
-          const clean = name.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 3) || 'SNT';
-          const numStr = String(index + 1).padStart(2, '0');
-          return { ...prod, code: `CS-${clean}-${numStr}` };
-        }
-        return { ...prod, code: pCode };
-      });
-
-      setProducts(loaded);
-    } catch (err) {
-      console.error('Error loading products from Supabase:', err);
-    }
-  };
+    localStorage.setItem('chinito_products', JSON.stringify(products));
+    window.dispatchEvent(new Event('storage'));
+  }, [products]);
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -102,8 +99,8 @@ export default function Products() {
   const handleOpenEditModal = (prod) => {
     setEditingId(prod.id);
     setFormData({
-      code: prod.code || prod.product_code || '',
-      name: prod.name || '',
+      code: prod.code || '',
+      name: prod.name,
       gender: prod.gender || 'Unisex',
       remarks: prod.remarks || '',
       image: prod.image || ''
@@ -111,20 +108,13 @@ export default function Products() {
     setIsModalOpen(true);
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = (id) => {
     if (window.confirm('Are you sure you want to delete this fragrance profile?')) {
-      try {
-        const { error } = await supabase.from('products').delete().eq('id', id);
-        if (error) throw error;
-        setProducts(prev => prev.filter(p => p.id !== id));
-      } catch (err) {
-        console.error('Error deleting product from Supabase:', err);
-        alert('Failed to delete product.');
-      }
+      setProducts(prev => prev.filter(p => p.id !== id));
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!formData.name) return;
 
@@ -138,56 +128,42 @@ export default function Products() {
       finalCode = `CS-${clean}-${numStr}`;
     }
 
-    try {
-      if (editingId) {
-        const updatePayload = {
-          code: finalCode,
-          name: formData.name,
-          gender: formData.gender,
-          remarks: formData.remarks,
-          image: finalImage
-        };
-        const { error } = await supabase.from('products').update(updatePayload).eq('id', editingId);
-        if (error) throw error;
-
-        setProducts(prev => prev.map(p => {
-          if (p.id === editingId) {
-            return { ...p, ...updatePayload };
-          }
-          return p;
-        }));
-      } else {
-        const insertPayload = {
-          code: finalCode,
-          name: formData.name,
-          gender: formData.gender,
-          remarks: formData.remarks,
-          image: finalImage
-        };
-        const { data, error } = await supabase.from('products').insert([insertPayload]).select();
-        if (error) throw error;
-
-        if (data && data.length > 0) {
-          setProducts(prev => [data[0], ...prev]);
-        } else {
-          await loadProducts();
+    if (editingId) {
+      setProducts(prev => prev.map(p => {
+        if (p.id === editingId) {
+          return {
+            ...p,
+            code: finalCode,
+            name: formData.name,
+            gender: formData.gender,
+            remarks: formData.remarks,
+            image: formData.image.trim() !== '' ? formData.image : p.image
+          };
         }
-      }
-
-      setFormData({ code: '', name: '', gender: 'Unisex', remarks: '', image: '' });
-      setEditingId(null);
-      setIsModalOpen(false);
-    } catch (err) {
-      console.error('Error saving product to Supabase:', err);
-      alert('Failed to save product.');
+        return p;
+      }));
+    } else {
+      setProducts(prev => [
+        ...prev, 
+        { 
+          ...formData, 
+          code: finalCode,
+          id: Date.now(),
+          image: finalImage
+        }
+      ]);
     }
+
+    setFormData({ code: '', name: '', gender: 'Unisex', remarks: '', image: '' });
+    setEditingId(null);
+    setIsModalOpen(false);
   };
 
   const filteredProducts = products.filter(p => 
-    (p.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.code || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.gender || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (p.remarks || '').toLowerCase().includes(searchTerm.toLowerCase())
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (p.code && p.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (p.gender && p.gender.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    p.remarks.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (

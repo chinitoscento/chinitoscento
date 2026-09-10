@@ -1,31 +1,23 @@
+Login.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
 import logo from './logo.png';
-import { supabase } from './supabaseClient';
 
 export default function Login({ onLoginSuccess }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = async (e) => {
+  const handleLogin = (e) => {
     if (e) e.preventDefault();
     
-    let adminUser = 'Edson';
-    let adminPass = 'Edsontan1988.';
-    let managerUser = 'Romel';
-    let managerPass = 'Password123';
-
-    try {
-      const { data, error: settingsError } = await supabase.from('settings').select('*').limit(1).single();
-      if (!settingsError && data) {
-        adminUser = data.login_username || data.loginUsername || adminUser;
-        adminPass = data.login_password || data.loginPassword || adminPass;
-        managerUser = data.manager_username || data.managerUsername || managerUser;
-        managerPass = data.manager_password || data.managerPassword || managerPass;
-      }
-    } catch (err) {
-      console.error('Error fetching settings from Supabase:', err);
-    }
+    const savedSettings = JSON.parse(localStorage.getItem('chinito_settings') || '{}');
+    
+    const adminUser = savedSettings.loginUsername || 'Edson';
+    const adminPass = savedSettings.loginPassword || 'Edsontan1988.';
+    const managerUser = savedSettings.managerUsername || 'Romel';
+    const managerPass = savedSettings.managerPassword || 'Password123';
 
     const trimmedUser = username.trim();
 

@@ -1,10 +1,11 @@
+Salesorders.jsx
+before supabase
+
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 import logoImage from './logo.png';
 
 export default function Salesorder() {
   const [salesOrders, setSalesOrders] = useState([]);
-  const [loadingData, setLoadingData] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState(null);
   const [notification, setNotification] = useState(null);
@@ -27,13 +28,14 @@ export default function Salesorder() {
 
   useEffect(() => {
     loadData();
-    // Fetch role from local storage or default to admin
     const role = localStorage.getItem('chinito_user_role') || 'admin';
     setUserRole(role);
 
     const syncData = () => loadData();
+    window.addEventListener('storage', syncData);
     window.addEventListener('chinito_sales_updated', syncData);
     return () => {
+      window.removeEventListener('storage', syncData);
       window.removeEventListener('chinito_sales_updated', syncData);
     };
   }, []);
@@ -50,61 +52,24 @@ export default function Salesorder() {
 
   const showInlineMessage = (message, type = 'success', actionText = null, onAction = null) => {
     setNotification({ message, type, actionText, onAction });
+    // Removed auto-dismiss timeout so it ONLY disappears when OK or x is clicked.
   };
 
-  const loadData = async () => {
-    setLoadingData(true);
-    try {
-      // 1. Fetch sales orders from Supabase
-      const { data: soData, error: soError } = await supabase
-        .from('sales_orders')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (soError) throw soError;
+  const loadData = () => {
+    const savedSOs = JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]');
+    const savedCustomers = JSON.parse(localStorage.getItem('chinito_customers') || '[]');
+    const savedFinishedGoods = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
 
-      // 2. Fetch customers from Supabase
-      const { data: custData, error: custError } = await supabase
-        .from('customers')
-        .select('*');
-      if (custError) throw custError;
+    const fgList = savedFinishedGoods.map(item => ({
+      code: String(item.code || item.id || ''),
+      name: String(item.name || item.scent || item.productName || ''),
+      stockQty: Number(item.stockQty || item.quantity || 0)
+    }));
 
-      // 3. Fetch finished goods from Supabase
-      const { data: fgData, error: fgError } = await supabase
-        .from('finished_goods')
-        .select('*');
-      if (fgError) throw fgError;
-
-      const formattedSOs = (soData || []).map(so => ({
-        id: so.id,
-        soNumber: so.so_number || so.soNumber,
-        customerName: so.customer_name || so.customerName,
-        address: so.address || 'N/A',
-        contact: so.contact || 'N/A',
-        items: so.items || [],
-        paymentMode: so.payment_mode || so.paymentMode || 'CASH',
-        totalDue: Number(so.total_due || so.totalDue || 0),
-        status: so.status || 'Pending',
-        date: so.date || orderDate,
-        dueDate: so.due_date || so.dueDate,
-        remarks: so.remarks || ''
-      }));
-
-      const fgList = (fgData || []).map(item => ({
-        id: item.id,
-        code: String(item.code || ''),
-        name: String(item.name || item.scent || item.product_name || ''),
-        stockQty: Number(item.stock_qty || item.stockQty || item.quantity || 0)
-      }));
-
-      setSalesOrders(formattedSOs);
-      setCustomers(custData || []);
-      setFinishedGoods(fgList);
-      setSoNumber(generateNextSoNumber(formattedSOs));
-    } catch (err) {
-      console.error('Error loading sales orders from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
-    }
+    setSalesOrders(savedSOs);
+    setCustomers(savedCustomers);
+    setFinishedGoods(fgList);
+    setSoNumber(generateNextSoNumber(savedSOs));
   };
 
   const generateNextSoNumber = (existingList) => {
@@ -170,7 +135,7 @@ export default function Salesorder() {
     return orderItems.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0);
   };
 
-  const handleSaveSO = async (e) => {
+  const handleSaveSO = (e) => {
     e.preventDefault();
     if (!selectedCustomer) {
       alert('Please select a customer name.');
@@ -178,182 +143,129 @@ export default function Salesorder() {
     }
 
     const isApproved = orderStatus === 'APPROVED';
-    const payload = {
-      so_number: soNumber,
-      customer_name: selectedCustomer,
+    const newSO = {
+      id: Date.now(),
+      soNumber,
+      customerName: selectedCustomer,
       address: customerAddress || 'N/A',
       contact: customerContact || 'N/A',
       items: orderItems,
-      payment_mode: paymentTerms || 'CASH',
-      total_due: calculateTotal(),
+      paymentMode: paymentTerms || 'CASH',
+      totalDue: calculateTotal(),
       status: isApproved ? 'Approved' : 'Pending',
       date: orderDate,
-      due_date: dueDate,
+      dueDate: dueDate,
       remarks: ''
     };
 
-    try {
-      const { data, error } = await supabase
-        .from('sales_orders')
-        .insert([payload])
-        .select();
-
-      if (error) throw error;
-
-      const newRecord = {
-        id: data && data[0] ? data[0].id : Date.now(),
-        soNumber: payload.so_number,
-        customerName: payload.customer_name,
-        address: payload.address,
-        contact: payload.contact,
-        items: payload.items,
-        paymentMode: payload.payment_mode,
-        totalDue: payload.total_due,
-        status: payload.status,
-        date: payload.date,
-        dueDate: payload.due_date,
-        remarks: payload.remarks
-      };
-
-      if (isApproved) {
-        await deductStock(newRecord.items);
-        await saveInvoice(newRecord);
-      }
-
-      const updatedList = [newRecord, ...salesOrders];
-      setSalesOrders(updatedList);
-
-      window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-
-      setIsModalOpen(false);
-      setSoNumber(generateNextSoNumber(updatedList));
-      
-      setSelectedCustomer('');
-      setCustomerAddress('');
-      setCustomerContact('');
-      setPaymentTerms('');
-      setOrderStatus('');
-      setOrderItems([{ productCode: '', productName: '', qty: '', price: '' }]);
-      showInlineMessage('Sales Order created successfully.', 'success', 'OK', () => setNotification(null));
-    } catch (err) {
-      console.error('Error saving sales order to Supabase:', err.message);
-      alert('Failed to save Sales Order: ' + err.message);
+    if (isApproved) {
+      deductStock(newSO.items);
+      saveInvoice(newSO);
     }
+
+    const updatedList = [newSO, ...salesOrders];
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+
+    setIsModalOpen(false);
+    setSoNumber(generateNextSoNumber(updatedList));
+    
+    setSelectedCustomer('');
+    setCustomerAddress('');
+    setCustomerContact('');
+    setPaymentTerms('');
+    setOrderStatus('');
+    setOrderItems([{ productCode: '', productName: '', qty: '', price: '' }]);
+    showInlineMessage('Sales Order created successfully.', 'success', 'OK', () => setNotification(null));
   };
 
-  const handleApproveSO = async (soId) => {
+  const handleApproveSO = (soId) => {
     const targetSo = salesOrders.find(so => so.id === soId || so.soNumber === soId);
     if (!targetSo) return;
 
-    try {
-      const { error } = await supabase
-        .from('sales_orders')
-        .update({ status: 'Approved' })
-        .eq('id', targetSo.id);
-
-      if (error) throw error;
-
-      await deductStock(targetSo.items);
-      await saveInvoice({ ...targetSo, status: 'Approved' });
-
-      const updatedList = salesOrders.map(so => {
-        if (so.id === soId || so.soNumber === soId) {
-          return { ...so, status: 'Approved' };
-        }
-        return so;
-      });
-
-      setSalesOrders(updatedList);
-      window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-
-      showInlineMessage(
-        `Sales Order ${targetSo.soNumber} has been approved. Click OK to view invoice.`,
-        'success',
-        'OK',
-        () => {
-          setPreviewInvoice({ ...targetSo, status: 'Approved' });
-          setNotification(null);
-        }
-      );
-    } catch (err) {
-      console.error('Error approving sales order:', err.message);
-      alert('Failed to approve order: ' + err.message);
-    }
-  };
-
-  const handleDeclineSO = async (soId) => {
-    const targetSo = salesOrders.find(so => so.id === soId || so.soNumber === soId);
-    if (!targetSo) return;
-
-    try {
-      const { error } = await supabase
-        .from('sales_orders')
-        .update({ status: 'Declined' })
-        .eq('id', targetSo.id);
-
-      if (error) throw error;
-
-      // Remove corresponding invoice if present
-      await supabase
-        .from('invoices')
-        .delete()
-        .eq('so_number', targetSo.soNumber);
-
-      const updatedList = salesOrders.map(so => {
-        if (so.id === soId || so.soNumber === soId) {
-          return { ...so, status: 'Declined' };
-        }
-        return so;
-      });
-
-      setSalesOrders(updatedList);
-      window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-      showInlineMessage('Sales Order has been declined and removed from invoices.', 'error', 'OK', () => setNotification(null));
-    } catch (err) {
-      console.error('Error declining sales order:', err.message);
-      alert('Failed to decline order: ' + err.message);
-    }
-  };
-
-  const deductStock = async (items) => {
-    try {
-      for (const item of items) {
-        const matchingFg = finishedGoods.find(fg => fg.code === item.productCode || fg.name === item.productName);
-        if (matchingFg) {
-          const currentQty = Number(matchingFg.stockQty || 0);
-          const newQty = Math.max(0, currentQty - Number(item.qty || 0));
-          
-          await supabase
-            .from('finished_goods')
-            .update({ stock_qty: newQty, quantity: newQty })
-            .eq('id', matchingFg.id);
-        }
+    const updatedList = salesOrders.map(so => {
+      if (so.id === soId || so.soNumber === soId) {
+        const approvedSO = { ...so, status: 'Approved' };
+        deductStock(approvedSO.items);
+        saveInvoice(approvedSO);
+        return approvedSO;
       }
-    } catch (err) {
-      console.error('Error deducting stock in Supabase:', err.message);
+      return so;
+    });
+
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+
+    showInlineMessage(
+      `Sales Order ${targetSo.soNumber} has been approved. Click OK to view invoice.`,
+      'success',
+      'OK',
+      () => {
+        setPreviewInvoice(targetSo);
+        setNotification(null);
+      }
+    );
+  };
+
+  const handleDeclineSO = (soId) => {
+    const updatedList = salesOrders.map(so => {
+      if (so.id === soId || so.soNumber === soId) {
+        return { ...so, status: 'Declined' };
+      }
+      return so;
+    });
+
+    setSalesOrders(updatedList);
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedList));
+
+    const invoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
+    const targetSo = salesOrders.find(so => so.id === soId || so.soNumber === soId);
+    if (targetSo) {
+      const filteredInvoices = invoices.filter(inv => inv.soNumber !== targetSo.soNumber);
+      localStorage.setItem('chinito_invoices', JSON.stringify(filteredInvoices));
+    }
+
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
+    showInlineMessage('Sales Order has been declined and removed from invoices.', 'error', 'OK', () => setNotification(null));
+  };
+
+  const deductStock = (items) => {
+    let finishedGoodsList = JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]');
+    let updated = false;
+
+    finishedGoodsList = finishedGoodsList.map(fg => {
+      const match = items.find(i => i.productCode === fg.code || i.productName === (fg.name || fg.scent));
+      if (match) {
+        updated = true;
+        const current = Number(fg.stockQty || fg.quantity || 0);
+        const newQty = Math.max(0, current - Number(match.qty || 0));
+        return { 
+          ...fg, 
+          stockQty: newQty, 
+          quantity: fg.quantity !== undefined ? newQty : fg.quantity 
+        };
+      }
+      return fg;
+    });
+
+    if (updated) {
+      localStorage.setItem('chinito_finishedgoods', JSON.stringify(finishedGoodsList));
     }
   };
 
-  const saveInvoice = async (soRecord) => {
+  const saveInvoice = (soRecord) => {
+    const invoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
     if (soRecord.status === 'Declined') return;
-    try {
-      const payload = {
-        so_number: soRecord.soNumber,
-        customer_name: soRecord.customerName,
-        address: soRecord.address,
-        contact: soRecord.contact,
-        items: soRecord.items,
-        payment_mode: soRecord.paymentMode,
-        total_due: soRecord.totalDue,
-        date: soRecord.date,
-        due_date: soRecord.dueDate
-      };
-
-      await supabase
-        .from('invoices')
-        .upsert([payload], { onConflict: 'so_number' });
-    } catch (err) {
-      console.error('Error saving invoice to Supabase:', err.message);
+    if (!invoices.some(inv => inv.soNumber === soRecord.soNumber)) {
+      invoices.unshift(soRecord);
+      localStorage.setItem('chinito_invoices', JSON.stringify(invoices));
     }
   };
 

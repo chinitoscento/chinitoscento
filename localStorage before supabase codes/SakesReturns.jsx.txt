@@ -1,5 +1,7 @@
+SakesReturns.jsx
+before supabase
+
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 import logoImage from './logo.png';
 
 export default function SalesReturns() {
@@ -8,7 +10,6 @@ export default function SalesReturns() {
   const [salesOrders, setSalesOrders] = useState([]);
   const [finishedGoods, setFinishedGoods] = useState([]);
   const [userRole, setUserRole] = useState('non-owner');
-  const [loadingData, setLoadingData] = useState(true);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [newReturn, setNewReturn] = useState({
@@ -26,94 +27,38 @@ export default function SalesReturns() {
 
   useEffect(() => {
     loadAllData();
-    const currentRole = localStorage.getItem('chinito_user_role') || 'non-owner';
-    setUserRole(currentRole);
-
     const handleStorageUpdate = () => loadAllData();
+    window.addEventListener('storage', handleStorageUpdate);
     window.addEventListener('chinito_sales_updated', handleStorageUpdate);
     window.addEventListener('chinito_finishedgoods_updated', handleStorageUpdate);
     return () => {
+      window.removeEventListener('storage', handleStorageUpdate);
       window.removeEventListener('chinito_sales_updated', handleStorageUpdate);
       window.removeEventListener('chinito_finishedgoods_updated', handleStorageUpdate);
     };
   }, []);
 
-  const loadAllData = async () => {
-    setLoadingData(true);
-    try {
-      // 1. Fetch sales returns from Supabase
-      const { data: srData, error: srError } = await supabase
-        .from('sales_returns')
-        .select('*')
-        .order('created_at', { ascending: false });
-      if (srError) throw srError;
+  const loadAllData = () => {
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    
+    // Sort descending by SR Code (e.g., SR-000004 comes before SR-000001)
+    const sortedReturns = rawReturns.sort((a, b) => {
+      const seqA = parseInt((a.srCode || '').split('-')[1] || 0, 10);
+      const seqB = parseInt((b.srCode || '').split('-')[1] || 0, 10);
+      return seqB - seqA;
+    });
 
-      // 2. Fetch customers from Supabase
-      const { data: custData, error: custError } = await supabase
-        .from('customers')
-        .select('*');
-      if (custError) throw custError;
-
-      // 3. Fetch sales orders from Supabase
-      const { data: soData, error: soError } = await supabase
-        .from('sales_orders')
-        .select('*');
-      if (soError) throw soError;
-
-      // 4. Fetch finished goods from Supabase
-      const { data: fgData, error: fgError } = await supabase
-        .from('finished_goods')
-        .select('*');
-      if (fgError) throw fgError;
-
-      const formattedReturns = (srData || []).map(sr => ({
-        id: sr.id,
-        srCode: sr.sr_code || sr.srCode,
-        soNumber: sr.so_number || sr.soNumber,
-        customerId: sr.customer_id || sr.customerId,
-        customerName: sr.customer_name || sr.customerName,
-        returnDate: sr.return_date || sr.returnDate,
-        items: sr.items || [],
-        totalAmount: Number(sr.total_amount || sr.totalAmount || 0),
-        status: sr.status || 'PENDING FOR APPROVAL'
-      }));
-
-      // Sort descending by SR Code
-      const sortedReturns = formattedReturns.sort((a, b) => {
-        const seqA = parseInt((a.srCode || '').split('-')[1] || 0, 10);
-        const seqB = parseInt((b.srCode || '').split('-')[1] || 0, 10);
-        return seqB - seqA;
-      });
-
-      const formattedSo = (soData || []).map(so => ({
-        id: so.id,
-        soNumber: so.so_number || so.soNumber,
-        customerId: so.customer_id || so.customerId,
-        customerName: so.customer_name || so.customerName,
-        items: so.items || [],
-        remarks: so.remarks || ''
-      }));
-
-      const formattedFg = (fgData || []).map(fg => ({
-        id: fg.id,
-        code: String(fg.code || fg.product_code || ''),
-        name: String(fg.name || fg.product_name || fg.scent || ''),
-        stockQty: Number(fg.stock_qty || fg.stockQty || fg.quantity || 0)
-      }));
-
-      setSalesReturns(sortedReturns);
-      setCustomers(custData || []);
-      setSalesOrders(formattedSo);
-      setFinishedGoods(formattedFg);
-    } catch (err) {
-      console.error('Error loading sales returns data from Supabase:', err.message);
-    } finally {
-      setLoadingData(false);
-    }
+    setSalesReturns(sortedReturns);
+    setCustomers(JSON.parse(localStorage.getItem('chinito_customers') || '[]'));
+    setSalesOrders(JSON.parse(localStorage.getItem('chinito_sales_orders') || '[]'));
+    setFinishedGoods(JSON.parse(localStorage.getItem('chinito_finishedgoods') || '[]'));
+    
+    const currentRole = localStorage.getItem('chinito_user_role') || 'non-owner';
+    setUserRole(currentRole);
   };
 
   const filteredSoList = salesOrders.filter(so => {
-    const isAlreadyReturned = salesReturns.some(sr => sr.soNumber === so.soNumber && sr.status !== 'DECLINED');
+    const isAlreadyReturned = salesReturns.some(sr => sr.soNumber === so.soNumber);
     if (isAlreadyReturned) return false;
 
     const soCustId = String(so.customerId || so.clientCode || '').trim();
@@ -131,7 +76,7 @@ export default function SalesReturns() {
 
   const handleCustomerSelect = (e) => {
     const customerValue = e.target.value;
-    const customer = customers.find(c => String(c.code || c.id || c.name || c.customerName) === customerValue);
+    const customer = customers.find(c => (c.code || c.id || c.name || c.customerName) === customerValue);
     
     setNewReturn(prev => ({
       ...prev,
@@ -201,7 +146,7 @@ export default function SalesReturns() {
     return `SR-${(sequence + 1).toString().padStart(6, '0')}`;
   };
 
-  const handleSaveReturn = async () => {
+  const handleSaveReturn = () => {
     if (!newReturn.customerId || !newReturn.soNumber) {
       setModalNotification({ type: 'error', message: 'Please select Customer and SO Number.' });
       return;
@@ -232,46 +177,37 @@ export default function SalesReturns() {
     });
 
     const srCode = generateSrCode();
-    const payload = {
-      sr_code: srCode,
-      so_number: newReturn.soNumber,
-      customer_id: newReturn.customerId,
-      customer_name: newReturn.customerName,
-      return_date: new Date().toISOString().split('T')[0],
+    const finalReturn = {
+      ...newReturn,
+      srCode: srCode,
+      returnDate: new Date().toISOString().split('T')[0],
       items: enrichedReturnItems,
-      total_amount: totalReturnValue,
+      totalAmount: totalReturnValue,
       status: 'PENDING FOR APPROVAL'
     };
 
-    try {
-      const { data, error } = await supabase
-        .from('sales_returns')
-        .insert([payload])
-        .select();
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = [...rawReturns, finalReturn];
+    localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
+    
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('chinito_sales_updated'));
 
-      if (error) throw error;
-
-      window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-
-      setNewReturn({ customerId: '', customerName: '', soNumber: '', items: [] });
-      setSelectedSoItems([]);
-      
-      setModalNotification({
-        type: 'success',
-        message: `Sales Return ${srCode} created successfully and is pending approval.`,
-        onOk: () => {
-          setModalNotification(null);
-          setIsModalOpen(false);
-          loadAllData();
-        }
-      });
-    } catch (err) {
-      console.error('Error saving sales return to Supabase:', err.message);
-      setModalNotification({ type: 'error', message: 'Failed to save sales return: ' + err.message });
-    }
+    setNewReturn({ customerId: '', customerName: '', soNumber: '', items: [] });
+    setSelectedSoItems([]);
+    
+    setModalNotification({
+      type: 'success',
+      message: `Sales Return ${srCode} created successfully and is pending approval.`,
+      onOk: () => {
+        setModalNotification(null);
+        setIsModalOpen(false);
+        loadAllData();
+      }
+    });
   };
 
-  const handleApproveReturn = async (srCode) => {
+  const handleApproveReturn = (srCode) => {
     if (userRole !== 'owner') {
       alert('Only the owner can approve sales returns.');
       return;
@@ -280,127 +216,114 @@ export default function SalesReturns() {
     const targetSr = salesReturns.find(sr => sr.srCode === srCode);
     if (!targetSr || targetSr.status === 'COMPLETED') return;
 
-    try {
-      // 1. Update Sales Return Status
-      const { error: srError } = await supabase
-        .from('sales_returns')
-        .update({ status: 'COMPLETED' })
-        .eq('sr_code', srCode);
-      if (srError) throw srError;
+    const updatedSalesOrders = salesOrders.map(so => {
+      if (so.soNumber === targetSr.soNumber) {
+        return {
+          ...so,
+          remarks: `Refer to ${srCode}`
+        };
+      }
+      return so;
+    });
 
-      // 2. Update Sales Order remarks
-      const matchingSo = salesOrders.find(so => so.soNumber === targetSr.soNumber);
+    let savedInvoices = JSON.parse(localStorage.getItem('chinito_invoices') || '[]');
+    let updatedInvoices = savedInvoices.map(inv => {
+      if (inv.soNumber === targetSr.soNumber) {
+        return {
+          ...inv,
+          remarks: `Refer to ${srCode}`
+        };
+      }
+      return inv;
+    });
+
+    const matchingSo = salesOrders.find(so => so.soNumber === targetSr.soNumber);
+    if (!updatedInvoices.some(inv => inv.soNumber === targetSr.soNumber)) {
       if (matchingSo) {
-        await supabase
-          .from('sales_orders')
-          .update({ remarks: `Refer to ${srCode}` })
-          .eq('so_number', targetSr.soNumber);
+        updatedInvoices.unshift({
+          ...matchingSo,
+          remarks: `Refer to ${srCode}`
+        });
       }
-
-      // 3. Update or Insert Invoice remarks
-      const { data: existingInv } = await supabase
-        .from('invoices')
-        .select('*')
-        .eq('so_number', targetSr.soNumber)
-        .single();
-
-      if (existingInv) {
-        await supabase
-          .from('invoices')
-          .update({ remarks: `Refer to ${srCode}` })
-          .eq('so_number', targetSr.soNumber);
-      } else if (matchingSo) {
-        await supabase
-          .from('invoices')
-          .insert([{
-            so_number: matchingSo.soNumber,
-            customer_name: matchingSo.customerName,
-            address: matchingSo.address || 'N/A',
-            contact: matchingSo.contact || 'N/A',
-            items: matchingSo.items,
-            payment_mode: matchingSo.paymentMode || 'CASH',
-            total_due: matchingSo.totalDue || 0,
-            date: matchingSo.date || new Date().toISOString().split('T')[0],
-            due_date: matchingSo.dueDate,
-            remarks: `Refer to ${srCode}`
-          }]);
-      }
-
-      // 4. Create collection entry for the return credit
-      await supabase
-        .from('collections')
-        .insert([{
-          so_number: targetSr.soNumber,
-          customer_name: targetSr.customerName,
-          customer_id: targetSr.customerId,
-          date: new Date().toISOString().split('T')[0],
-          transaction_type: 'Sales Return',
-          reference: srCode,
-          debit: 0,
-          credit: targetSr.totalAmount,
-          remarks: `Sales Return Credit Ref: ${srCode}`
-        }]);
-
-      // 5. Restock finished goods inventory
-      for (const returnItem of targetSr.items) {
-        const fgEntry = finishedGoods.find(fg => 
-          (fg.code && fg.code === returnItem.productId)
-        );
-
-        if (fgEntry) {
-          const newStock = Number(fgEntry.stockQty || 0) + Number(returnItem.returnQty);
-          await supabase
-            .from('finished_goods')
-            .update({ stock_qty: newStock, quantity: newStock })
-            .eq('id', fgEntry.id);
-        } else {
-          await supabase
-            .from('finished_goods')
-            .insert([{
-              code: returnItem.productId,
-              name: returnItem.productName,
-              stock_qty: Number(returnItem.returnQty),
-              quantity: Number(returnItem.returnQty)
-            }]);
-        }
-      }
-
-      window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
-      window.dispatchEvent(new CustomEvent('chinito_finishedgoods_updated'));
-
-      loadAllData();
-
-      const approvedSrObject = { ...targetSr, status: 'COMPLETED' };
-      setInlineNotification({
-        message: `Sales Return ${srCode} successfully approved and applied!`,
-        srObject: approvedSrObject
-      });
-    } catch (err) {
-      console.error('Error approving sales return in Supabase:', err.message);
-      alert('Failed to approve sales return: ' + err.message);
     }
+
+    let collections = JSON.parse(localStorage.getItem('chinito_collections') || '[]');
+    const newCollectionEntry = {
+      id: Date.now(),
+      soNumber: targetSr.soNumber,
+      customerName: targetSr.customerName,
+      customerId: targetSr.customerId,
+      date: new Date().toISOString().split('T')[0],
+      transactionType: 'Sales Return',
+      reference: srCode,
+      debit: 0,
+      credit: targetSr.totalAmount,
+      remarks: `Sales Return Credit Ref: ${srCode}`
+    };
+    collections.push(newCollectionEntry);
+    localStorage.setItem('chinito_collections', JSON.stringify(collections));
+
+    const updatedFinishedGoods = [...finishedGoods];
+    targetSr.items.forEach(returnItem => {
+      let fgEntry = updatedFinishedGoods.find(fg => 
+        (fg.code && fg.code === returnItem.productId) || 
+        (fg.productCode && fg.productCode === returnItem.productId)
+      );
+
+      if (fgEntry) {
+        const currentStock = Number(fgEntry.stockQty ?? fgEntry.quantity ?? fgEntry.qty ?? fgEntry.availableQty ?? 0);
+        const newStock = currentStock + Number(returnItem.returnQty);
+        fgEntry.stockQty = newStock;
+        fgEntry.quantity = newStock;
+        if (!fgEntry.code) fgEntry.code = returnItem.productId;
+        delete fgEntry.availableQty;
+      } else {
+        const prodFromMaster = JSON.parse(localStorage.getItem('chinito_products') || '[]').find(p => p.code === returnItem.productId);
+        updatedFinishedGoods.push({
+          code: returnItem.productId,
+          productCode: returnItem.productId,
+          name: prodFromMaster?.name || prodFromMaster?.productName || returnItem.productName,
+          stockQty: Number(returnItem.returnQty),
+          quantity: Number(returnItem.returnQty)
+        });
+      }
+    });
+
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = rawReturns.map(sr => sr.srCode === srCode ? { ...sr, status: 'COMPLETED' } : sr);
+    
+    localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
+    localStorage.setItem('chinito_sales_orders', JSON.stringify(updatedSalesOrders));
+    localStorage.setItem('chinito_invoices', JSON.stringify(updatedInvoices));
+    localStorage.setItem('chinito_finishedgoods', JSON.stringify(updatedFinishedGoods));
+    
+    window.dispatchEvent(new Event('storage'));
+    window.dispatchEvent(new Event('chinito_sales_updated'));
+    window.dispatchEvent(new Event('chinito_finishedgoods_updated'));
+    window.dispatchEvent(new Event('chinito_collections_updated'));
+
+    loadAllData();
+
+    const approvedSrObject = updatedReturns.find(sr => sr.srCode === srCode);
+    setInlineNotification({
+      message: `Sales Return ${srCode} successfully approved and applied!`,
+      srObject: approvedSrObject
+    });
   };
 
-  const handleDeclineReturn = async (srCode) => {
+  const handleDeclineReturn = (srCode) => {
     if (userRole !== 'owner') {
       alert('Only the owner can decline sales returns.');
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('sales_returns')
-        .update({ status: 'DECLINED' })
-        .eq('sr_code', srCode);
-
-      if (error) throw error;
-
-      loadAllData();
-      alert(`Sales Return ${srCode} has been declined.`);
-    } catch (err) {
-      console.error('Error declining sales return:', err.message);
-      alert('Failed to decline return: ' + err.message);
-    }
+    const rawReturns = JSON.parse(localStorage.getItem('chinito_sales_returns') || '[]');
+    const updatedReturns = rawReturns.map(sr => sr.srCode === srCode ? { ...sr, status: 'DECLINED' } : sr);
+    localStorage.setItem('chinito_sales_returns', JSON.stringify(updatedReturns));
+    
+    window.dispatchEvent(new Event('storage'));
+    loadAllData();
+    alert(`Sales Return ${srCode} has been declined.`);
   };
 
   const handlePrint = () => {

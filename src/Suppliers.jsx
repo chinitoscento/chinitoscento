@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 
 export default function Suppliers() {
-  const [suppliers, setSuppliers] = useState(() => {
-    const saved = localStorage.getItem('chinito_suppliers');
-    return saved ? JSON.parse(saved) : [];
-  });
-  
+  const [suppliers, setSuppliers] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -18,43 +16,82 @@ export default function Suppliers() {
   });
 
   useEffect(() => {
-    localStorage.setItem('chinito_suppliers', JSON.stringify(suppliers));
-  }, [suppliers]);
+    loadSuppliers();
+  }, []);
+
+  const loadSuppliers = async () => {
+    setLoadingData(true);
+    try {
+      const { data, error } = await supabase
+        .from('suppliers')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      const formattedSuppliers = (data || []).map(s => ({
+        id: s.id,
+        code: s.code || '',
+        name: s.name || '',
+        phone: s.phone || '',
+        email: s.email || '',
+        address: s.address || ''
+      }));
+
+      setSuppliers(formattedSuppliers);
+    } catch (err) {
+      console.error('Error loading suppliers from Supabase:', err.message);
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!formData.name) return;
 
-    setSuppliers(prev => [
-      ...prev, 
-      { 
-        ...formData, 
-        id: Date.now(), 
-        code: formData.code || `SUPP-${Math.floor(1000 + Math.random() * 9000)}` 
-      }
-    ]);
+    const supplierCode = formData.code || `SUPP-${Math.floor(1000 + Math.random() * 9000)}`;
+    const payload = {
+      code: supplierCode,
+      name: formData.name,
+      phone: formData.phone,
+      email: formData.email,
+      address: formData.address
+    };
 
-    setFormData({
-      code: '',
-      name: '',
-      phone: '',
-      email: '',
-      address: ''
-    });
-    setIsModalOpen(false);
+    try {
+      const { error } = await supabase
+        .from('suppliers')
+        .insert([payload]);
+
+      if (error) throw error;
+
+      setFormData({
+        code: '',
+        name: '',
+        phone: '',
+        email: '',
+        address: ''
+      });
+      setIsModalOpen(false);
+      loadSuppliers();
+    } catch (err) {
+      console.error('Error saving supplier to Supabase:', err.message);
+      alert('Failed to save supplier: ' + err.message);
+    }
   };
 
   const filteredSuppliers = suppliers.filter(s => 
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (s.name && s.name.toLowerCase().includes(searchTerm.toLowerCase())) ||
+    (s.code && s.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
     (s.email && s.email.toLowerCase().includes(searchTerm.toLowerCase()))
   );
-
+  
   return (
     <div style={styles.container}>
       {/* Header Block */}
