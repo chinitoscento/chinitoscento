@@ -27,7 +27,7 @@ export default function Purchases() {
   const [containerVolume, setContainerVolume] = useState(''); // Editable container size/volume per batch
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
-  
+
   // List of added items in current transaction
   const [lineItems, setLineItems] = useState([]);
 
@@ -479,7 +479,7 @@ export default function Purchases() {
                     ))}
                   </select>
                 </div>
-
+                
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Date of Transaction *</label>
                   <input 
@@ -520,7 +520,7 @@ export default function Purchases() {
                         <option value="">-- Select Raw Material --</option>
                         {rawCatalogue.map((cat, idx) => {
                           const itemName = cat.rawMaterial || cat.name || cat.raw_material;
-                          const itemId = cat.id; // e.g. RM-001 or UUID
+                          const itemId = cat.id; 
                           const volSize = cat.volumeSize || cat.volume_size;
                           const bUnit = cat.baseUnit || cat.unit;
                           return (
@@ -738,380 +738,52 @@ export default function Purchases() {
           </div>
         </div>
       )}
-
-      {/* SUBMITTED TRANSACTION SUMMARY MODAL */}
-      {submittedModalData && (
-        <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
-            <div style={styles.modalHeader}>
-              <h3 style={styles.modalTitle}>Purchase Transaction Summary</h3>
-              <span style={styles.modalBadge}>SUCCESSFULLY RECORDED</span>
-            </div>
-
-            <div style={styles.modalMetaGrid}>
-              <div>
-                <span style={styles.modalSubLabel}>Transaction Ref:</span>
-                <div style={styles.modalMetaVal}>{submittedModalData.id}</div>
-              </div>
-              <div>
-                <span style={styles.modalSubLabel}>Date:</span>
-                <div style={styles.modalMetaVal}>{submittedModalData.date}</div>
-              </div>
-              <div>
-                <span style={styles.modalSubLabel}>Supplier:</span>
-                <div style={styles.modalMetaVal}><b>{submittedModalData.supplier}</b></div>
-              </div>
-              <div>
-                <span style={styles.modalSubLabel}>Terms:</span>
-                <div style={styles.modalMetaVal}>
-                  {submittedModalData.paymentMode} {submittedModalData.creditOption === 'Installment' && submittedModalData.installmentCount ? `(Installment: ${submittedModalData.installmentCount} mos)` : submittedModalData.creditOption !== 'N/A' ? `(${submittedModalData.creditOption})` : ''}
-                </div>
-              </div>
-            </div>
-
-            <h4 style={{ ...styles.sectionHeading, marginTop: '20px' }}>Acquired Items / Expenses</h4>
-            <table style={styles.table}>
-              <thead>
-                <tr style={styles.trHead}>
-                  <th style={styles.thLeft}>Type</th>
-                  <th style={styles.thLeft}>ID / Item Name</th>
-                  <th style={styles.thLeft}>Size/Vol</th>
-                  <th style={styles.thLeft}>Qty</th>
-                  <th style={styles.thLeft}>Unit Cost</th>
-                  <th style={styles.thLeft}>Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {submittedModalData.items.map((i, idx) => (
-                  <tr key={idx} style={styles.trBody}>
-                    <td style={styles.td}>
-                      <span style={i.type === 'COGS' ? styles.cogsBadge : styles.opexBadge}>{i.type}</span>
-                    </td>
-                    <td style={styles.td}>
-                      {i.code && i.code !== 'OPEX' ? <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c5a059', marginRight: '6px' }}>[{i.code}]</span> : null}
-                      {i.name}
-                    </td>
-                    <td style={styles.td}>{i.containerVolume || '-'}</td>
-                    <td style={styles.td}>{i.quantity.toLocaleString()}</td>
-                    <td style={styles.td}>₱{i.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td style={styles.td}>₱{i.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div style={{ ...styles.summaryCard, marginTop: '20px' }}>
-              <div>
-                <div style={styles.summaryLabel}>TOTAL PURCHASE AMOUNT</div>
-                <div style={styles.summaryMainVal}>₱{submittedModalData.totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                {submittedModalData.paymentMode === 'Credit' && (
-                  <div style={styles.summarySubText}>
-                    Computed Interest: ₱{submittedModalData.computedInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({submittedModalData.computedRate.toFixed(2)}%)
-                  </div>
-                )}
-              </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={styles.summaryLabel}>TOTAL AMOUNT DUE</div>
-                <div style={styles.summaryDueVal}>₱{submittedModalData.totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-              </div>
-            </div>
-
-            <div style={{ ...styles.btnRowRight, marginTop: '20px' }}>
-              <button type="button" onClick={() => setSubmittedModalData(null)} style={styles.primaryBtn}>
-                Close Summary
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
 
+// Inline styles for basic UI safety
 const styles = {
-  container: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2ded8',
-    borderRadius: '8px',
-    padding: '35px',
-    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
-    fontFamily: 'sans-serif',
-    color: '#333',
-    fontSize: '15px'
-  },
-  headerBlockWithBtn: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '20px',
-    flexWrap: 'wrap',
-    gap: '15px'
-  },
-  pageTitle: {
-    fontSize: '26px',
-    fontWeight: '700',
-    color: '#1a1a1a',
-    margin: '0 0 6px 0'
-  },
-  subText: {
-    fontSize: '15px',
-    color: '#666',
-    margin: 0
-  },
-  listHeading: {
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#222',
-    margin: '0 0 12px 0'
-  },
-  sectionHeading: {
-    fontSize: '16px',
-    fontWeight: '600',
-    color: '#333',
-    margin: '0 0 12px 0'
-  },
-  primaryBtn: {
-    backgroundColor: '#c5a059',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '10px 18px',
-    fontSize: '15px',
-    fontWeight: '600',
-    cursor: 'pointer'
-  },
-  secondaryBtn: {
-    backgroundColor: '#f4f0ea',
-    color: '#333',
-    border: '1px solid #dcd6ce',
-    borderRadius: '6px',
-    padding: '8px 14px',
-    fontSize: '14px',
-    fontWeight: '600',
-    cursor: 'pointer'
-  },
-  removeBtn: {
-    backgroundColor: '#ff4d4f',
-    color: '#fff',
-    border: 'none',
-    borderRadius: '4px',
-    padding: '4px 8px',
-    fontSize: '12px',
-    cursor: 'pointer'
-  },
-  cancelBtn: {
-    backgroundColor: '#e0e0e0',
-    color: '#333',
-    border: 'none',
-    borderRadius: '6px',
-    padding: '10px 18px',
-    fontSize: '15px',
-    fontWeight: '600',
-    cursor: 'pointer'
-  },
-  historyTable: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginTop: '10px'
-  },
-  table: {
-    width: '100%',
-    borderCollapse: 'collapse',
-    marginTop: '8px',
-    marginBottom: '15px'
-  },
-  trHead: {
-    borderBottom: '2px solid #e2ded8',
-    backgroundColor: '#faf8f5'
-  },
-  thLeft: {
-    textAlign: 'left',
-    padding: '12px',
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#555',
-    textTransform: 'uppercase'
-  },
-  trBody: {
-    borderBottom: '1px solid #eee'
-  },
-  td: {
-    padding: '12px',
-    verticalAlign: 'top',
-    fontSize: '14px',
-    color: '#333'
-  },
-  emptyTd: {
-    textAlign: 'center',
-    padding: '30px',
-    color: '#888',
-    fontStyle: 'italic'
-  },
-  modalOverlay: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-    overflowY: 'auto',
-    padding: '20px'
-  },
-  modalContent: {
-    backgroundColor: '#fff',
-    borderRadius: '8px',
-    width: '100%',
-    maxWidth: '850px',
-    maxHeight: '90vh',
-    overflowY: 'auto',
-    padding: '30px',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.15)'
-  },
-  modalHeader: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: '20px',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '15px'
-  },
-  modalTitle: {
-    fontSize: '20px',
-    fontWeight: '700',
-    margin: 0,
-    color: '#1a1a1a'
-  },
-  closeBtnIcon: {
-    background: 'none',
-    border: 'none',
-    fontSize: '18px',
-    cursor: 'pointer',
-    color: '#666'
-  },
-  formCard: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '20px'
-  },
-  gridTwo: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
-    gap: '15px'
-  },
-  gridRowCustom: {
-    display: 'grid',
-    gridTemplateColumns: '1fr 1fr 1fr',
-    gap: '15px'
-  },
-  inputGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '6px'
-  },
-  label: {
-    fontSize: '13px',
-    fontWeight: '600',
-    color: '#444'
-  },
-  input: {
-    padding: '10px',
-    borderRadius: '6px',
-    border: '1px solid #ccc',
-    fontSize: '14px',
-    outline: 'none',
-    backgroundColor: '#fff'
-  },
-  sectionBox: {
-    backgroundColor: '#faf8f5',
-    border: '1px solid #eadece',
-    borderRadius: '6px',
-    padding: '15px'
-  },
-  btnRowRight: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    marginTop: '10px'
-  },
-  cogsBadge: {
-    backgroundColor: '#e6f4ea',
-    color: '#137333',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600'
-  },
-  opexBadge: {
-    backgroundColor: '#fce8e6',
-    color: '#c5221f',
-    padding: '3px 8px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '600'
-  },
-  summaryCard: {
-    backgroundColor: '#1a1a1a',
-    color: '#fff',
-    borderRadius: '6px',
-    padding: '18px 22px',
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center'
-  },
-  summaryLabel: {
-    fontSize: '11px',
-    letterSpacing: '0.5px',
-    color: '#aaa',
-    marginBottom: '4px'
-  },
-  summaryMainVal: {
-    fontSize: '22px',
-    fontWeight: '700',
-    color: '#c5a059'
-  },
-  summaryDueVal: {
-    fontSize: '22px',
-    fontWeight: '700',
-    color: '#fff'
-  },
-  summarySubText: {
-    fontSize: '12px',
-    color: '#bbb',
-    marginTop: '4px'
-  },
-  modalFooterActions: {
-    display: 'flex',
-    justifyContent: 'flex-end',
-    gap: '10px',
-    marginTop: '10px'
-  },
-  modalBadge: {
-    backgroundColor: '#e6f4ea',
-    color: '#137333',
-    padding: '4px 10px',
-    borderRadius: '4px',
-    fontSize: '12px',
-    fontWeight: '700'
-  },
-  modalMetaGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(4, 1fr)',
-    gap: '10px',
-    backgroundColor: '#faf8f5',
-    padding: '12px',
-    borderRadius: '6px',
-    border: '1px solid #eee'
-  },
-  modalSubLabel: {
-    fontSize: '12px',
-    color: '#666'
-  },
-  modalMetaVal: {
-    fontSize: '14px',
-    color: '#222',
-    marginTop: '2px'
-  }
+  container: { padding: '20px', fontFamily: 'sans-serif', color: '#333' },
+  headerBlockWithBtn: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  pageTitle: { margin: 0, fontSize: '24px' },
+  subText: { margin: '5px 0 0', color: '#666', fontSize: '14px' },
+  primaryBtn: { backgroundColor: '#c5a059', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
+  secondaryBtn: { backgroundColor: '#444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer' },
+  cancelBtn: { backgroundColor: '#ccc', color: '#333', border: 'none', padding: '10px 18px', borderRadius: '4px', cursor: 'pointer' },
+  removeBtn: { backgroundColor: '#d9534f', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' },
+  listHeading: { fontSize: '18px', marginTop: '10px', marginBottom: '10px' },
+  historyTable: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
+  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff' },
+  trHead: { backgroundColor: '#f9f9f9', borderBottom: '2px solid #ddd' },
+  thLeft: { textAlign: 'left', padding: '12px', fontSize: '13px', color: '#444', fontWeight: 'bold' },
+  trBody: { borderBottom: '1px solid #eee' },
+  td: { padding: '12px', fontSize: '14px', verticalAlign: 'top', textAlign: 'left' },
+  emptyTd: { padding: '20px', textAlign: 'center', color: '#777', fontStyle: 'italic' },
+  
+  // Modal & Form styles
+  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' },
+  modalContent: { backgroundColor: '#fff', borderRadius: '6px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
+  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #eee' },
+  modalTitle: { margin: 0, fontSize: '18px' },
+  closeBtnIcon: { background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#666' },
+  formCard: { padding: '20px' },
+  gridTwo: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' },
+  gridRowCustom: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' },
+  inputGroup: { marginBottom: '12px', display: 'flex', flexDirection: 'column' },
+  label: { marginBottom: '5px', fontSize: '13px', fontWeight: 'bold', color: '#444' },
+  input: { padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' },
+  sectionBox: { marginTop: '20px', padding: '15px', backgroundColor: '#fcfcfc', border: '1px solid #eaeaea', borderRadius: '4px' },
+  sectionHeading: { margin: '0 0 12px 0', fontSize: '15px', color: '#333' },
+  btnRowRight: { display: 'flex', justifyContent: 'flex-end', marginTop: '10px' },
+  
+  cogsBadge: { backgroundColor: '#e2f0d9', color: '#385723', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+  opexBadge: { backgroundColor: '#fff2cc', color: '#7f6000', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
+
+  summaryCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', padding: '15px', backgroundColor: '#f4f4f4', borderRadius: '4px', border: '1px solid #ddd' },
+  summaryLabel: { fontSize: '11px', color: '#666', fontWeight: 'bold' },
+  summaryMainVal: { fontSize: '18px', fontWeight: 'bold', color: '#333', marginTop: '2px' },
+  summaryDueVal: { fontSize: '20px', fontWeight: 'bold', color: '#c5a059', marginTop: '2px' },
+  summarySubText: { fontSize: '12px', color: '#666', marginTop: '4px' },
+  modalFooterActions: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #eee' }
 };

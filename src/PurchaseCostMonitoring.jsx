@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient';
 
 // Helper function to parse volume size (e.g., "250ml", "1L", "500 ml") into mL for accurate volume calculations
 const parseVolumeInMl = (volumeStr) => {
@@ -15,40 +15,45 @@ const parseVolumeInMl = (volumeStr) => {
 
 export default function PurchaseCostMonitoring() {
   const [purchaseCosts, setPurchaseCosts] = useState([]);
+  const [loadingData, setLoadingData] = useState(true);
 
   useEffect(() => {
     loadPurchaseCostData();
   }, []);
 
   const loadPurchaseCostData = async () => {
+    setLoadingData(true);
     try {
-      const [
-        { data: catRows, error: catError },
-        { data: purRows, error: purError }
-      ] = await Promise.all([
-        supabase.from('raw_materials_catalogue').select('*'),
-        supabase.from('purchases').select('*')
-      ]);
+      // 1. Fetch Raw Materials Catalogue from Supabase
+      const { data: catalogItems, error: catError } = await supabase
+        .from('raw_materials_catalogue')
+        .select('*');
+      if (catError) throw catError;
 
-      if (catError && catError.code !== 'PGRST116') console.error(catError);
-      if (purError && purError.code !== 'PGRST116') console.error(purError);
+      // 2. Fetch purchase transactions with nested line items from Supabase
+      const { data: savedPurchases, error: purchError } = await supabase
+        .from('purchase_transactions')
+        .select(`
+          *,
+          purchase_line_items (*)
+        `);
+      if (purchError) throw purchError;
 
-      const catalogItems = catRows || [];
-      const savedPurchases = purRows || [];
-      
       const allLots = [];
-      savedPurchases.forEach(pur => {
-        const purDate = pur.date || pur.purchaseDate || pur.purchase_date || '2026-01-01';
-        const items = pur.items || pur.lineItems || pur.line_items || (Array.isArray(pur) ? pur : []);
+      (savedPurchases || []).forEach(pur => {
+        const purDate = pur.transaction_date || pur.date || pur.purchaseDate || '2026-01-01';
+        // Support both joined Supabase line items and legacy/local item structures
+        const items = pur.purchase_line_items || pur.items || pur.lineItems || (Array.isArray(pur) ? pur : []);
+        
         if (Array.isArray(items)) {
           items.forEach(it => {
             allLots.push({
               date: purDate,
-              code: String(it.code || it.materialId || it.material_id || it.id || '').trim().toUpperCase(),
-              name: String(it.itemName || it.item_name || it.name || it.description || '').trim(),
-              containerVolume: it.containerVolume || it.container_volume || it.volumePurchased || it.volume_purchased || it.qty || it.quantity || 1,
-              unitCost: Number(it.unitCost || it.unit_cost || it.cost || it.price || 0),
-              quantity: Number(it.quantity || it.qty || 1)
+              code: String(it.code || it.materialId || it.id || '').trim().toUpperCase(),
+              name: String(it.name || it.itemName || it.description || '').trim(),
+              containerVolume: it.container_volume || it.containerVolume || it. volumePurchased || it.qty || it.quantity || 1,
+              quantity: Number(it.quantity || 1),
+              unitCost: Number(it.unit_cost || it.unitCost || it.cost || it.price || 0)
             });
           });
         }
@@ -58,11 +63,11 @@ export default function PurchaseCostMonitoring() {
       allLots.sort((a, b) => new Date(b.date || '2026-01-01') - new Date(a.date || '2026-01-01'));
 
       // Map each item from RawMaterialsCatalogue to its latest purchase data
-      const computedList = catalogItems.map(mat => {
+      const computedList = (catalogItems || []).map(mat => {
         const code = String(mat.id || mat.code || '').trim().toUpperCase();
-        const name = String(mat.rawMaterial || mat.raw_material || mat.name || '').trim();
+        const name = String(mat.rawMaterial || mat.name || mat.raw_material || '').trim();
         const category = mat.category || 'GENERAL';
-        const unit = mat.baseUnit || mat.base_unit || mat.unit || 'pcs';
+        const unit = mat.baseUnit || mat.unit || 'pcs';
         const isLiquidMl = unit.toLowerCase() === 'ml';
 
         const matchingLot = allLots.find(lot => lot.code === code || (name && lot.name.toLowerCase() === name.toLowerCase()));
@@ -112,7 +117,9 @@ export default function PurchaseCostMonitoring() {
 
       setPurchaseCosts(computedList);
     } catch (err) {
-      console.error('Error loading purchase cost monitoring from Supabase:', err);
+      console.error('Error loading purchase cost data from Supabase:', err.message);
+    } finally {
+      setLoadingData(false);
     }
   };
 
@@ -150,7 +157,7 @@ export default function PurchaseCostMonitoring() {
       <div style={styles.headerRow} className="no-print">
         <div>
           <h2 style={styles.pageTitle}>Purchase Cost Monitoring</h2>
-          <p style={styles.sub}>Synchronized dynamically with Raw Materials Catalogue and latest Purchases.</p>
+          <p style={styles.sub}>Synchronized dynamically with Supabase Raw Materials Catalogue and Purchases.</p>
         </div>
         <button style={styles.actionBtn} onClick={() => window.print()}>🖨️ Print Purchase Cost Report</button>
       </div>
@@ -177,7 +184,9 @@ export default function PurchaseCostMonitoring() {
               </tr>
             </thead>
             <tbody>
-              {purchaseCosts.length === 0 ? (
+              {loadingData ? (
+                <tr><td colSpan="7" style={styles.empty}>Loading purchase costs from database...</td></tr>
+              ) : purchaseCosts.length === 0 ? (
                 <tr><td colSpan="7" style={styles.empty}>No raw materials found in Raw Materials Catalogue.</td></tr>
               ) : (
                 purchaseCosts.map((item, idx) => (
