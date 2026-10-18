@@ -47,14 +47,16 @@ export default function JournalEntries() {
       `);
       
     if (data) {
-      // Sort strictly descending by the numeric suffix on the right (e.g., 000003, 000002, 000001)
+      // Sort entries descending by the sequence number/counter (last 6 digits)
       data.sort((a, b) => {
-        const getSeq = (jeNum) => {
-          if (!jeNum) return 0;
-          const match = jeNum.match(/(\d+)$/);
-          return match ? parseInt(match[1], 10) : 0;
-        };
-        return getSeq(b.je_number) - getSeq(a.je_number);
+        const numA = parseInt((a.je_number || '').slice(-6), 10);
+        const numB = parseInt((b.je_number || '').slice(-6), 10);
+        
+        // Fallback to 0 if parsing fails
+        const safeA = isNaN(numA) ? 0 : numA;
+        const safeB = isNaN(numB) ? 0 : numB;
+        
+        return safeB - safeA; // Descending order (highest counter/newest first)
       });
 
       setEntries(data);
@@ -408,7 +410,7 @@ const styles = {
   trBody: { borderBottom: '1px solid #161616' },
   td: { padding: '10px 16px' },
   deleteBtn: { backgroundColor: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '6px' },
-  formFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px', flexWrap: 'wrap', gap: '16px' },
+  formFooter: { display: 'flex', justifyContent: 'space-system', alignItems: 'center', padding: '0 24px', flexWrap: 'wrap', gap: '16px' },
   secondaryButton: { backgroundColor: '#1a1a1a', color: '#ccc', border: '1px solid #333', padding: '8px 14px', borderRadius: '4px', fontWeight: '600', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: "'Cinzel', serif" },
   primaryButton: { backgroundColor: primaryGold, color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: '600', fontSize: '13px', cursor: 'pointer', fontFamily: "'Cinzel', serif", margin: '20px 24px' },
   totalsWrapper: { display: 'flex', alignItems: 'center', gap: '20px' },
