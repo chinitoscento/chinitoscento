@@ -34,7 +34,7 @@ export default function CustomerLedger() {
       const summary = savedCustomers.map((cust, idx) => {
         const custName = cust.name || cust.customer_name || '';
         const custSOs = savedSOs.filter(so => (so.customerName || so.customer_name) === custName);
-        const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || so.total_due || 0), 0);
+        const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || so.total_due || so.total_amount || 0), 0);
         
         const custCollections = savedCollections.filter(c => (c.customerName || c.customer_name) === custName);
         const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.amount_paid || c.credit || 0), 0);
@@ -63,7 +63,7 @@ export default function CustomerLedger() {
     custSummary.transactions.forEach(so => {
       const soNum = so.soNumber || so.so_number || so.invoice_no;
       const soDate = so.date || so.order_date;
-      const totalDue = Number(so.totalDue || so.total_due || 0);
+      const totalDue = Number(so.totalDue || so.total_due || so.total_amount || 0);
 
       invoiceMap[soNum] = {
         ref: soNum,
@@ -143,16 +143,18 @@ export default function CustomerLedger() {
 
       const subledgerEntries = [];
 
+      // RULE APPLIED: First row displays the original Sales Order (SO) amount as the initial transaction row
       if (so) {
         subledgerEntries.push({
           date: so.date || so.order_date,
           soNumber: so.soNumber || so.so_number || so.invoice_no,
-          transaction: 'Sales Order / Invoice',
-          debit: Number(so.totalDue || so.total_due || 0),
+          transaction: `Sales Order / Original SO (${so.soNumber || so.so_number || so.invoice_no})`,
+          debit: Number(so.totalDue || so.total_due || so.total_amount || 0),
           credit: 0
         });
       }
 
+      // Subsequent rows follow as debits (swaps/additional charges) or credits (payments/returns)
       collections.forEach(col => {
         const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
         const txnType = col.transactionType || col.transaction_type;

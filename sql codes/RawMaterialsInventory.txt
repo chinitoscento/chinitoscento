@@ -1,0 +1,51 @@
+-- 1. Create raw_materials_catalogue table if it does not exist and ensure columns exist
+CREATE TABLE IF NOT EXISTS raw_materials_catalogue (
+    id SERIAL PRIMARY KEY,
+    code TEXT,
+    raw_material TEXT,
+    name TEXT,
+    category TEXT,
+    volume_size TEXT,
+    volumesize TEXT,
+    base_unit TEXT,
+    baseunit TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS raw_material TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS volume_size TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS volumesize TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS base_unit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS baseunit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 2. Create purchases table if it does not exist and ensure columns exist
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    items JSONB,
+    line_items JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS items JSONB;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS line_items JSONB;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 3. Create inventory_thresholds table if it does not exist and ensure columns exist
+CREATE TABLE IF NOT EXISTS inventory_thresholds (
+    id SERIAL PRIMARY KEY,
+    item_key TEXT UNIQUE,
+    code TEXT,
+    threshold_value NUMERIC(12, 2) DEFAULT 10,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE inventory_thresholds ADD COLUMN IF NOT EXISTS item_key TEXT UNIQUE;
+ALTER TABLE inventory_thresholds ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE inventory_thresholds ADD COLUMN IF NOT EXISTS threshold_value NUMERIC(12, 2) DEFAULT 10;
+ALTER TABLE inventory_thresholds ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();

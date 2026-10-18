@@ -1,0 +1,24 @@
+-- 1. Create maceration table if it does not exist
+CREATE TABLE IF NOT EXISTS maceration (
+    id SERIAL PRIMARY KEY,
+    production_code TEXT UNIQUE,
+    scent TEXT,
+    product_code TEXT,
+    volume_desired NUMERIC(12, 2) DEFAULT 0,
+    expected_qty INT DEFAULT 0,
+    status TEXT DEFAULT 'Macerating',
+    date DATE,
+    ready_date DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist in maceration
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS production_code TEXT;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS scent TEXT;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS product_code TEXT;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS volume_desired NUMERIC(12, 2) DEFAULT 0;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS expected_qty INT DEFAULT 0;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Macerating';
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS ready_date DATE;
+ALTER TABLE maceration ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();

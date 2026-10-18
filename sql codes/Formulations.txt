@@ -1,0 +1,52 @@
+-- 1. Create formulations table if it does not exist
+CREATE TABLE IF NOT EXISTS formulations (
+    id SERIAL PRIMARY KEY,
+    product_code TEXT UNIQUE,
+    scent_name TEXT,
+    size_value TEXT,
+    oil_id TEXT,
+    oil_percentage NUMERIC(5, 2) DEFAULT 20,
+    solvent_id TEXT,
+    solvent_percentage NUMERIC(5, 2) DEFAULT 80,
+    bottle_id TEXT,
+    bottle_sticker_id TEXT,
+    box_id TEXT,
+    box_sticker_id TEXT,
+    wrapping_id TEXT,
+    price NUMERIC(12, 2),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist in formulations
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS product_code TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS scent_name TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS size_value TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS oil_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS oil_percentage NUMERIC(5, 2) DEFAULT 20;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS solvent_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS solvent_percentage NUMERIC(5, 2) DEFAULT 80;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS bottle_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS bottle_sticker_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS box_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS box_sticker_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS wrapping_id TEXT;
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS price NUMERIC(12, 2);
+ALTER TABLE formulations ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 2. Create products table if it does not exist
+CREATE TABLE IF NOT EXISTS products (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    product_code TEXT,
+    name TEXT,
+    scent TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist in products
+ALTER TABLE products ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS product_code TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS scent TEXT;
+ALTER TABLE products ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();

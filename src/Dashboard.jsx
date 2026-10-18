@@ -2,50 +2,176 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
 export default function Dashboard({ onNavigate }) {
-  const [hasAlertRawMaterials, setHasAlertRawMaterials] = useState(false);
+  const [lowStockCount, setLowStockCount] = useState(0);
   const [totalFinishedGoods, setTotalFinishedGoods] = useState(0);
   const [productionSummary, setProductionSummary] = useState({ text: '—', count: 0 });
+  const [totalSalesFromBeginning, setTotalSalesFromBeginning] = useState(0);
 
   useEffect(() => {
     loadDashboardData();
   }, []);
 
+  const parseVolumeSize = (volStr) => {
+    if (!volStr) return { sizeVal: 1, unit: '' };
+    const cleanStr = String(volStr).trim();
+    if (cleanStr === '1' || cleanStr === '1.0') {
+      return { sizeVal: 1, unit: '' };
+    }
+    const match = cleanStr.match(/^([\d,]+(\.\d+)?)\s*([a-zA-Z]*)$/);
+    if (match) {
+      const num = parseFloat(match[1].replace(/,/g, ''));
+      const unit = match[3] || '';
+      return { sizeVal: isNaN(num) ? 1 : num, unit };
+    }
+    return { sizeVal: 1, unit: '' };
+  };
+
   const loadDashboardData = async () => {
     try {
-      // Fetch data concurrently from Supabase tables
-      const [
-        { data: inventoryData, error: invError },
-        { data: fgData, error: fgError },
-        { data: macerationData, error: macError }
-      ] = await Promise.all([
-        supabase.from('inventory').select('*'),
-        supabase.from('finished_goods').select('*'),
-        supabase.from('maceration').select('*')
-      ]);
+      // 1. Fetch raw materials catalogue
+      const { data: catalogueData, error: catError } = await supabase
+        .from('raw_materials_catalogue')
+        .select('*');
+      if (catError) console.error('Catalogue Error:', catError);
 
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
-      if (fgError && fgError.code !== 'PGRST116') console.error(fgError);
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
+      // 2. Fetch purchase line items (Ledger) safely
+      const { data: lineItemsData, error: lineError } = await supabase
+        .from('purchase_line_items')
+        .select('*');
+      if (lineError) console.error('Line Items Error:', lineError);
 
-      // 1. Raw Materials Inventory Check
-      const rawMaterials = inventoryData || [];
-      const hasAlert = rawMaterials.some(item => {
-        const status = (item.status || '').toLowerCase();
-        const stock = parseFloat(item.stock || item.quantity || item.stock_qty || item.stockQty || 0);
-        const minStock = parseFloat(item.min_stock || item.minStock || item.threshold || 10);
-        return status.includes('alert') || stock <= minStock;
+      // 3. Fetch inventory thresholds safely (matching RawMaterialsInventory.jsx)
+      let savedThresholds = {};
+      try {
+        const { data: threshData, error: threshError } = await supabase
+          .from('inventory_thresholds')
+          .select('*');
+        if (!threshError && threshData) {
+          threshData.forEach(t => {
+            savedThresholds[t.item_key || t.code] = Number(t.threshold_value);
+          });
+        }
+      } catch (e) {
+        // Safe fallback if thresholds table has issues
+      }
+
+      // 4. Fetch finished goods, maceration, and sales orders safely
+      const { data: fgData } = await supabase.from('finished_goods').select('*');
+      const { data: macerationData } = await supabase.from('maceration').select('*');
+      const { data: soData } = await supabase.from('sales_orders').select('*');
+
+      // 5. Aggregate Stock via Ledger matching RawMaterialsInventory.jsx
+      const itemMap = new Map();
+
+      (catalogueData || []).forEach(cat => {
+        const code = String(cat.code || cat.id || '').trim();
+        const name = String(cat.rawMaterial || cat.raw_material || cat.name || 'Unknown Material').trim();
+        const category = cat.category || 'RAW MATERIAL';
+        
+        const lowerCat = category.toLowerCase();
+        const isFinishedGood = lowerCat.includes('women') || lowerCat.includes('men') || lowerCat.includes('unisex') || lowerCat.includes('finished good');
+        
+        if (!isFinishedGood) {
+          const entry = {
+            id: cat.id || code,
+            code: code,
+            rawMaterial: name,
+            category: category,
+            volumeSize: cat.volumeSize || cat.volume_size || '1',
+            baseUnit: cat.baseUnit || cat.base_unit || '',
+            stockQty: Number(cat.stock_qty || cat.stock || 0), 
+          };
+          if (code) itemMap.set(code.toLowerCase(), entry);
+          if (name) itemMap.set(name.toLowerCase(), entry);
+        }
       });
-      setHasAlertRawMaterials(hasAlert);
 
-      // 2. Finished Goods Inventory Total Available Qty
+      (lineItemsData || []).forEach(line => {
+        const lineType = (line.type || '').toUpperCase();
+        if (
+          lineType !== 'COGS' && 
+          lineType !== 'MACERATION_DEDUCTION' && 
+          lineType !== 'PACKAGING_DEDUCTION' && 
+          lineType !== 'PACAKAGIN_DEDUCTION'
+        ) return;
+
+        const lineName = String(line.name || line.raw_material_name || line.rawMaterial || line.item_name || '').trim();
+        const lineCode = String(line.code || line.item_code || line.raw_material_code || '').trim();
+        const lineQty = Number(line.quantity || line.qty || 0);
+        const lineContainerVol = line.container_volume || line.containerVolume;
+
+        const codeKey = lineCode.toLowerCase();
+        const nameKey = lineName.toLowerCase();
+
+        let matchedItem = null;
+        if (codeKey && itemMap.has(codeKey)) {
+          matchedItem = itemMap.get(codeKey);
+        } else if (nameKey && itemMap.has(nameKey)) {
+          matchedItem = itemMap.get(nameKey);
+        }
+
+        if (matchedItem) {
+          const volSource = lineContainerVol || matchedItem.volumeSize;
+          const volInfo = parseVolumeSize(volSource);
+          matchedItem.stockQty += lineQty * volInfo.sizeVal;
+        } else if (lineName && (lineType === 'COGS' || lineType === 'PACKAGING_DEDUCTION' || lineType === 'PACAKAGIN_DEDUCTION')) {
+          const isLiquid = nameKey.includes('oil') || nameKey.includes('solvent') || nameKey.includes('liquid');
+          const defaultVol = lineContainerVol || (isLiquid ? '250ml' : '1');
+          const volInfo = parseVolumeSize(defaultVol);
+          
+          const newItem = {
+            id: line.id || nameKey,
+            code: lineCode,
+            rawMaterial: lineName,
+            category: 'RAW MATERIAL',
+            volumeSize: defaultVol,
+            baseUnit: line.unit || (isLiquid ? 'ml' : 'pcs'),
+            stockQty: lineQty * volInfo.sizeVal
+          };
+          if (nameKey) itemMap.set(nameKey, newItem);
+          if (codeKey) itemMap.set(codeKey, newItem);
+        }
+      });
+
+      const uniqueItemsMap = new Map();
+      itemMap.forEach(item => {
+        uniqueItemsMap.set(item.id || item.rawMaterial, item);
+      });
+
+      const inventoryList = Array.from(uniqueItemsMap.values());
+
+      // 6. Exact counts logic from RawMaterialsInventory.jsx
+      const counts = inventoryList.reduce((acc, item) => {
+        const key = item.code || item.rawMaterial;
+        const threshold = savedThresholds[key] !== undefined ? Number(savedThresholds[key]) : 10;
+        const totalStockValue = Number(item.stockQty);
+        const isAlert = totalStockValue < threshold;
+
+        acc.ALL += 1;
+        if (isAlert) acc.ALERT += 1;
+        else acc.NORMAL += 1;
+        return acc;
+      }, { ALL: 0, NORMAL: 0, ALERT: 0 });
+
+      setLowStockCount(counts.ALERT);
+
+      // 7. Finished Goods Inventory Total Available Qty
       const fgInventory = fgData || [];
       const totalFG = fgInventory.reduce((sum, item) => {
-        const qty = parseFloat(item.quantity || item.stock || item.available_qty || item.availableQty || item.actual_qty || item.actualQty || 0);
+        const qty = parseFloat(
+          item.quantity || 
+          item.stock || 
+          item.available_qty || 
+          item.availableQty || 
+          item.actual_qty || 
+          item.actualQty || 
+          0
+        );
         return sum + qty;
       }, 0);
       setTotalFinishedGoods(totalFG);
 
-      // 3. Production Batches Status Check (Macerating vs Ready, excluding Bottled)
+      // 8. Production Batches Status Check
       const macerationBatches = macerationData || [];
       let maceratingCount = 0;
       let readyCount = 0;
@@ -66,6 +192,17 @@ export default function Dashboard({ onNavigate }) {
       } else {
         setProductionSummary({ text: '—', count: 0 });
       }
+
+      // 9. Total Sales Calculation from Beginning
+      const allSales = soData || [];
+      const salesSum = allSales.reduce((sum, order) => {
+        const orderStatus = (order.status || order.order_status || '').toLowerCase();
+        if (orderStatus === 'declined') return sum;
+        const amount = parseFloat(order.total_amount || order.totalDue || order.amount || 0);
+        return sum + amount;
+      }, 0);
+      setTotalSalesFromBeginning(salesSum);
+
     } catch (err) {
       console.error('Error loading dashboard data from Supabase:', err);
     }
@@ -81,23 +218,38 @@ export default function Dashboard({ onNavigate }) {
 
       {/* Metric Cards Grid */}
       <div style={styles.metricsGrid}>
-        <div style={styles.card}>
+        {/* TOTAL SALES CARD */}
+        <div 
+          style={{ ...styles.card, ...styles.clickableCard }}
+          onClick={() => {
+            if (onNavigate) {
+              onNavigate('Sales Production Report', 'Reports');
+            } else {
+              window.location.hash = 'sales-production-report';
+            }
+          }}
+          title="Click to view Sales & Production Report"
+        >
           <span style={styles.cardLabel}>TOTAL SALES</span>
-          <span style={styles.cardValue}>—</span>
-          <span style={styles.cardSub}>Year-to-date revenue</span>
+          <span style={styles.cardValue}>
+            ₱{totalSalesFromBeginning.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          <span style={styles.cardSub}>Overall cumulative revenue</span>
         </div>
         
+        {/* NET INCOME CARD */}
         <div style={styles.card}>
           <span style={styles.cardLabel}>NET INCOME</span>
           <span style={styles.cardValue}>—</span>
           <span style={styles.cardSub}>After operating expenses</span>
         </div>
         
+        {/* RAW MATERIALS LOW STOCK CARD */}
         <div 
           style={{ ...styles.card, ...styles.clickableCard }}
           onClick={() => {
             if (onNavigate) {
-              onNavigate('Raw Materials');
+              onNavigate('Raw Materials', 'Manufacturing');
             } else {
               window.location.hash = 'raw-materials';
             }
@@ -105,19 +257,20 @@ export default function Dashboard({ onNavigate }) {
           title="Click to view Raw Materials Inventory"
         >
           <span style={styles.cardLabel}>RAW MATERIALS</span>
-          <span style={{ ...styles.cardValue, color: hasAlertRawMaterials ? '#dc2626' : '#121212' }}>
-            {hasAlertRawMaterials ? 'ALERT' : 'Normal'}
+          <span style={{ ...styles.cardValue, color: lowStockCount > 0 ? '#dc2626' : '#121212' }}>
+            {lowStockCount}
           </span>
-          <span style={{ ...styles.cardSub, color: hasAlertRawMaterials ? '#dc2626' : primaryGold }}>
-            {hasAlertRawMaterials ? 'Low Raw Materials - Purchase Needed' : 'Active stock ingredients'}
+          <span style={{ ...styles.cardSub, color: lowStockCount > 0 ? '#dc2626' : primaryGold }}>
+            {lowStockCount > 0 ? `${lowStockCount} Items in Low Stock` : 'Active stock ingredients'}
           </span>
         </div>
         
+        {/* FINISHED GOODS CARD */}
         <div 
           style={{ ...styles.card, ...styles.clickableCard }}
           onClick={() => {
             if (onNavigate) {
-              onNavigate('Finished Goods');
+              onNavigate('Finished Goods', 'Manufacturing');
             } else {
               window.location.hash = 'finished-goods';
             }
@@ -129,11 +282,12 @@ export default function Dashboard({ onNavigate }) {
           <span style={styles.cardSub}>Ready for distribution</span>
         </div>
 
+        {/* PRODUCTION BATCHES CARD */}
         <div 
           style={{ ...styles.card, ...styles.clickableCard }}
           onClick={() => {
             if (onNavigate) {
-              onNavigate('Maceration');
+              onNavigate('Maceration', 'Manufacturing');
             } else {
               window.location.hash = 'maceration';
             }
@@ -147,12 +301,14 @@ export default function Dashboard({ onNavigate }) {
           <span style={styles.cardSub}>{productionSummary.text}</span>
         </div>
 
+        {/* PENDING SALES ORDERS CARD */}
         <div style={styles.card}>
           <span style={styles.cardLabel}>PENDING SALES ORDERS</span>
           <span style={styles.cardValue}>—</span>
           <span style={styles.cardSub}>Awaiting processing</span>
         </div>
 
+        {/* COLLECTION CARD */}
         <div style={styles.card}>
           <span style={styles.cardLabel}>COLLECTION</span>
           <span style={styles.cardValue}>—</span>

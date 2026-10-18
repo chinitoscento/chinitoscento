@@ -1,0 +1,38 @@
+-- Drop packaging table if a clean reset is needed
+DROP TABLE IF EXISTS packaging CASCADE;
+
+-- Create packaging table matching the application and inventory keys
+CREATE TABLE packaging (
+    id SERIAL PRIMARY KEY,
+    pack_code TEXT UNIQUE,
+    mac_code TEXT,
+    product_code TEXT,
+    scent TEXT,
+    macerated_volume NUMERIC(12, 2) DEFAULT 0,
+    expected_qty INT DEFAULT 0,
+    actual_qty INT DEFAULT 0,
+    reason TEXT,
+    date DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist if altering an existing table instead
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS pack_code TEXT;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS mac_code TEXT;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS product_code TEXT;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS scent TEXT;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS macerated_volume NUMERIC(12, 2) DEFAULT 0;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS expected_qty INT DEFAULT 0;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS actual_qty INT DEFAULT 0;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE packaging ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+-- Enable RLS on packaging if not already enabled
+ALTER TABLE packaging ENABLE ROW LEVEL SECURITY;
+
+-- Allow public or authenticated inserts, updates, and selects on packaging
+CREATE POLICY "Enable all access for packaging" ON packaging
+    FOR ALL
+    USING (true)
+    WITH CHECK (true);

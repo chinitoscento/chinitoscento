@@ -1,0 +1,43 @@
+-- 1. Create raw_materials_catalogue table if it does not exist
+CREATE TABLE IF NOT EXISTS raw_materials_catalogue (
+    id SERIAL PRIMARY KEY,
+    code TEXT UNIQUE,
+    raw_material TEXT,
+    base_unit TEXT,
+    volume_size TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist in raw_materials_catalogue
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS raw_material TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS base_unit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS volume_size TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 2. Create purchases table if it does not exist
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    purchase_code TEXT UNIQUE,
+    date DATE,
+    items JSONB DEFAULT '[]',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure columns exist in purchases
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS purchase_code TEXT;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS items JSONB DEFAULT '[]';
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 3. Ensure columns exist in settings
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_oil_cost NUMERIC(12, 2) DEFAULT 4.5;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_solvent_cost NUMERIC(12, 2) DEFAULT 0.38;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_bottle_cost NUMERIC(12, 2) DEFAULT 25;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_bottle_sticker NUMERIC(12, 2) DEFAULT 3;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_box_cost NUMERIC(12, 2) DEFAULT 12;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_box_sticker NUMERIC(12, 2) DEFAULT 3;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_shrink_wrap NUMERIC(12, 2) DEFAULT 2;
+ALTER TABLE settings ADD COLUMN IF NOT EXISTS default_price NUMERIC(12, 2);

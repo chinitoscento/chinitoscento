@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import logoImage from './logo.png';
-import { supabase } from './supabaseClient'; // Adjust path to your supabase client file
+import { supabase } from './supabaseClient';
 
 export default function Collections() {
   const [unpaidInvoices, setUnpaidInvoices] = useState([]);
@@ -8,12 +8,17 @@ export default function Collections() {
   const [customers, setCustomers] = useState([]);
   
   // Form fields
-  const [collectionCode] = useState(`COL-${Date.now().toString().slice(-6)}`);
+  const [collectionCode, setCollectionCode] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [customerInvoices, setCustomerInvoices] = useState([]);
   const [selectedInvoiceNo, setSelectedInvoiceNo] = useState('');
   const [amountDue, setAmountDue] = useState(0);
   const [amountPaid, setAmountPaid] = useState('');
+  
+  // New payment details state
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().split('T')[0]);
+  const [paymentMode, setPaymentMode] = useState('CASH');
+  const [referenceNo, setReferenceNo] = useState('');
   
   // Receipt Preview state
   const [previewReceipt, setPreviewReceipt] = useState(null);
@@ -22,10 +27,67 @@ export default function Collections() {
     loadData();
   }, []);
 
+  const generateCollectionCode = (historyList) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const currentYearMonth = `${year}${month}`;
+
+    const highestCol = historyList && historyList.length > 0 ? historyList[0] : null;
+    let sequence = 1;
+
+    if (highestCol && (highestCol.code || highestCol.collectionCode)) {
+      const codeVal = highestCol.code || highestCol.collectionCode;
+      const cleanCode = codeVal.replace('COL-', '');
+      const existingSeq = parseInt(cleanCode.substring(6) || 0, 10);
+      sequence = existingSeq + 1;
+    }
+
+    return `COL-${currentYearMonth}${sequence.toString().padStart(6, '0')}`;
+  };
+
+  const generateNextJournalNumber = async (prefixType = 'JE-COL') => {
+    try {
+      const d = new Date(paymentDate || Date.now());
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const yearMonthStr = `${year}${month}`;
+
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('je_number');
+
+      if (error) throw error;
+
+      let maxNum = 0;
+      if (data && data.length > 0) {
+        data.forEach(item => {
+          const jeNum = String(item.je_number || '').trim();
+          const trailingDigits = jeNum.slice(-6);
+          const num = parseInt(trailingDigits, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        });
+      }
+
+      return `${prefixType}-${yearMonthStr}${String(maxNum + 1).padStart(6, '0')}`;
+    } catch (err) {
+      console.error('Error generating journal number:', err);
+      const d = new Date(paymentDate || Date.now());
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${prefixType}-${year}${month}000001`;
+    }
+  };
+
   const loadData = async () => {
     try {
-      // 1. Fetch Sales Orders, Customers, and Collections from Supabase tables
-      const [{ data: sosData, error: sosError }, { data: custsData, error: custsError }, { data: colData, error: colError }] = await Promise.all([
+      const [
+        { data: sosData, error: sosError }, 
+        { data: custsData, error: custsError }, 
+        { data: colData, error: colError }
+      ] = await Promise.all([
         supabase.from('sales_orders').select('*'),
         supabase.from('customers').select('*'),
         supabase.from('collections').select('*').order('created_at', { ascending: false })
@@ -41,36 +103,53 @@ export default function Collections() {
 
       setCustomers(savedCusts);
       setCollectionsHistory(savedCollections);
+      setCollectionCode(generateCollectionCode(savedCollections));
 
-      // Compute unpaid / partial invoices
+      const activeSOs = savedSOs.filter(so => (so.status || so.order_status) !== 'Declined');
+
       const activeUnpaid = [];
-      savedSOs.filter(so => so.status !== 'Declined').forEach(so => {
-        const paymentMode = so.payment_mode || so.paymentMode || '';
-        const isCash = paymentMode.toUpperCase() === 'CASH';
-        const soNumber = so.so_number || so.soNumber;
+      activeSOs.forEach(so => {
+        const soNum = so.so_number || so.soNumber || so.invoice_no;
+        const soPaymentMode = so.payment_mode || so.paymentMode || '';
+        const isCash = soPaymentMode.toUpperCase() === 'CASH';
+        const isCredit = soPaymentMode.toUpperCase() === 'CREDIT';
+
+        const paidSoCollections = savedCollections.filter(c => (c.invoice_no || c.invoiceNo || c.so_number || c.soNumber) === soNum);
+        const totalPaidSo = paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
         
-        const paidSoCollections = savedCollections.filter(c => (c.invoice_no || c.invoiceNo) === soNumber);
-        const totalPaid = paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || 0), 0);
-        const totalDue = Number(so.total_due || so.totalDue || 0);
-        const balanceDue = totalDue - totalPaid;
+        const totalDue = Number(so.total_amount || so.totalDue || 0);
+
+        let computedStatus = 'UNPAID';
+        if (isCash) {
+          computedStatus = 'PAID';
+        } else if (totalPaidSo >= totalDue && totalDue > 0) {
+          computedStatus = 'PAID';
+        } else if (totalPaidSo > 0 && totalPaidSo < totalDue) {
+          computedStatus = 'PARTIAL';
+        } else if (isCredit && totalPaidSo === 0) {
+          computedStatus = 'UNPAID';
+        }
+
+        const balanceDue = isCash ? 0 : Math.max(0, totalDue - totalPaidSo);
 
         if (!isCash && balanceDue > 0) {
           const dueDateStr = so.due_date || so.dueDate || so.date;
           const dueDateObj = new Date(dueDateStr);
           const today = new Date();
           const diffTime = today - dueDateObj;
-          const diffDays = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+          const diffDays = isNaN(diffTime) ? 0 : Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
           const customerNameVal = so.customer_name || so.customerName;
           activeUnpaid.push({
             ...so,
-            soNumber: soNumber,
+            soNumber: soNum,
             customerName: customerNameVal,
             amountDue: balanceDue,
             originalTotal: totalDue,
-            totalPaid,
+            totalPaid: totalPaidSo,
             daysPastDue: diffDays,
-            remarks: totalPaid > 0 ? `PARTIAL PAYMENT (Balance: ₱${balanceDue.toFixed(2)})` : 'UNPAID'
+            invoiceStatus: computedStatus,
+            remarks: computedStatus === 'PARTIAL' ? `PARTIAL PAYMENT (Balance: ₱${balanceDue.toFixed(2)})` : 'UNPAID'
           });
         }
       });
@@ -125,25 +204,70 @@ export default function Collections() {
       return;
     }
 
+    if ((paymentMode === 'GCASH' || paymentMode === 'BANK TRANSFER') && !referenceNo.trim()) {
+      alert('Please enter a reference number for GCash or Bank Transfer.');
+      return;
+    }
+
     const balanceAfter = amountDue - paidNum;
     const remarksText = balanceAfter <= 0 ? 'FULLY PAID' : `PARTIAL PAYMENT (Balance Due: ₱${balanceAfter.toFixed(2)})`;
 
     const newRecord = {
       code: collectionCode,
-      date: new Date().toISOString().split('T')[0],
+      date: paymentDate,
       customer_name: selectedCustomer,
       invoice_no: selectedInvoiceNo,
       amount_due: amountDue,
       amount_paid: paidNum,
       balance_after: Math.max(0, balanceAfter),
+      payment_mode: paymentMode,
+      reference_no: referenceNo || 'N/A',
       remarks: remarksText
     };
 
     try {
+      // 1. Insert Collection Record
       const { error } = await supabase.from('collections').insert([newRecord]);
       if (error) throw error;
 
-      // Map back to camelCase layout for frontend state consistency if needed
+      // 2. Generate and Insert Journal Entry for Ledger Tracking
+      const freshJeNumber = await generateNextJournalNumber('JE-COL');
+      
+      const { error: jeError } = await supabase
+        .from('journal_entries')
+        .insert([{
+          je_number: freshJeNumber,
+          date: paymentDate,
+          description: `Collection from ${selectedCustomer} for invoice ${selectedInvoiceNo} (${paymentMode})`,
+          reference_no: collectionCode,
+          status: 'Posted'
+        }]);
+
+      if (jeError) throw jeError;
+
+      // Use valid account code '1000' (Cash on Hand / Bank) and '1200' (Accounts Receivable) from chart of accounts
+      const cashAccountCode = '1000';
+
+      const lineEntries = [
+        {
+          je_number: freshJeNumber,
+          account_code: cashAccountCode, // Debit Cash on Hand / Bank (1000)
+          debit: paidNum,
+          credit: 0,
+          description: `Payment received via ${paymentMode} - ${collectionCode}`
+        },
+        {
+          je_number: freshJeNumber,
+          account_code: '1200', // Credit Accounts Receivable (1200)
+          debit: 0,
+          credit: paidNum,
+          description: `Applied to AR invoice ${selectedInvoiceNo} (${selectedCustomer})`
+        }
+      ];
+
+      const { error: lineError } = await supabase.from('journal_entry_lines').insert(lineEntries);
+      if (lineError) throw lineError;
+
       const clientFormattedRecord = {
         code: newRecord.code,
         date: newRecord.date,
@@ -152,6 +276,8 @@ export default function Collections() {
         amountDue: newRecord.amount_due,
         amountPaid: newRecord.amount_paid,
         balanceAfter: newRecord.balance_after,
+        paymentMode: newRecord.payment_mode,
+        referenceNo: newRecord.reference_no,
         remarks: newRecord.remarks
       };
 
@@ -162,9 +288,12 @@ export default function Collections() {
       setSelectedInvoiceNo('');
       setAmountDue(0);
       setAmountPaid('');
+      setReferenceNo('');
+      setPaymentMode('CASH');
+      setPaymentDate(new Date().toISOString().split('T')[0]);
     } catch (err) {
       console.error('Error saving collection to Supabase:', err);
-      alert('Failed to save collection record.');
+      alert('Failed to save collection record: ' + (err.message || JSON.stringify(err)));
     }
   };
 
@@ -203,7 +332,7 @@ export default function Collections() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>INVOICE #</th>
+                <th style={styles.th}>SO / INVOICE #</th>
                 <th style={styles.th}>Customer Name</th>
                 <th style={styles.th}>Due Date</th>
                 <th style={styles.th}>Number of Days Past Due</th>
@@ -249,6 +378,17 @@ export default function Collections() {
           </div>
 
           <div style={styles.formGroup}>
+            <label style={styles.label}>Date of Payment</label>
+            <input 
+              type="date" 
+              value={paymentDate} 
+              onChange={(e) => setPaymentDate(e.target.value)} 
+              style={styles.input} 
+              required 
+            />
+          </div>
+
+          <div style={styles.formGroup}>
             <label style={styles.label}>Customer Name</label>
             <select 
               value={selectedCustomer} 
@@ -264,18 +404,43 @@ export default function Collections() {
           </div>
 
           <div style={styles.formGroup}>
-            <label style={styles.label}>Invoice #</label>
+            <label style={styles.label}>SO / Invoice #</label>
             <select 
               value={selectedInvoiceNo} 
               onChange={(e) => handleInvoiceChange(e.target.value)} 
               style={styles.input}
               required
             >
-              <option value="">-- Select Unpaid Invoice --</option>
+              <option value="">-- Select Unpaid Order --</option>
               {customerInvoices.map((inv, idx) => (
                 <option key={idx} value={inv.soNumber}>{inv.soNumber} (Bal: ₱{inv.amountDue.toFixed(2)})</option>
               ))}
             </select>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Mode of Payment</label>
+            <select 
+              value={paymentMode} 
+              onChange={(e) => setPaymentMode(e.target.value)} 
+              style={styles.input}
+              required
+            >
+              <option value="CASH">Cash</option>
+              <option value="GCASH">GCash</option>
+              <option value="BANK TRANSFER">Bank Transfer</option>
+            </select>
+          </div>
+
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Reference Number / Trx No.</label>
+            <input 
+              type="text" 
+              value={referenceNo} 
+              onChange={(e) => setReferenceNo(e.target.value)} 
+              style={styles.input} 
+              placeholder={paymentMode === 'CASH' ? 'Optional for Cash' : 'Required for GCash/Bank'}
+            />
           </div>
 
           <div style={styles.formGroup}>
@@ -320,9 +485,10 @@ export default function Collections() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>Date of Transaction</th>
-                <th style={styles.th}>INVOICE # Ref</th>
+                <th style={styles.th}>Date Paid</th>
+                <th style={styles.th}>SO / INVOICE # Ref</th>
                 <th style={styles.th}>Customer Name</th>
+                <th style={styles.th}>Mode & Ref #</th>
                 <th style={styles.th}>Amount Due</th>
                 <th style={styles.th}>Amount Paid</th>
                 <th style={styles.th}>Remarks</th>
@@ -331,15 +497,20 @@ export default function Collections() {
             </thead>
             <tbody>
               {collectionsHistory.length === 0 ? (
-                <tr><td colSpan="7" style={styles.empty}>No collection history recorded yet.</td></tr>
+                <tr><td colSpan="8" style={styles.empty}>No collection history recorded yet.</td></tr>
               ) : (
                 collectionsHistory.map((col, idx) => (
                   <tr key={idx} style={styles.trBody}>
                     <td style={styles.td}>{col.date}</td>
-                    <td style={styles.td}><b>{col.invoiceNo}</b></td>
-                    <td style={styles.td}>{col.customerName}</td>
-                    <td style={styles.td}>₱{Number(col.amountDue).toFixed(2)}</td>
-                    <td style={styles.td}>₱{Number(col.amountPaid).toFixed(2)}</td>
+                    <td style={styles.td}><b>{col.invoiceNo || col.invoice_no}</b></td>
+                    <td style={styles.td}>{col.customerName || col.customer_name}</td>
+                    <td style={styles.td}>
+                      <b>{col.paymentMode || col.payment_mode || 'CASH'}</b>
+                      <br />
+                      <span style={{fontSize: '11px', color: '#555'}}>{col.referenceNo || col.reference_no || 'N/A'}</span>
+                    </td>
+                    <td style={styles.td}>₱{Number(col.amountDue || col.amount_due || 0).toFixed(2)}</td>
+                    <td style={styles.td}>₱{Number(col.amountPaid || col.amount_paid || 0).toFixed(2)}</td>
                     <td style={styles.td}>{col.remarks}</td>
                     <td style={styles.td}>
                       <button 
@@ -375,12 +546,13 @@ export default function Collections() {
 
               <div style={styles.invoiceMeta}>
                 <div><p style={{margin: 0}}><b>COL CODE:</b> {previewReceipt.code}</p></div>
-                <div><p style={{margin: 0}}><b>DATE:</b> {previewReceipt.date}</p></div>
+                <div><p style={{margin: 0}}><b>DATE PAID:</b> {previewReceipt.date}</p></div>
               </div>
 
               <div style={styles.invoiceClient}>
-                <p style={{margin: '0 0 4px 0'}}><b>Customer:</b> {previewReceipt.customerName}</p>
-                <p style={{margin: 0}}><b>Reference SO:</b> {previewReceipt.invoiceNo}</p>
+                <p style={{margin: '0 0 4px 0'}}><b>Customer:</b> {previewReceipt.customerName || previewReceipt.customer_name}</p>
+                <p style={{margin: '0 0 4px 0'}}><b>Reference SO:</b> {previewReceipt.invoiceNo || previewReceipt.invoice_no}</p>
+                <p style={{margin: 0}}><b>Payment Mode:</b> {previewReceipt.paymentMode || previewReceipt.payment_mode || 'CASH'} ({previewReceipt.referenceNo || previewReceipt.reference_no || 'N/A'})</p>
               </div>
 
               <table style={styles.printTable}>
@@ -395,13 +567,13 @@ export default function Collections() {
                 <tbody>
                   <tr>
                     <td style={styles.printTd}>
-                      Payment against Sales Order Reference <b>{previewReceipt.invoiceNo}</b>
+                      Payment against Sales Order Reference <b>{previewReceipt.invoiceNo || previewReceipt.invoice_no}</b>
                       <br />
                       <span style={{fontSize: '11px', color: '#555'}}>Status: {previewReceipt.remarks}</span>
                     </td>
-                    <td style={styles.printTd}>₱{Number(previewReceipt.amountDue).toFixed(2)}</td>
-                    <td style={styles.printTd}>₱{Number(previewReceipt.amountPaid).toFixed(2)}</td>
-                    <td style={styles.printTd}>₱{Number(previewReceipt.balanceAfter ?? Math.max(0, previewReceipt.amountDue - previewReceipt.amountPaid)).toFixed(2)}</td>
+                    <td style={styles.printTd}>₱{Number(previewReceipt.amountDue || previewReceipt.amount_due || 0).toFixed(2)}</td>
+                    <td style={styles.printTd}>₱{Number(previewReceipt.amountPaid || previewReceipt.amount_paid || 0).toFixed(2)}</td>
+                    <td style={styles.printTd}>₱{Number(previewReceipt.balanceAfter ?? previewReceipt.balance_after ?? Math.max(0, Number(previewReceipt.amountDue || previewReceipt.amount_due || 0) - Number(previewReceipt.amountPaid || previewReceipt.amount_paid || 0))).toFixed(2)}</td>
                   </tr>
                 </tbody>
               </table>
@@ -463,13 +635,8 @@ const styles = {
   printHeader: { textAlign: 'center', marginBottom: '20px' },
   logo: { width: '50px', height: '50px', objectFit: 'contain', marginBottom: '5px' },
   invoiceMeta: { display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #eee', borderBottom: '1px solid #eee', padding: '10px 0', marginBottom: '15px', fontSize: '13px' },
-  invoiceClient: { marginBottom: '20px', fontSize: '13px', textAlign: 'left' },
-  
+  invoiceClient: { marginBottom: '20px', fontSize: '13px' },
   printTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '13px', textAlign: 'left' },
-  printTh: { borderBottom: '2px solid #333', padding: '8px', textAlign: 'left', fontWeight: '700' },
-  printTd: { borderBottom: '1px solid #eee', padding: '8px', textAlign: 'left' },
-  printFooter: { marginTop: '30px', textAlign: 'left' },
-
-  modalActions: { padding: '15px 20px', backgroundColor: '#f9f9f9', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' },
-  primaryBtn: { backgroundColor: '#111827', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '14px' }
+  printTh: { borderBottom: '2px solid #333', padding: '8px', textAlign: 'left' },
+  printTd: { borderBottom: '1px solid #eee', padding: '8px', textAlign: 'left' }
 };

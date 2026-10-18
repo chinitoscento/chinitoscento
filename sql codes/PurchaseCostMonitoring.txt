@@ -1,0 +1,52 @@
+-- 1. Ensure raw_materials_catalogue table has all necessary columns for PurchaseCostMonitoring
+CREATE TABLE IF NOT EXISTS raw_materials_catalogue (
+    id SERIAL PRIMARY KEY,
+    code TEXT,
+    raw_material TEXT,
+    name TEXT,
+    category TEXT,
+    volume_size TEXT,
+    volumesize TEXT,
+    base_unit TEXT,
+    baseunit TEXT,
+    unit TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS code TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS raw_material TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS name TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS category TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS volume_size TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS volumesize TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS base_unit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS baseunit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS unit TEXT;
+ALTER TABLE raw_materials_catalogue ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+
+
+-- 2. Ensure purchases table has all necessary columns for PurchaseCostMonitoring
+CREATE TABLE IF NOT EXISTS purchases (
+    id SERIAL PRIMARY KEY,
+    po_number TEXT UNIQUE,
+    purchase_number TEXT,
+    supplier_name TEXT,
+    supplier TEXT,
+    items JSONB,
+    line_items JSONB,
+    total_amount NUMERIC(12, 2) DEFAULT 0,
+    status TEXT DEFAULT 'Pending',
+    date DATE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS po_number TEXT;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS purchase_number TEXT;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS supplier_name TEXT;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS supplier TEXT;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS items JSONB;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS line_items JSONB;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS total_amount NUMERIC(12, 2) DEFAULT 0;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Pending';
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS date DATE;
+ALTER TABLE purchases ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();

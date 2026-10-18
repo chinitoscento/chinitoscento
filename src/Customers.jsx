@@ -23,7 +23,7 @@ export default function Customers() {
 
   const loadCustomers = async () => {
     try {
-      const { data, error } = await supabase.from('customers').select('*').order('created_at', { ascending: false });
+      const { data, error } = await supabase.from('customers').select('*').order('code', { ascending: true });
       if (error) throw error;
       
       const mapped = (data || []).map(c => ({
@@ -42,6 +42,38 @@ export default function Customers() {
     }
   };
 
+  const handleOpenModal = () => {
+    // Automatically generate next sequential code like CUST-0001, CUST-0002, etc.
+    let nextCode = 'CUST-0001';
+    if (customers.length > 0) {
+      const codes = customers
+        .map(c => c.code)
+        .filter(code => code && code.startsWith('CUST-'));
+      
+      if (codes.length > 0) {
+        const numericValues = codes.map(code => {
+          const num = parseInt(code.replace('CUST-', ''), 10);
+          return isNaN(num) ? 0 : num;
+        });
+        const maxNum = Math.max(...numericValues, 0);
+        nextCode = `CUST-${String(maxNum + 1).padStart(4, '0')}`;
+      } else {
+        nextCode = `CUST-${String(customers.length + 1).padStart(4, '0')}`;
+      }
+    }
+
+    setFormData({
+      code: nextCode,
+      name: '',
+      phone: '',
+      email: '',
+      category: 'VIP Boutique',
+      creditLimit: '',
+      status: 'Active'
+    });
+    setIsModalOpen(true);
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -51,9 +83,20 @@ export default function Customers() {
     e.preventDefault();
     if (!formData.name) return;
 
-    const generatedCode = formData.code || `CUST-${Math.floor(1000 + Math.random() * 9000)}`;
+    // Ensure code has fallback sequencing if left blank manually
+    let finalCode = formData.code;
+    if (!finalCode) {
+      const numericValues = customers
+        .map(c => c.code)
+        .filter(code => code && code.startsWith('CUST-'))
+        .map(code => parseInt(code.replace('CUST-', ''), 10))
+        .filter(num => !isNaN(num));
+      const maxNum = numericValues.length > 0 ? Math.max(...numericValues) : customers.length;
+      finalCode = `CUST-${String(maxNum + 1).padStart(4, '0')}`;
+    }
+
     const newRecord = {
-      code: generatedCode,
+      code: finalCode,
       name: formData.name,
       phone: formData.phone,
       email: formData.email,
@@ -101,7 +144,7 @@ export default function Customers() {
         </div>
         <button 
           style={styles.primaryButton}
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleOpenModal}
           onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
           onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
         >
@@ -191,14 +234,13 @@ export default function Customers() {
 
             <form onSubmit={handleSubmit} style={styles.formGrid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Customer Code (Optional)</label>
+                <label style={styles.label}>Customer Code (Sequential)</label>
                 <input 
                   type="text" 
                   name="code" 
-                  placeholder="Auto-generated if blank" 
                   value={formData.code}
                   onChange={handleInputChange}
-                  style={styles.input}
+                  style={{ ...styles.input, backgroundColor: '#f9f9f9', fontWeight: 'bold' }}
                 />
               </div>
 

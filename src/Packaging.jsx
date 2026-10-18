@@ -16,28 +16,74 @@ export default function Packaging() {
   // Data sources from Supabase
   const [formulations, setFormulations] = useState([]);
   const [inventoryList, setInventoryList] = useState([]);
+  const [purchaseTransactions, setPurchaseTransactions] = useState([]);
+  const [purchaseLineItems, setPurchaseLineItems] = useState([]);
+  const [journalEntries, setJournalEntries] = useState([]);
+  const [wipBatchesList, setWipBatchesList] = useState([]);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const generateNextPackCode = (existingList) => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const prefix = `PACK-${year}${month}`;
+
     if (!existingList || existingList.length === 0) {
-      return 'PACK-000001';
+      return `${prefix}000001`;
     }
+
     let maxNum = 0;
     existingList.forEach(item => {
       const codeToCheck = item.packCode || item.pack_code || item.code || '';
-      if (codeToCheck) {
-        const parts = codeToCheck.split('-');
-        const num = parseInt(parts[1], 10);
+      if (codeToCheck.startsWith(prefix)) {
+        const sequencePart = codeToCheck.replace(prefix, '');
+        const num = parseInt(sequencePart, 10);
         if (!isNaN(num) && num > maxNum) {
           maxNum = num;
         }
       }
     });
+
     const nextNum = maxNum + 1;
-    return `PACK-${String(nextNum).padStart(6, '0')}`;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
+  };
+
+  const generateNextJePackCode = async (prefixType = 'JE-PACK') => {
+    try {
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const yearMonthStr = `${year}${month}`;
+
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('je_number');
+
+      if (error) throw error;
+
+      let maxNum = 0;
+      if (data && data.length > 0) {
+        data.forEach(item => {
+          const jeNum = String(item.je_number || '').trim();
+          const trailingDigits = jeNum.slice(-6);
+          const num = parseInt(trailingDigits, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        });
+      }
+
+      return `${prefixType}-${yearMonthStr}${String(maxNum + 1).padStart(6, '0')}`;
+    } catch (err) {
+      console.error('Error generating journal number:', err);
+      const d = new Date();
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      return `${prefixType}-${year}${month}000001`;
+    }
   };
 
   const loadData = async () => {
@@ -46,18 +92,30 @@ export default function Packaging() {
         { data: packData, error: packError },
         { data: macData, error: macError },
         { data: formRows, error: formError },
-        { data: invRows, error: invError }
+        { data: invRows, error: invError },
+        { data: ptRows, error: ptError },
+        { data: pliRows, error: pliError },
+        { data: jeRows, error: jeError },
+        { data: wipRows, error: wipError }
       ] = await Promise.all([
         supabase.from('packaging').select('*').order('id', { ascending: false }),
         supabase.from('maceration').select('*'),
         supabase.from('formulations').select('*'),
-        supabase.from('inventory').select('*')
+        supabase.from('inventory').select('*'),
+        supabase.from('purchase_transactions').select('*'),
+        supabase.from('purchase_line_items').select('*'),
+        supabase.from('journal_entries').select('*'),
+        supabase.from('wip_batches').select('*')
       ]);
 
-      if (packError && packError.code !== 'PGRST116') console.error(packError);
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
-      if (formError && formError.code !== 'PGRST116') console.error(formError);
-      if (invError && invError.code !== 'PGRST116') console.error(invError);
+      if (packError && packError.code !== 'PGRST116') console.error('Packaging Error:', packError);
+      if (macError && macError.code !== 'PGRST116') console.error('Maceration Error:', macError);
+      if (formError && formError.code !== 'PGRST116') console.error('Formulations Error:', formError);
+      if (invError && invError.code !== 'PGRST116') console.error('Inventory Error:', invError);
+      if (ptError && ptError.code !== 'PGRST116') console.error('Purchase Transactions Error:', ptError);
+      if (pliError && pliError.code !== 'PGRST116') console.error('Purchase Line Items Error:', pliError);
+      if (jeError && jeError.code !== 'PGRST116') console.error('Journal Entries Error:', jeError);
+      if (wipError && wipError.code !== 'PGRST116') console.error('WIP Batches Error:', wipError);
 
       const savedPack = packData || [];
       const savedMac = macData || [];
@@ -82,6 +140,10 @@ export default function Packaging() {
       setReadyMacerations(readyItems);
       setFormulations(formattedForms);
       setInventoryList(invRows || []);
+      setPurchaseTransactions(ptRows || []);
+      setPurchaseLineItems(pliRows || []);
+      setJournalEntries(jeRows || []);
+      setWipBatchesList(wipRows || []);
       setPackCode(generateNextPackCode(savedPack));
     } catch (err) {
       console.error('Error loading packaging data from Supabase:', err);
@@ -92,7 +154,9 @@ export default function Packaging() {
     const found = readyMacerations.find(m => String(m.id) === String(macId));
     setSelectedMac(found || null);
     if (found) {
-      setActualQty(found.expectedQty || found.expected_qty || '');
+      const vol = Number(found.volumeDesired || found.maceratedVolume || found.volume_desired || found.macerated_volume || 0);
+      const exp = Number(found.expectedQty || found.expected_qty || Math.floor(vol / 50));
+      setActualQty(exp);
     } else {
       setActualQty('');
     }
@@ -110,6 +174,51 @@ export default function Packaging() {
     }) || {};
   };
 
+  const getComponentLotBreakdown = (cleanCompId) => {
+    const txMap = new Map((purchaseTransactions || []).map(t => [t.id, t.transaction_date || t.date || '']));
+
+    const relatedLines = purchaseLineItems.filter(pli => {
+      const pliCode = (pli.code || pli.item_id || pli.itemId || pli.itemCode || '').trim().toUpperCase();
+      return pliCode === cleanCompId && pli.type !== 'PACKAGING_DEDUCTION';
+    }).sort((a, b) => {
+      const dateA = txMap.get(a.transaction_id) || a.created_at || '';
+      const dateB = txMap.get(b.transaction_id) || b.created_at || '';
+      if (dateA !== dateB) return dateA.localeCompare(dateB);
+      return (a.id || 0) - (b.id || 0);
+    });
+
+    const pastDeductions = purchaseLineItems.filter(pli => {
+      const pliCode = (pli.code || pli.item_id || pli.itemId || pli.itemCode || '').trim().toUpperCase();
+      return pliCode === cleanCompId && pli.type === 'PACKAGING_DEDUCTION';
+    });
+    let totalDeductedSoFar = pastDeductions.reduce((sum, d) => sum + Math.abs(Number(d.quantity || 0)), 0);
+
+    let remainingDeduction = totalDeductedSoFar;
+    let totalAvailable = 0;
+
+    const lotsWithAvailability = relatedLines.map(pli => {
+      const lotQty = Number(pli.quantity || pli.qty || pli.received_qty || 0);
+      let consumedFromLot = 0;
+
+      if (remainingDeduction > 0) {
+        consumedFromLot = Math.min(lotQty, remainingDeduction);
+        remainingDeduction -= consumedFromLot;
+      }
+
+      const availableInLot = Math.max(0, lotQty - consumedFromLot);
+      totalAvailable += availableInLot;
+
+      return {
+        ...pli,
+        lotQty,
+        consumedFromLot,
+        availableInLot
+      };
+    });
+
+    return { totalAvailable, lots: lotsWithAvailability };
+  };
+
   useEffect(() => {
     if (!selectedMac) {
       setPackagingStockStatus(null);
@@ -124,29 +233,31 @@ export default function Packaging() {
 
     const formulation = getFormulationForMac(selectedMac);
 
-    const targetBottleId = formulation?.bottleId || '';
-    const targetBottleStickerId = formulation?.bottleStickerId || '';
-    const targetBoxId = formulation?.boxId || '';
-    const targetBoxLabelId = formulation?.boxStickerId || '';
-    const targetShrinkWrapId = formulation?.wrappingId || '';
-
-    const componentIds = [
-      { id: targetBottleId, name: 'Bottle' },
-      { id: targetBottleStickerId, name: 'Bottle Sticker' },
-      { id: targetBoxId, name: 'Box' },
-      { id: targetBoxLabelId, name: 'Box Sticker Label' },
-      { id: targetShrinkWrapId, name: 'Shrink Wrap' }
+    const requiredComponents = [
+      { id: formulation?.bottleId || formulation?.bottle_id, name: 'Bottle' },
+      { id: formulation?.bottleStickerId || formulation?.bottle_sticker_id, name: 'Bottle Sticker' },
+      { id: formulation?.boxId || formulation?.box_id, name: 'Box' },
+      { id: formulation?.boxStickerId || formulation?.box_sticker_id, name: 'Box Sticker Label' },
+      { id: formulation?.wrappingId || formulation?.wrapping_id, name: 'Shrink Wrap' }
     ].filter(c => Boolean(c.id));
 
     let allSufficient = true;
-    const details = componentIds.map(comp => {
-      const invItem = inventoryList.find(i => {
-        const rawId = (i.id || i.itemCode || i.code || '').trim().toUpperCase();
-        return rawId === String(comp.id).trim().toUpperCase();
-      });
-      const available = invItem ? Number(invItem.stock_qty || invItem.stockQty || invItem.quantity || 0) : 0;
+    const details = requiredComponents.map(comp => {
+      const cleanCompId = String(comp.id).trim().toUpperCase();
+      const { totalAvailable } = getComponentLotBreakdown(cleanCompId);
+
+      let available = totalAvailable;
+      if (available === 0) {
+        const invItem = inventoryList.find(i => {
+          const rawId = (i.id || i.itemCode || i.code || i.item_code || '').trim().toUpperCase();
+          return rawId === cleanCompId;
+        });
+        available = invItem ? Number(invItem.stock_qty || invItem.stockQty || invItem.quantity || 0) : 0;
+      }
+
       const sufficient = available >= qtyNeeded;
       if (!sufficient) allSufficient = false;
+
       return {
         name: comp.name,
         id: comp.id,
@@ -161,7 +272,7 @@ export default function Packaging() {
       details,
       qtyNeeded
     });
-  }, [selectedMac, actualQty, inventoryList, formulations]);
+  }, [selectedMac, actualQty, inventoryList, purchaseTransactions, purchaseLineItems, formulations]);
 
   const handleSavePackaging = async (e) => {
     e.preventDefault();
@@ -181,72 +292,232 @@ export default function Packaging() {
     }
 
     const formulation = getFormulationForMac(selectedMac);
+    const fgProductCode = formulation.productCode || selectedMac.productCode || selectedMac.product_code || selectedMac.code;
+    const fgScentName = selectedMac.scent || selectedMac.perfumeName || formulation.scentName || 'Finished Perfume';
+    const macCodeStr = selectedMac.productionCode || selectedMac.production_code || selectedMac.macCode;
 
-    const targetBottleId = formulation?.bottleId || '';
-    const targetBottleStickerId = formulation?.bottleStickerId || '';
-    const targetBoxId = formulation?.boxId || '';
-    const targetBoxLabelId = formulation?.boxStickerId || '';
-    const targetShrinkWrapId = formulation?.wrappingId || '';
+    if (!fgProductCode) {
+      alert('Error: Could not determine the product code for this formulation. Please check your formulations table.');
+      return;
+    }
 
-    const requiredMaterialIds = [
-      targetBottleId,
-      targetBottleStickerId,
-      targetBoxId,
-      targetBoxLabelId,
-      targetShrinkWrapId
-    ].filter(id => Boolean(id)).map(id => id.toUpperCase());
+    const requiredComponents = [
+      { id: formulation?.bottleId || formulation?.bottle_id, name: 'Bottle' },
+      { id: formulation?.bottleStickerId || formulation?.bottle_sticker_id, name: 'Bottle Sticker' },
+      { id: formulation?.boxId || formulation?.box_id, name: 'Box' },
+      { id: formulation?.boxStickerId || formulation?.box_sticker_id, name: 'Box Sticker Label' },
+      { id: formulation?.wrappingId || formulation?.wrapping_id, name: 'Shrink Wrap' }
+    ].filter(c => Boolean(c.id));
 
     try {
-      // 1. Deduct raw materials from Supabase inventory
-      for (const item of inventoryList) {
-        const rawId = (item.id || item.itemCode || item.code || '').trim().toUpperCase();
-        if (requiredMaterialIds.includes(rawId)) {
-          const currentQty = Number(item.stock_qty || item.stockQty || item.quantity || 0);
+      let totalComponentsCost = 0;
+
+      for (const comp of requiredComponents) {
+        const cleanCompId = comp.id.trim().toUpperCase();
+        let remainingNeeded = parsedActual;
+
+        const { lots } = getComponentLotBreakdown(cleanCompId);
+
+        for (const lot of lots) {
+          if (remainingNeeded <= 0) break;
+          const availableInLot = lot.availableInLot;
+          if (availableInLot <= 0) continue;
+
+          const takeQty = Math.min(remainingNeeded, availableInLot);
+          const unitCost = Number(lot.unit_cost || lot.unitCost || 0);
+
+          totalComponentsCost += takeQty * unitCost;
+          remainingNeeded -= takeQty;
+        }
+
+        const { error: deductionError } = await supabase
+          .from('purchase_line_items')
+          .insert([{
+            transaction_id: null,
+            type: 'PACKAGING_DEDUCTION',
+            code: cleanCompId,
+            name: comp.name,
+            container_volume: '1',
+            quantity: -parsedActual,
+            unit_cost: 0,
+            total: 0
+          }]);
+
+        if (deductionError) throw deductionError;
+
+        const invItem = inventoryList.find(i => {
+          const rawId = (i.id || i.itemCode || i.code || i.item_code || '').trim().toUpperCase();
+          return rawId === cleanCompId;
+        });
+
+        if (invItem) {
+          const currentQty = Number(invItem.stock_qty || invItem.stockQty || invItem.quantity || 0);
           const newQty = Math.max(0, currentQty - parsedActual);
-          await supabase.from('inventory').update({ stock_qty: newQty }).eq('id', item.id);
+          const idKey = invItem.id !== undefined ? 'id' : (invItem.itemCode !== undefined ? 'itemCode' : 'code');
+
+          const { error: invUpdateError } = await supabase
+            .from('inventory')
+            .update({ stock_qty: newQty })
+            .eq(idKey, invItem[idKey]);
+
+          if (invUpdateError) throw invUpdateError;
         }
       }
 
-      // 2. Add or update finished goods in Supabase finished_goods
-      const fgProductCode = selectedMac.productCode || selectedMac.product_code || selectedMac.code || 'CS-GEN-00';
-      const fgScentName = selectedMac.scent || selectedMac.perfumeName || 'Finished Perfume';
+      // --- FETCH PRECISE JUICE COST FROM WIP BATCHES TABLE ---
+      let juiceCostPerMl = 0;
+      const wipBatch = wipBatchesList.find(w => String(w.mac_code).trim().toLowerCase() === String(macCodeStr).trim().toLowerCase());
 
-      const { data: fgRows, error: fgFetchError } = await supabase.from('finished_goods').select('*');
-      if (fgFetchError && fgFetchError.code !== 'PGRST116') console.error(fgFetchError);
-
-      const existingFg = (fgRows || []).find(fg => {
-        const itemCode = (fg.code || fg.productCode || fg.product_code || '').trim().toUpperCase();
-        return itemCode === fgProductCode.toUpperCase();
-      });
-
-      if (existingFg) {
-        const currentStock = Number(existingFg.stock_qty || existingFg.stockQty || 0);
-        await supabase.from('finished_goods').update({ stock_qty: currentStock + parsedActual }).eq('id', existingFg.id);
+      if (wipBatch) {
+        juiceCostPerMl = Number(wipBatch.unit_cost_per_ml || (wipBatch.total_cost / wipBatch.initial_volume_ml) || 0);
       } else {
-        await supabase.from('finished_goods').insert([{
-          code: fgProductCode,
-          name: fgScentName,
-          stock_qty: parsedActual
-        }]);
+        // Fallback calculation from selectedMac metadata
+        juiceCostPerMl = Number(selectedMac.unitCostPerMl || selectedMac.unit_cost_ml || selectedMac.costPerMl || selectedMac.cost_per_ml || 0);
+        if (juiceCostPerMl === 0) {
+          const totalCostVal = Number(selectedMac.totalCost || selectedMac.total_cost || 0);
+          const totalVolVal = Number(selectedMac.volumeDesired || selectedMac.volume_desired || selectedMac.maceratedVolume || selectedMac.macerated_volume || 1);
+          if (totalCostVal > 0 && totalVolVal > 0) {
+            juiceCostPerMl = totalCostVal / totalVolVal;
+          }
+        }
       }
 
-      // 3. Save packaging record in Supabase
+      const juiceVolumePerUnit = 50; 
+      const totalJuiceVolConsumed = parsedActual * juiceVolumePerUnit;
+      const totalJuiceCost = totalJuiceVolConsumed * juiceCostPerMl;
+
+      const totalBatchCost = totalJuiceCost + totalComponentsCost;
+
+      // Update WIP batch remaining volume in wip_batches table
+      if (wipBatch) {
+        const updatedRemainingVol = Math.max(0, Number(wipBatch.remaining_volume_ml) - totalJuiceVolConsumed);
+        const newWipStatus = updatedRemainingVol === 0 ? 'Depleted' : 'Macerating';
+        const { error: wipUpdateError } = await supabase
+          .from('wip_batches')
+          .update({ 
+            remaining_volume_ml: updatedRemainingVol,
+            status: newWipStatus 
+          })
+          .eq('id', wipBatch.id);
+
+        if (wipUpdateError) throw wipUpdateError;
+      }
+      // -------------------------------------------------------
+
+      const { data: existingFg, error: fgFetchError } = await supabase
+        .from('finished_goods')
+        .select('*')
+        .eq('product_code', fgProductCode)
+        .maybeSingle();
+
+      if (fgFetchError) throw fgFetchError;
+
+      let newStockTotal = parsedActual;
+      if (existingFg) {
+        const currentStock = Number(existingFg.stock || 0);
+        newStockTotal = currentStock + parsedActual;
+        const { error: fgUpdateError } = await supabase
+          .from('finished_goods')
+          .update({ stock: newStockTotal })
+          .eq('product_code', fgProductCode);
+          
+        if (fgUpdateError) throw fgUpdateError;
+      } else {
+        const { error: fgInsertError } = await supabase.from('finished_goods').insert([{
+          product_code: fgProductCode,
+          name: fgScentName,
+          scent: fgScentName,
+          stock: parsedActual,
+          price: 0.00
+        }]);
+        
+        if (fgInsertError) throw fgInsertError;
+      }
+
+      const { error: ledgerError } = await supabase
+        .from('finished_goods_ledger')
+        .insert([{
+          transaction_type: 'PACKAGING',
+          reference_number: packCode,
+          product_code: fgProductCode,
+          qty_change: parsedActual,
+          running_balance: newStockTotal,
+          remarks: reason || 'Standard production packaging'
+        }]);
+
+      if (ledgerError) throw ledgerError;
+
+      // --- FIXED: Properly awaited async journal number generator ---
+      const jeNumber = await generateNextJePackCode('JE-PACK');
+      const currentDate = new Date().toISOString().split('T')[0];
+
+      const { error: jeError } = await supabase
+        .from('journal_entries')
+        .insert([{
+          je_number: jeNumber,
+          date: currentDate,
+          description: `Packaging run for ${fgScentName} (${parsedActual} units)`,
+          reference_no: packCode,
+          status: 'Posted'
+        }]);
+
+      if (jeError) throw jeError;
+
+      const lineItemsToInsert = [
+        {
+          je_number: jeNumber,
+          account_code: '1320',
+          debit: totalBatchCost,
+          credit: 0,
+          description: `Finished goods production ${packCode} (${fgScentName})`
+        }
+      ];
+
+      if (totalJuiceCost > 0) {
+        lineItemsToInsert.push({
+          je_number: jeNumber,
+          account_code: '1330',
+          debit: 0,
+          credit: totalJuiceCost,
+          description: `Issued WIP juice for packaging run ${packCode}`
+        });
+      }
+
+      if (totalComponentsCost > 0) {
+        lineItemsToInsert.push({
+          je_number: jeNumber,
+          account_code: '1310',
+          debit: 0,
+          credit: totalComponentsCost,
+          description: `Issued packaging materials for run ${packCode}`
+        });
+      }
+
+      const { error: jliError } = await supabase
+        .from('journal_entry_lines')
+        .insert(lineItemsToInsert);
+
+      if (jliError) throw jliError;
+
       const newRecord = {
         pack_code: packCode,
-        mac_code: selectedMac.productionCode || selectedMac.production_code || selectedMac.macCode,
+        mac_code: macCodeStr,
         scent: fgScentName,
-        macerated_volume: selectedMac.volumeDesired || selectedMac.volume_desired || selectedMac.maceratedVolume,
+        macerated_volume: selectedMac.volumeDesired || selectedMac.volume_desired || selectedMac.maceratedVolume || selectedMac.macerated_volume,
         expected_qty: selectedMac.expectedQty || selectedMac.expected_qty,
         actual_qty: parsedActual,
         reason: reason || 'Standard Packaging',
-        date: new Date().toISOString().split('T')[0]
+        date: currentDate
       };
 
       const { error: insertError } = await supabase.from('packaging').insert([newRecord]);
       if (insertError) throw insertError;
 
-      // 4. Update maceration status to 'Bottled'
-      await supabase.from('maceration').update({ status: 'Bottled' }).eq('id', selectedMac.id);
+      const { error: macUpdateError } = await supabase
+        .from('maceration')
+        .update({ status: 'Bottled' })
+        .eq('id', selectedMac.id);
+      if (macUpdateError) throw macUpdateError;
 
       setIsModalOpen(false);
       setSelectedMac(null);
@@ -256,17 +527,16 @@ export default function Packaging() {
       loadData();
     } catch (err) {
       console.error('Error saving packaging record to Supabase:', err);
-      alert('Failed to save packaging process.');
+      alert('Failed to save packaging process: ' + err.message);
     }
   };
- 
 
   return (
     <div style={styles.moduleCard}>
       <div style={styles.headerBlock}>
         <div>
-          <h2>Perfume Packaging Management</h2>
-          <p style={styles.subText}>Manage packaged perfumes and validate component availability prior to deduction.</p>
+          <h2 style={styles.mainTitle}>Perfume Packaging Management</h2>
+          <p style={styles.subText}>Manage packaged perfumes and validate component availability prior to FIFO purchase line deduction.</p>
         </div>
         <div>
           <button onClick={() => {
@@ -279,40 +549,42 @@ export default function Packaging() {
         </div>
       </div>
 
-      <table style={styles.table}>
-        <thead>
-          <tr style={styles.trHead}>
-            <th style={styles.th}>CODE</th>
-            <th style={styles.th}>MAC CODE</th>
-            <th style={styles.th}>PERFUME SCENT</th>
-            <th style={styles.th}>MACERATED VOLUME</th>
-            <th style={styles.th}>EXPECTED QTY</th>
-            <th style={styles.th}>ACTUAL QTY</th>
-            <th style={styles.th}>REASON</th>
-            <th style={styles.th}>DATE</th>
-          </tr>
-        </thead>
-        <tbody>
-          {packagingList.length === 0 ? (
-            <tr>
-              <td colSpan="8" style={styles.emptyTd}>No packaging history recorded yet. Click '+ Add Packaging Run' to start.</td>
+      <div style={styles.tableContainer}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.th}>CODE</th>
+              <th style={styles.th}>MAC CODE</th>
+              <th style={styles.th}>PERFUME SCENT</th>
+              <th style={styles.th}>MACERATED VOLUME</th>
+              <th style={styles.th}>EXPECTED QTY</th>
+              <th style={styles.th}>ACTUAL QTY</th>
+              <th style={styles.th}>REASON</th>
+              <th style={styles.th}>DATE</th>
             </tr>
-          ) : (
-            packagingList.map((item) => (
-              <tr key={item.id} style={styles.trBody}>
-                <td style={styles.td}><span style={styles.codeBadge}>{item.packCode}</span></td>
-                <td style={styles.td}><span style={styles.macBadge}>{item.macCode}</span></td>
-                <td style={styles.td}><b>{item.scent}</b></td>
-                <td style={styles.td}>{item.maceratedVolume?.toLocaleString()} ml</td>
-                <td style={styles.td}>{item.expectedQty} units</td>
-                <td style={styles.td}><b>{item.actualQty} units</b></td>
-                <td style={styles.td}>{item.reason}</td>
-                <td style={styles.td}>{item.date}</td>
+          </thead>
+          <tbody>
+            {packagingList.length === 0 ? (
+              <tr>
+                <td colSpan="8" style={styles.emptyTd}>No packaging history recorded yet. Click '+ Add Packaging Run' to start.</td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              packagingList.map((item) => (
+                <tr key={item.id} style={styles.trBody}>
+                  <td style={styles.td}><span style={styles.codeBadge}>{item.packCode || item.pack_code}</span></td>
+                  <td style={styles.td}><span style={styles.macBadge}>{item.macCode || item.mac_code}</span></td>
+                  <td style={styles.td}><b style={{ color: '#F3F4F6' }}>{item.scent}</b></td>
+                  <td style={styles.td}>{(item.maceratedVolume || item.macerated_volume)?.toLocaleString()} ml</td>
+                  <td style={styles.td}>{item.expectedQty || item.expected_qty} units</td>
+                  <td style={styles.td}><b style={{ color: '#D4AF37' }}>{item.actualQty || item.actual_qty} units</b></td>
+                  <td style={styles.td}>{item.reason}</td>
+                  <td style={styles.td}>{item.date}</td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
 
       {isModalOpen && (
         <div style={styles.modalOverlay}>
@@ -322,106 +594,116 @@ export default function Packaging() {
               <button onClick={() => setIsModalOpen(false)} style={styles.closeBtn}>✕</button>
             </div>
 
-            <form onSubmit={handleSavePackaging}>
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Code (Sequential)</label>
-                <input type="text" value={packCode} disabled style={styles.disabledInput} />
-              </div>
+            <div style={styles.modalScrollBody}>
+              <form onSubmit={handleSavePackaging} id="packagingForm">
+                <div style={styles.twoColumnGrid}>
+                  <div style={styles.column}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Code</label>
+                      <input type="text" value={packCode} disabled style={styles.disabledInput} />
+                    </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Select Ready Mac Code</label>
-                <select 
-                  value={selectedMac ? selectedMac.id : ''} 
-                  onChange={(e) => handleSelectMac(e.target.value)} 
-                  style={styles.input}
-                  required
-                >
-                  <option value="">-- Select Ready Maceration Batch --</option>
-                  {readyMacerations.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.productionCode || m.macCode} - {m.scent} ({m.volumeDesired || m.maceratedVolume}ml / Expected: {m.expectedQty} units)
-                    </option>
-                  ))}
-                </select>
-              </div>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Select Ready Mac Code</label>
+                      <select 
+                        value={selectedMac ? selectedMac.id : ''} 
+                        onChange={(e) => handleSelectMac(e.target.value)} 
+                        style={styles.input}
+                        required
+                      >
+                        <option value="" style={{ backgroundColor: '#141414', color: '#fff' }}>-- Select Ready Maceration Batch --</option>
+                        {readyMacerations.map((m) => (
+                          <option key={m.id} value={m.id} style={{ backgroundColor: '#141414', color: '#fff' }}>
+                            {m.productionCode || m.macCode || m.production_code} - {m.scent} ({m.volumeDesired || m.maceratedVolume || m.volume_desired}ml / Expected: {m.expectedQty || m.expected_qty} units)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
-              {selectedMac && (
-                <div style={styles.infoBox}>
-                  <div>• Perfume Scent: <b>{selectedMac.scent}</b></div>
-                  <div>• Macerated Volume: <b>{selectedMac.volumeDesired || selectedMac.maceratedVolume} ml</b></div>
-                  <div>• Expected Qty: <b>{selectedMac.expectedQty} units</b></div>
-                </div>
-              )}
-
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Actual Qty (Packed Perfume)</label>
-                <input 
-                  type="number" 
-                  min="0" 
-                  placeholder="e.g. 10" 
-                  value={actualQty} 
-                  onChange={(e) => setActualQty(e.target.value)} 
-                  style={styles.input}
-                  required
-                />
-              </div>
-
-              {packagingStockStatus && (
-                <div style={{
-                  backgroundColor: packagingStockStatus.allSufficient ? '#f0fdf4' : '#fef2f2',
-                  border: `1px solid ${packagingStockStatus.allSufficient ? '#bbf7d0' : '#fecaca'}`,
-                  borderRadius: '6px',
-                  padding: '12px 14px',
-                  marginBottom: '15px',
-                  fontSize: '12.5px',
-                  color: packagingStockStatus.allSufficient ? '#166534' : '#991b1b'
-                }}>
-                  <div style={{ fontWeight: 'bold', marginBottom: '6px' }}>
-                    📦 Packaging Component Stock Validation:
+                    {selectedMac && (
+                      <div style={styles.infoBox}>
+                        <div>• Perfume Scent: <b>{selectedMac.scent}</b></div>
+                        <div>• Macerated Volume: <b>{selectedMac.volumeDesired || selectedMac.maceratedVolume || selectedMac.volume_desired} ml</b></div>
+                        <div>• Expected Qty: <b>{selectedMac.expectedQty || selectedMac.expected_qty} units</b></div>
+                      </div>
+                    )}
                   </div>
-                  {packagingStockStatus.details.map((comp, idx) => (
-                    <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
-                      <span>• {comp.name} ({comp.id}):</span>
-                      <span>
-                        Available: <b>{comp.available}</b> / Required: <b>{comp.required}</b> {comp.sufficient ? '✅' : '❌ (Insufficient)'}
-                      </span>
+
+                  <div style={styles.column}>
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Actual Qty (Packed Perfume)</label>
+                      <input 
+                        type="number" 
+                        min="0" 
+                        placeholder="e.g. 10" 
+                        value={actualQty} 
+                        onChange={(e) => setActualQty(e.target.value)} 
+                        style={styles.input}
+                        required
+                      />
                     </div>
-                  ))}
-                  {!packagingStockStatus.allSufficient && (
-                    <div style={{ marginTop: '8px', fontWeight: 'bold', color: '#991b1b', borderTop: '1px solid #fecaca', paddingTop: '4px' }}>
-                      ⚠️ Insufficient inventory. Packaging cannot proceed until stock levels are replenished.
+
+                    {packagingStockStatus && (
+                      <div style={{
+                        backgroundColor: packagingStockStatus.allSufficient ? 'rgba(6, 78, 59, 0.25)' : 'rgba(153, 27, 27, 0.25)',
+                        border: `1px solid ${packagingStockStatus.allSufficient ? '#059669' : '#DC2626'}`,
+                        borderRadius: '8px',
+                        padding: '14px 16px',
+                        marginBottom: '18px',
+                        fontSize: '13px',
+                        color: packagingStockStatus.allSufficient ? '#34D399' : '#F87171'
+                      }}>
+                        <div style={{ fontWeight: 'bold', marginBottom: '6px', letterSpacing: '0.03em' }}>
+                          📦 Purchase Line & Component Stock Validation:
+                        </div>
+                        {packagingStockStatus.details.map((comp, idx) => (
+                          <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                            <span>• {comp.name} ({comp.id}):</span>
+                            <span>
+                              Available: <b>{comp.available}</b> / Required: <b>{comp.required}</b> {comp.sufficient ? '✅' : '❌'}
+                            </span>
+                          </div>
+                        ))}
+                        {!packagingStockStatus.allSufficient && (
+                          <div style={{ marginTop: '8px', fontWeight: 'bold', color: '#F87171', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '6px' }}>
+                            ⚠️ Insufficient inventory across purchase lines. Packaging cannot proceed.
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Reason / Remarks</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Standard production packaging" 
+                        value={reason} 
+                        onChange={(e) => setReason(e.target.value)} 
+                        style={styles.input}
+                      />
                     </div>
-                  )}
+                  </div>
                 </div>
-              )}
+              </form>
+            </div>
 
-              <div style={styles.formGroup}>
-                <label style={styles.label}>Reason / Remarks</label>
-                <input 
-                  type="text" 
-                  placeholder="e.g. Standard production packaging / breakage adjustments" 
-                  value={reason} 
-                  onChange={(e) => setReason(e.target.value)} 
-                  style={styles.input}
-                />
-              </div>
-
-              <div style={styles.modalFooter}>
-                <button type="button" onClick={() => setIsModalOpen(false)} style={styles.cancelModalBtn}>
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  style={{
-                    ...styles.primaryBtn,
-                    opacity: packagingStockStatus && !packagingStockStatus.allSufficient ? 0.6 : 1
-                  }}
-                  disabled={packagingStockStatus && !packagingStockStatus.allSufficient}
-                >
-                  Save & Deduct Materials
-                </button>
-              </div>
-            </form>
+            <div style={styles.modalFooter}>
+              <button type="button" onClick={() => setIsModalOpen(false)} style={styles.cancelModalBtn}>
+                Cancel
+              </button>
+              <button 
+                type="submit" 
+                form="packagingForm"
+                style={{
+                  ...styles.primaryBtn,
+                  opacity: packagingStockStatus && !packagingStockStatus.allSufficient ? 0.5 : 1,
+                  cursor: packagingStockStatus && !packagingStockStatus.allSufficient ? 'not-allowed' : 'pointer'
+                }}
+                disabled={packagingStockStatus && !packagingStockStatus.allSufficient}
+              >
+                Save
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -429,196 +711,243 @@ export default function Packaging() {
   );
 }
 
-const primaryGold = '#c5a059';
-
 const styles = {
   moduleCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2ded8',
-    borderRadius: '8px',
-    padding: '30px',
-    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
-    fontFamily: "'Cormorant Garamond', 'Cinzel', 'Segoe UI', serif",
+    padding: '40px',
+    maxWidth: '1400px',
+    margin: '0 auto',
+    fontFamily: "'Cinzel', 'Times New Roman', serif",
+    backgroundColor: '#0A0A0A',
+    color: '#E5E7EB',
+    minHeight: '100vh'
   },
   headerBlock: {
     display: 'flex',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '20px',
-    marginBottom: '20px',
+    alignItems: 'flex-start',
+    marginBottom: '32px',
+    borderBottom: '1px solid rgba(212, 175, 55, 0.2)',
+    paddingBottom: '20px'
+  },
+  mainTitle: {
+    fontSize: '28px',
+    fontWeight: '600',
+    color: '#F9FAFB',
+    letterSpacing: '0.08em',
+    marginBottom: '6px'
   },
   subText: {
-    color: '#666',
-    fontSize: '13.5px',
-    marginTop: '6px',
-    marginBottom: 0,
+    fontSize: '14px',
+    color: '#9CA3AF',
+    letterSpacing: '0.02em',
+    fontFamily: 'sans-serif'
   },
   primaryBtn: {
-    backgroundColor: primaryGold,
-    color: '#ffffff',
+    backgroundColor: '#D4AF37',
+    color: '#0A0A0A',
     border: 'none',
-    padding: '10px 20px',
+    padding: '12px 24px',
     borderRadius: '4px',
     fontWeight: '600',
     fontSize: '13px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
     cursor: 'pointer',
-    fontFamily: "'Cinzel', serif",
+    boxShadow: '0 4px 14px rgba(212, 175, 55, 0.3)',
+    transition: 'all 0.2s ease'
+  },
+  tableContainer: {
+    backgroundColor: '#121212',
+    border: '1px solid rgba(212, 175, 55, 0.15)',
+    borderRadius: '12px',
+    overflow: 'hidden',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '13.5px',
+    textAlign: 'left'
   },
   trHead: {
-    backgroundColor: '#f9f8f6',
-    borderBottom: '2px solid #e2ded8',
+    backgroundColor: '#1A1A1A',
+    borderBottom: '1px solid rgba(212, 175, 55, 0.2)'
   },
   th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '12px',
-    letterSpacing: '0.5px',
+    padding: '16px 20px',
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#D4AF37',
+    letterSpacing: '0.15em',
+    fontFamily: 'sans-serif'
   },
   trBody: {
-    borderBottom: '1px solid #eee',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.05)',
+    transition: 'background-color 0.15s ease'
   },
   td: {
-    padding: '14px 16px',
-    color: '#333',
-    verticalAlign: 'middle',
-    textAlign: 'left',
+    padding: '18px 20px',
+    fontSize: '13px',
+    color: '#D1D5DB',
+    fontFamily: 'sans-serif'
   },
   emptyTd: {
+    padding: '60px',
     textAlign: 'center',
-    color: '#888',
-    padding: '30px',
+    color: '#6B7280',
     fontStyle: 'italic',
+    fontFamily: 'sans-serif'
   },
   codeBadge: {
-    fontSize: '11.5px',
-    fontWeight: 'bold',
-    color: '#0369a1',
-    backgroundColor: '#e0f2fe',
-    padding: '2px 6px',
+    backgroundColor: 'rgba(212, 175, 55, 0.1)',
+    color: '#E5C158',
+    padding: '6px 10px',
     borderRadius: '4px',
-    border: '1px solid #bae6fd',
+    fontWeight: '600',
+    fontSize: '11px',
+    border: '1px solid rgba(212, 175, 55, 0.3)',
+    fontFamily: 'monospace'
   },
   macBadge: {
-    fontSize: '11.5px',
-    fontWeight: 'bold',
-    color: '#c5a059',
-    backgroundColor: '#fdfbf7',
-    padding: '2px 6px',
+    backgroundColor: 'rgba(99, 102, 241, 0.15)',
+    color: '#818CF8',
+    padding: '6px 10px',
     borderRadius: '4px',
-    border: '1px solid #e2ded8',
+    fontWeight: '600',
+    fontSize: '11px',
+    border: '1px solid rgba(99, 102, 241, 0.3)',
+    fontFamily: 'monospace'
   },
   modalOverlay: {
     position: 'fixed',
     top: 0,
     left: 0,
-    width: '100vw',
-    height: '100vh',
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(5, 5, 5, 0.8)',
     display: 'flex',
-    justifyContent: 'center',
     alignItems: 'center',
+    justifyContent: 'center',
     zIndex: 1000,
+    backdropFilter: 'blur(8px)',
+    padding: '20px'
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    padding: '30px',
-    borderRadius: '8px',
-    width: '500px',
-    maxWidth: '90vw',
+    backgroundColor: '#141414',
+    borderRadius: '12px',
+    width: '100%',
+    maxWidth: '900px',
+    maxHeight: '90vh',
     display: 'flex',
     flexDirection: 'column',
-    boxShadow: '0 10px 30px rgba(0,0,0,0.3)',
-    fontFamily: "'Cormorant Garamond', 'Cinzel', 'Segoe UI', serif",
-    maxHeight: '90vh',
-    overflowY: 'auto',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.8)',
+    border: '1px solid rgba(212, 175, 55, 0.3)'
   },
   modalHeader: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '12px',
-    marginBottom: '15px',
+    padding: '24px 28px 16px 28px',
+    borderBottom: '1px solid rgba(255, 255, 255, 0.08)'
   },
   modalTitle: {
-    fontFamily: "'Cinzel', serif",
-    fontSize: '18px',
-    margin: 0,
-    color: '#1a1a1a',
+    fontSize: '20px',
+    fontWeight: '600',
+    color: '#F9FAFB',
+    letterSpacing: '0.05em'
   },
   closeBtn: {
     background: 'none',
     border: 'none',
-    fontSize: '16px',
+    fontSize: '18px',
     cursor: 'pointer',
-    color: '#666',
+    color: '#9CA3AF',
+    transition: 'color 0.2s',
+    padding: '4px'
+  },
+  modalScrollBody: {
+    padding: '24px 28px',
+    overflowY: 'auto',
+    flex: 1
+  },
+  twoColumnGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '24px'
+  },
+  column: {
+    display: 'flex',
+    flexDirection: 'column'
   },
   formGroup: {
-    marginBottom: '15px',
+    marginBottom: '18px'
+  },
+  label: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#9CA3AF',
+    marginBottom: '6px',
+    letterSpacing: '0.1em',
+    textTransform: 'uppercase',
+    fontFamily: 'sans-serif'
+  },
+  input: {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.15)',
+    backgroundColor: '#1A1A1A',
+    color: '#F9FAFB',
+    fontSize: '14px',
+    outline: 'none',
+    boxSizing: 'border-box',
+    fontFamily: 'sans-serif',
+    transition: 'border-color 0.2s'
+  },
+  disabledInput: {
+    width: '100%',
+    padding: '12px 14px',
+    borderRadius: '6px',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#0D0D0D',
+    color: '#6B7280',
+    fontSize: '14px',
+    boxSizing: 'border-box',
+    fontFamily: 'sans-serif'
+  },
+  infoBox: {
+    backgroundColor: 'rgba(212, 175, 55, 0.08)',
+    border: '1px solid rgba(212, 175, 55, 0.25)',
+    borderRadius: '8px',
+    padding: '14px 16px',
+    marginTop: '6px',
+    fontSize: '13px',
+    color: '#D1D5DB',
     display: 'flex',
     flexDirection: 'column',
     gap: '6px',
-  },
-  label: {
-    fontSize: '12.5px',
-    fontWeight: '600',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-  },
-  input: {
-    padding: '10px 14px',
-    borderRadius: '4px',
-    border: '1px solid #d1ccc6',
-    backgroundColor: '#ffffff',
-    color: '#1a1a1a',
-    fontSize: '13px',
-    outline: 'none',
-  },
-  disabledInput: {
-    padding: '10px 14px',
-    borderRadius: '4px',
-    border: '1px solid #e2ded8',
-    backgroundColor: '#f9f8f6',
-    color: '#777',
-    fontSize: '13px',
-    outline: 'none',
-  },
-  infoBox: {
-    backgroundColor: '#fdfbf7',
-    border: '1px solid #e2ded8',
-    borderRadius: '6px',
-    padding: '10px 14px',
-    marginBottom: '15px',
-    fontSize: '12.5px',
-    color: '#444',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '4px',
+    fontFamily: 'sans-serif'
   },
   modalFooter: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '10px',
-    borderTop: '1px solid #eee',
-    paddingTop: '15px',
-    marginTop: '10px',
+    gap: '12px',
+    padding: '16px 28px 24px 28px',
+    borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+    backgroundColor: '#141414',
+    borderBottomLeftRadius: '12px',
+    borderBottomRightRadius: '12px'
   },
   cancelModalBtn: {
-    backgroundColor: '#e5e7eb',
-    color: '#374151',
-    border: 'none',
-    padding: '10px 16px',
-    borderRadius: '4px',
-    fontWeight: '600',
+    backgroundColor: 'transparent',
+    border: '1px solid rgba(255, 255, 255, 0.2)',
+    color: '#D1D5DB',
+    padding: '10px 18px',
+    borderRadius: '6px',
     fontSize: '13px',
+    fontWeight: '500',
     cursor: 'pointer',
+    fontFamily: 'sans-serif',
+    transition: 'all 0.2s'
   }
 };

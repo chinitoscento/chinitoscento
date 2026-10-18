@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { supabase } from './supabaseClient'; // Adjust path to your Supabase client file as needed
+import { supabase } from './supabaseClient';
 import logoImage from './logo.png';
 
 export default function SalesReturns() {
@@ -41,58 +41,99 @@ export default function SalesReturns() {
   const loadAllData = async () => {
     setLoadingData(true);
     try {
-      // 1. Fetch sales returns from Supabase
       const { data: srData, error: srError } = await supabase
         .from('sales_returns')
         .select('*')
         .order('created_at', { ascending: false });
       if (srError) throw srError;
 
-      // 2. Fetch customers from Supabase
       const { data: custData, error: custError } = await supabase
         .from('customers')
         .select('*');
       if (custError) throw custError;
 
-      // 3. Fetch sales orders from Supabase
       const { data: soData, error: soError } = await supabase
         .from('sales_orders')
         .select('*');
       if (soError) throw soError;
 
-      // 4. Fetch finished goods from Supabase
+      const { data: soItemsData, error: soItemsError } = await supabase
+        .from('sales_order_items')
+        .select('*');
+      if (soItemsError) throw soItemsError;
+
       const { data: fgData, error: fgError } = await supabase
         .from('finished_goods')
         .select('*');
       if (fgError) throw fgError;
 
-      const formattedReturns = (srData || []).map(sr => ({
-        id: sr.id,
-        srCode: sr.sr_code || sr.srCode,
-        soNumber: sr.so_number || sr.soNumber,
-        customerId: sr.customer_id || sr.customerId,
-        customerName: sr.customer_name || sr.customerName,
-        returnDate: sr.return_date || sr.returnDate,
-        items: sr.items || [],
-        totalAmount: Number(sr.total_amount || sr.totalAmount || 0),
-        status: sr.status || 'PENDING FOR APPROVAL'
-      }));
+      const groupedReturnsMap = {};
+      (srData || []).forEach(sr => {
+        const srCode = sr.sr_code || sr.srCode;
+        if (!groupedReturnsMap[srCode]) {
+          groupedReturnsMap[srCode] = {
+            id: sr.id,
+            srCode: srCode,
+            soNumber: sr.so_number || sr.soNumber,
+            customerId: sr.customer_id || sr.customerId,
+            customerName: sr.customer_name || sr.customerName,
+            returnDate: sr.return_date || sr.returnDate,
+            totalAmount: 0,
+            status: sr.status || 'PENDING FOR APPROVAL',
+            address: sr.address || '',
+            contact: sr.contact || '',
+            items: []
+          };
+        }
+        
+        const returnQty = Number(sr.qty_returned || 0);
+        const subtotal = Number(sr.total_amount || 0);
+        groupedReturnsMap[srCode].totalAmount += subtotal;
 
-      // Sort descending by SR Code
-      const sortedReturns = formattedReturns.sort((a, b) => {
-        const seqA = parseInt((a.srCode || '').split('-')[1] || 0, 10);
-        const seqB = parseInt((b.srCode || '').split('-')[1] || 0, 10);
-        return seqB - seqA;
+        groupedReturnsMap[srCode].items.push({
+          productId: sr.product_code || '',
+          productName: sr.product_name || '',
+          returnQty: returnQty,
+          reason: sr.reason || 'Wrong Item',
+          subtotal: subtotal
+        });
       });
 
-      const formattedSo = (soData || []).map(so => ({
-        id: so.id,
-        soNumber: so.so_number || so.soNumber,
-        customerId: so.customer_id || so.customerId,
-        customerName: so.customer_name || so.customerName,
-        items: so.items || [],
-        remarks: so.remarks || ''
-      }));
+      const formattedReturns = Object.values(groupedReturnsMap);
+
+      const sortedReturns = formattedReturns.sort((a, b) => {
+        const getSeq = (code) => {
+          const clean = (code || '').replace('SR-', '');
+          const seqStr = clean.length > 6 ? clean.slice(6) : clean;
+          return parseInt(seqStr.replace(/\D/g, '') || 0, 10);
+        };
+        return getSeq(b.srCode) - getSeq(a.srCode);
+      });
+
+      const formattedSo = (soData || []).map(so => {
+        const soNum = so.so_number || so.soNumber || so.sonumber;
+        const matchedItems = (soItemsData || []).filter(item => 
+          String(item.so_number || item.soNumber || item.sales_order_id) === String(soNum) ||
+          String(item.sales_order_id) === String(so.id)
+        ).map(item => ({
+          productCode: item.product_code || item.productCode || item.code || item.item_code,
+          productName: item.product_name || item.productName || item.scent || item.name,
+          qty: Number(item.qty || item.quantity || item.units || 0),
+          price: Number(item.price || item.unit_price || item.unitPrice || 0)
+        }));
+
+        return {
+          id: so.id,
+          soNumber: soNum,
+          customerId: so.customer_id || so.customerId || so.client_code,
+          customerName: so.customer_name || so.customerName || so.customer || so.client_name,
+          address: so.address || so.customer_address || '',
+          contact: so.contact || so.customer_contact || so.phone || '',
+          items: matchedItems.length > 0 ? matchedItems : (so.items || so.order_items || []),
+          date: so.date || so.order_date || so.created_at?.split('T')[0] || '',
+          remarks: so.remarks || ''
+        };
+      });
 
       const formattedFg = (fgData || []).map(fg => ({
         id: fg.id,
@@ -116,8 +157,8 @@ export default function SalesReturns() {
     const isAlreadyReturned = salesReturns.some(sr => sr.soNumber === so.soNumber && sr.status !== 'DECLINED');
     if (isAlreadyReturned) return false;
 
-    const soCustId = String(so.customerId || so.clientCode || '').trim();
-    const soCustName = String(so.customerName || so.customer || so.clientName || '').trim();
+    const soCustId = String(so.customerId || '').trim();
+    const soCustName = String(so.customerName || '').trim();
     const selCustId = String(newReturn.customerId || '').trim();
     const selCustName = String(newReturn.customerName || '').trim();
 
@@ -137,6 +178,8 @@ export default function SalesReturns() {
       ...prev,
       customerId: customerValue,
       customerName: customer ? (customer.name || customer.customerName || customerValue) : customerValue,
+      address: customer ? (customer.address || customer.shipping_address || '') : '',
+      contact: customer ? (customer.contact || customer.phone || '') : '',
       soNumber: '',
       items: []
     }));
@@ -150,16 +193,19 @@ export default function SalesReturns() {
     setNewReturn(prev => ({
       ...prev,
       soNumber: soNumber,
+      address: so?.address || prev.address,
+      contact: so?.contact || prev.contact,
       items: []
     }));
 
-    if (so && so.items) {
+    if (so && so.items && so.items.length > 0) {
       const returnableItems = so.items.map(item => ({
-        productId: item.productCode || item.productId || item.code,
-        productName: item.productName || item.scent || item.name,
-        maxQty: Number(item.qty || item.quantity || 0),
+        productId: item.productCode || item.productId || item.code || item.item_code,
+        productName: item.productName || item.scent || item.name || item.product_name,
+        maxQty: Number(item.qty || item.quantity || item.units || 0),
+        unitPrice: Number(item.price || item.unitPrice || item.unit_price || 0),
         returnQty: 0,
-        reason: ''
+        reason: 'Wrong Item'
       }));
       setSelectedSoItems(returnableItems);
     } else {
@@ -175,8 +221,10 @@ export default function SalesReturns() {
         productId: selectedSoItems[index].productId, 
         productName: selectedSoItems[index].productName, 
         returnQty: 0, 
-        reason: '' 
+        reason: selectedSoItems[index].reason || 'Wrong Item' 
       };
+    } else {
+      updatedItems[index] = { ...updatedItems[index] };
     }
 
     if (field === 'returnQty') {
@@ -193,12 +241,64 @@ export default function SalesReturns() {
     }));
   };
 
-  const generateSrCode = () => {
-    const highestSr = salesReturns.length > 0 ? salesReturns[0] : null;
-    if (!highestSr || !highestSr.srCode) return 'SR-000001';
-    
-    const sequence = parseInt(highestSr.srCode.split('-')[1] || 0, 10);
-    return `SR-${(sequence + 1).toString().padStart(6, '0')}`;
+  const calculatedTotalAmount = selectedSoItems.reduce((acc, selItem, index) => {
+    const customItem = newReturn.items[index];
+    const returnQty = customItem ? Number(customItem.returnQty || 0) : 0;
+    return acc + (returnQty * (selItem.unitPrice || 0));
+  }, 0);
+
+  const generateNextReturnCode = (returnDateStr) => {
+    const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const prefix = `SR-${year}${month}`;
+
+    let maxNum = 0;
+    salesReturns.forEach(sr => {
+      const code = sr.srCode || '';
+      if (code.startsWith(prefix)) {
+        const suffix = code.slice(prefix.length);
+        const num = parseInt(suffix, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
+        }
+      }
+    });
+
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
+  };
+
+  const generateNextJournalNumber = async () => {
+    const dateObj = new Date();
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const prefix = `JE-SR-${year}${month}`;
+
+    let maxNum = 0;
+    try {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('je_number');
+
+      if (!error && data) {
+        data.forEach(entry => {
+          const jeNum = entry.je_number || '';
+          if (jeNum) {
+            const trailingDigits = jeNum.slice(-6);
+            const num = parseInt(trailingDigits, 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching journal entries for numbering:', err);
+    }
+
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
   };
 
   const handleSaveReturn = async () => {
@@ -207,53 +307,60 @@ export default function SalesReturns() {
       return;
     }
     
-    const validItems = newReturn.items.filter(item => item.returnQty > 0 && item.reason);
+    const validItems = selectedSoItems.map((selItem, index) => {
+      const customItem = newReturn.items[index];
+      const returnQty = customItem ? Number(customItem.returnQty || 0) : 0;
+      const reason = customItem ? customItem.reason : selItem.reason;
+      return {
+        productId: selItem.productId,
+        productName: selItem.productName,
+        returnQty,
+        reason: reason || 'Wrong Item'
+      };
+    }).filter(item => item.returnQty > 0);
+
     if (validItems.length === 0) {
-      setModalNotification({ type: 'error', message: 'Please encode at least one valid return quantity and reason.' });
+      setModalNotification({ type: 'error', message: 'Please encode at least one valid return quantity greater than 0.' });
       return;
     }
 
     const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
-    
-    let totalReturnValue = 0;
-    const enrichedReturnItems = validItems.map(returnItem => {
+    const returnDate = new Date().toISOString().split('T')[0];
+    const srCode = generateNextReturnCode(returnDate);
+
+    const payloads = validItems.map(returnItem => {
       const originalSoItem = matchingSo?.items?.find(i => 
-        (i.productCode || i.productId || i.code) === returnItem.productId
+        (i.productCode || i.productId || i.code || i.item_code) === returnItem.productId
       );
-      const unitPrice = Number(originalSoItem?.price || originalSoItem?.unitPrice || 0);
+      const unitPrice = Number(originalSoItem?.price || originalSoItem?.unitPrice || originalSoItem?.unit_price || 0);
       const subtotal = unitPrice * Number(returnItem.returnQty);
-      totalReturnValue += subtotal;
 
       return {
-        ...returnItem,
-        unitPrice,
-        subtotal
+        sr_code: srCode,
+        so_number: newReturn.soNumber,
+        customer_id: newReturn.customerId,
+        customer_name: newReturn.customerName,
+        return_date: returnDate,
+        product_code: returnItem.productId || '',
+        product_name: returnItem.productName || '',
+        qty_returned: returnItem.returnQty || 0,
+        reason: returnItem.reason || 'Wrong Item',
+        total_amount: subtotal,
+        status: 'PENDING FOR APPROVAL'
       };
     });
 
-    const srCode = generateSrCode();
-    const payload = {
-      sr_code: srCode,
-      so_number: newReturn.soNumber,
-      customer_id: newReturn.customerId,
-      customer_name: newReturn.customerName,
-      return_date: new Date().toISOString().split('T')[0],
-      items: enrichedReturnItems,
-      total_amount: totalReturnValue,
-      status: 'PENDING FOR APPROVAL'
-    };
-
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('sales_returns')
-        .insert([payload])
+        .insert(payloads)
         .select();
 
       if (error) throw error;
 
       window.dispatchEvent(new CustomEvent('chinito_sales_updated'));
 
-      setNewReturn({ customerId: '', customerName: '', soNumber: '', items: [] });
+      setNewReturn({ customerId: '', customerName: '', address: '', contact: '', soNumber: '', items: [] });
       setSelectedSoItems([]);
       
       setModalNotification({
@@ -281,14 +388,12 @@ export default function SalesReturns() {
     if (!targetSr || targetSr.status === 'COMPLETED') return;
 
     try {
-      // 1. Update Sales Return Status
       const { error: srError } = await supabase
         .from('sales_returns')
         .update({ status: 'COMPLETED' })
         .eq('sr_code', srCode);
       if (srError) throw srError;
 
-      // 2. Update Sales Order remarks
       const matchingSo = salesOrders.find(so => so.soNumber === targetSr.soNumber);
       if (matchingSo) {
         await supabase
@@ -297,14 +402,13 @@ export default function SalesReturns() {
           .eq('so_number', targetSr.soNumber);
       }
 
-      // 3. Update or Insert Invoice remarks
       const { data: existingInv } = await supabase
         .from('invoices')
         .select('*')
         .eq('so_number', targetSr.soNumber)
         .limit(1);
 
-      if (existingInv) {
+      if (existingInv && existingInv.length > 0) {
         await supabase
           .from('invoices')
           .update({ remarks: `Refer to ${srCode}` })
@@ -326,7 +430,6 @@ export default function SalesReturns() {
           }]);
       }
 
-      // 4. Create collection entry for the return credit
       await supabase
         .from('collections')
         .insert([{
@@ -341,27 +444,79 @@ export default function SalesReturns() {
           remarks: `Sales Return Credit Ref: ${srCode}`
         }]);
 
-      // 5. Restock finished goods inventory
-      for (const returnItem of targetSr.items) {
-        const fgEntry = finishedGoods.find(fg => 
-          (fg.code && fg.code === returnItem.productId)
-        );
+      const jeNumber = await generateNextJournalNumber();
+      const { error: jeHeaderError } = await supabase
+        .from('journal_entries')
+        .insert([{
+          je_number: jeNumber,
+          date: new Date().toISOString().split('T')[0],
+          reference_no: targetSr.srCode,
+          description: `Sales Return for SO #${targetSr.soNumber}`,
+          status: 'Posted'
+        }]);
+      if (jeHeaderError) throw jeHeaderError;
 
-        if (fgEntry) {
-          const newStock = Number(fgEntry.stockQty || 0) + Number(returnItem.returnQty);
-          await supabase
-            .from('finished_goods')
-            .update({ stock_qty: newStock, quantity: newStock })
-            .eq('id', fgEntry.id);
-        } else {
-          await supabase
-            .from('finished_goods')
-            .insert([{
-              code: returnItem.productId,
-              name: returnItem.productName,
-              stock_qty: Number(returnItem.returnQty),
-              quantity: Number(returnItem.returnQty)
-            }]);
+      const jeLines = [
+        {
+          je_number: jeNumber,
+          account_code: '4000',
+          description: `Sales Revenue reversal for SR ${targetSr.srCode}`,
+          debit: Number(targetSr.totalAmount || 0),
+          credit: 0.00
+        },
+        {
+          je_number: jeNumber,
+          account_code: '1200',
+          description: `Accounts Receivable reduction for SR ${targetSr.srCode}`,
+          debit: 0.00,
+          credit: Number(targetSr.totalAmount || 0)
+        }
+      ];
+
+      const { error: jeLinesError } = await supabase
+        .from('journal_entry_lines')
+        .insert(jeLines);
+      if (jeLinesError) throw jeLinesError;
+
+      for (const returnItem of targetSr.items) {
+        const reasonNormalized = String(returnItem.reason || '').trim().toLowerCase();
+        const isDamaged = reasonNormalized === 'damaged';
+        const qtyChange = Number(returnItem.returnQty || 0);
+
+        const ledgerPayload = {
+          product_code: returnItem.productId,
+          transaction_type: isDamaged ? 'RETURN_LOSS' : 'RETURN_IN',
+          reference_number: targetSr.soNumber,
+          reason: returnItem.reason || 'Wrong Item',
+          qty_change: isDamaged ? 0 : qtyChange,        
+          damaged_qty: isDamaged ? qtyChange : 0        
+        };
+
+        const { error: ledgerError } = await supabase
+          .from('finished_goods_ledger')
+          .insert([ledgerPayload]);
+          
+        if (ledgerError) throw ledgerError;
+
+        if (!isDamaged && qtyChange > 0) {
+          const fgEntry = finishedGoods.find(fg => fg.code === returnItem.productId);
+
+          if (fgEntry) {
+            const newStock = Number(fgEntry.stockQty || 0) + qtyChange;
+            await supabase
+              .from('finished_goods')
+              .update({ stock_qty: newStock, quantity: newStock })
+              .eq('id', fgEntry.id);
+          } else {
+            await supabase
+              .from('finished_goods')
+              .insert([{
+                code: returnItem.productId,
+                name: returnItem.productName,
+                stock_qty: qtyChange,
+                quantity: qtyChange
+              }]);
+          }
         }
       }
 
@@ -412,9 +567,9 @@ export default function SalesReturns() {
       <div style={styles.headerRow}>
         <div>
           <h2 style={styles.pageTitle}>Sales Returns</h2>
-          <p style={styles.sub}>Manage returned products and update inventory.</p>
+          <p style={styles.sub}>Manage returned products and update inventory seamlessly.</p>
         </div>
-        <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+        <div style={{display: 'flex', gap: '16px', alignItems: 'center'}}>
           <span style={styles.roleIndicator}>Role: <b>{userRole.toUpperCase()}</b></span>
           <button style={styles.primaryBtn} onClick={() => { setModalNotification(null); setIsModalOpen(true); }}>+ Add Sales Return</button>
         </div>
@@ -437,71 +592,79 @@ export default function SalesReturns() {
 
       <div style={styles.card}>
         <h3 style={styles.cardTitle}>Sales Return History</h3>
-        <table style={styles.table}>
-          <thead>
-            <tr style={styles.trHead}>
-              <th style={styles.th}>SR CODE</th>
-              <th style={styles.th}>DATE</th>
-              <th style={styles.th}>CUSTOMER</th>
-              <th style={styles.th}>SO REF</th>
-              <th style={styles.th}>ITEMS RETURNED</th>
-              <th style={styles.th}>STATUS</th>
-              <th style={styles.th}>ACTION</th>
-            </tr>
-          </thead>
-          <tbody>
-            {salesReturns.length === 0 ? (
-              <tr><td colSpan="7" style={styles.emptyCell}>No sales return history recorded.</td></tr>
-            ) : (
-              salesReturns.map(sr => {
-                const isApproved = sr.status === 'COMPLETED';
-                const isPending = !sr.status || sr.status === 'PENDING FOR APPROVAL';
-                
-                return (
-                  <tr key={sr.srCode} style={styles.trBody}>
-                    <td style={styles.td}><b>{sr.srCode}</b></td>
-                    <td style={styles.td}>{sr.returnDate}</td>
-                    <td style={styles.td}>{sr.customerName}</td>
-                    <td style={styles.td}>{sr.soNumber}</td>
-                    <td style={styles.td}>
-                      <ul style={styles.historyItemsList}>
-                        {sr.items.map((item, idx) => <li key={idx}>{item.productName} x {item.returnQty} ({item.reason})</li>)}
-                      </ul>
-                    </td>
-                    <td style={styles.td}>
-                      <span style={isApproved ? styles.badgeComplete : sr.status === 'DECLINED' ? styles.badgeDeclined : styles.badgePending}>
-                        {sr.status || 'PENDING FOR APPROVAL'}
-                      </span>
-                    </td>
-                    <td style={styles.td}>
-                      <div style={{display: 'flex', gap: '5px', flexWrap: 'wrap'}}>
-                        {isApproved && (
-                          <button style={styles.previewBtn} onClick={() => setPreviewReturn(sr)}>👁️ View Invoice</button>
-                        )}
-                        {isPending && userRole !== 'owner' && (
-                          <span style={{fontSize: '11px', color: '#888', fontStyle: 'italic', alignSelf: 'center'}}>Pending Approval</span>
-                        )}
-                        {isPending && userRole === 'owner' && (
-                          <>
-                            <button style={styles.approveBtn} onClick={() => handleApproveReturn(sr.srCode)}>Approve</button>
-                            <button style={styles.declineBtn} onClick={() => handleDeclineReturn(sr.srCode)}>Decline</button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        <div style={{overflowX: 'auto'}}>
+          <table style={styles.table}>
+            <thead>
+              <tr style={styles.trHead}>
+                <th style={styles.th}>SR CODE</th>
+                <th style={styles.th}>DATE</th>
+                <th style={styles.th}>CUSTOMER</th>
+                <th style={styles.th}>SO REF</th>
+                <th style={styles.th}>ITEMS RETURNED</th>
+                <th style={styles.th}>TOTAL AMOUNT</th>
+                <th style={styles.th}>STATUS</th>
+                <th style={styles.th}>ACTION</th>
+              </tr>
+            </thead>
+            <tbody>
+              {salesReturns.length === 0 ? (
+                <tr><td colSpan="8" style={styles.emptyCell}>No sales return history recorded.</td></tr>
+              ) : (
+                salesReturns.map(sr => {
+                  const isApproved = sr.status === 'COMPLETED';
+                  const isPending = !sr.status || sr.status === 'PENDING FOR APPROVAL';
+                  
+                  return (
+                    <tr key={sr.srCode} style={styles.trBody}>
+                      <td style={styles.td}><b>{sr.srCode}</b></td>
+                      <td style={styles.td}>{sr.returnDate}</td>
+                      <td style={styles.td}>{sr.customerName}</td>
+                      <td style={styles.td}>{sr.soNumber}</td>
+                      <td style={styles.td}>
+                        <ul style={styles.historyItemsList}>
+                          {sr.items.map((item, idx) => (
+                            <li key={idx}>
+                              {item.productName} x {item.returnQty} <span style={{color: '#f59e0b'}}>({item.reason})</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </td>
+                      <td style={styles.td}>₱{Number(sr.totalAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                      <td style={styles.td}>
+                        <span style={isApproved ? styles.badgeComplete : sr.status === 'DECLINED' ? styles.badgeDeclined : styles.badgePending}>
+                          {sr.status || 'PENDING FOR APPROVAL'}
+                        </span>
+                      </td>
+                      <td style={styles.td}>
+                        <div style={{display: 'flex', gap: '10px', flexWrap: 'wrap'}}>
+                          {isApproved && (
+                            <button style={styles.previewBtn} onClick={() => setPreviewReturn(sr)}>👁️ View Invoice</button>
+                          )}
+                          {isPending && userRole !== 'owner' && (
+                            <span style={{fontSize: '15px', color: '#a1a1aa', fontStyle: 'italic', alignSelf: 'center'}}>Pending Approval</span>
+                          )}
+                          {isPending && userRole === 'owner' && (
+                            <>
+                              <button style={styles.approveBtn} onClick={() => handleApproveReturn(sr.srCode)}>Approve</button>
+                              <button style={styles.declineBtn} onClick={() => handleDeclineReturn(sr.srCode)}>Decline</button>
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {isModalOpen && (
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <div style={styles.modalHeader}>
-              <span>Encode New Sales Return</span>
+              <span style={{fontSize: '24px', fontWeight: '700'}}>Encode New Sales Return</span>
               <button style={styles.closeBtn} onClick={() => setIsModalOpen(false)}>✕</button>
             </div>
             
@@ -509,9 +672,9 @@ export default function SalesReturns() {
               {modalNotification && (
                 <div style={{
                   ...styles.notificationBanner, 
-                  backgroundColor: modalNotification.type === 'error' ? '#fef2f2' : '#ecfdf5',
-                  borderColor: modalNotification.type === 'error' ? '#f87171' : '#10b981',
-                  color: modalNotification.type === 'error' ? '#991b1b' : '#065f46'
+                  backgroundColor: modalNotification.type === 'error' ? '#2d1515' : '#11221c', 
+                  borderColor: modalNotification.type === 'error' ? '#ef4444' : '#10b981',
+                  color: modalNotification.type === 'error' ? '#fca5a5' : '#6ee7b7'
                 }}>
                   <span style={{flex: 1}}>{modalNotification.message}</span>
                   <button 
@@ -540,7 +703,7 @@ export default function SalesReturns() {
                     {customers.map(c => {
                       const val = c.code || c.id || c.name || c.customerName;
                       const label = c.name || c.customerName || c.code || c.id;
-                      return <option key={val} value={val}>{label}</option>;
+                      return <option key={val} value={val} style={{backgroundColor: '#18181b', color: '#fff'}}>{label}</option>;
                     })}
                   </select>
                 </div>
@@ -549,50 +712,66 @@ export default function SalesReturns() {
                   <label style={styles.label}>SO Number *</label>
                   <select style={styles.select} value={newReturn.soNumber} onChange={handleSoSelect} disabled={!newReturn.customerId}>
                     <option value="">Select SO...</option>
-                    {filteredSoList.map(so => <option key={so.soNumber} value={so.soNumber}>{so.soNumber} ({so.date || so.orderDate})</option>)}
+                    {filteredSoList.map(so => <option key={so.soNumber} value={so.soNumber} style={{backgroundColor: '#18181b', color: '#fff'}}>{so.soNumber} {so.date ? `(${so.date})` : ''}</option>)}
                   </select>
                 </div>
               </div>
 
               {selectedSoItems.length > 0 && (
                 <div style={styles.itemsTableWrapper}>
+                  <h4 style={{fontSize: '18px', color: '#fbbf24', marginBottom: '12px', fontWeight: '600'}}>SO Items</h4>
                   <table style={styles.table}>
                     <thead>
                       <tr style={styles.trHead}>
-                        <th style={styles.th}>PRODUCT</th>
+                        <th style={styles.th}>PRODUCT CODE</th>
+                        <th style={styles.th}>PRODUCT NAME</th>
                         <th style={styles.th}>SOLD QTY</th>
                         <th style={styles.th}>RETURN QTY *</th>
                         <th style={styles.th}>REASON *</th>
+                        <th style={styles.th}>SUBTOTAL</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {selectedSoItems.map((item, index) => (
-                        <tr key={item.productId} style={styles.trBody}>
-                          <td style={styles.td}><b>{item.productName}</b> <br/><span style={styles.code}>{item.productId}</span></td>
-                          <td style={styles.td}>{item.maxQty}</td>
-                          <td style={styles.td}>
-                            <input 
-                              type="number" 
-                              min="0" 
-                              max={item.maxQty} 
-                              value={newReturn.items[index]?.returnQty || 0}
-                              onChange={(e) => handleItemChange(index, 'returnQty', e.target.value)}
-                              style={styles.qtyInput}
-                            />
-                          </td>
-                          <td style={styles.td}>
-                            <input 
-                              type="text" 
-                              value={newReturn.items[index]?.reason || ''}
-                              onChange={(e) => handleItemChange(index, 'reason', e.target.value)}
-                              placeholder="e.g., Wrong item, Defective"
-                              style={styles.reasonInput}
-                            />
-                          </td>
-                        </tr>
-                      ))}
+                      {selectedSoItems.map((item, index) => {
+                        const returnQty = newReturn.items[index]?.returnQty || 0;
+                        const subtotal = returnQty * (item.unitPrice || 0);
+                        return (
+                          <tr key={index} style={styles.trBody}>
+                            <td style={styles.td}><span style={styles.code}><b>{item.productId}</b></span></td>
+                            <td style={styles.td}><b>{item.productName}</b></td>
+                            <td style={styles.td}>{item.maxQty}</td>
+                            <td style={styles.td}>
+                              <input 
+                                type="number" 
+                                min="0" 
+                                max={item.maxQty} 
+                                value={returnQty}
+                                onChange={(e) => handleItemChange(index, 'returnQty', e.target.value)}
+                                style={styles.qtyInput}
+                              />
+                            </td>
+                            <td style={styles.td}>
+                              <select 
+                                value={newReturn.items[index]?.reason || 'Wrong Item'}
+                                onChange={(e) => handleItemChange(index, 'reason', e.target.value)}
+                                style={styles.select}
+                              >
+                                <option value="Wrong Item" style={{backgroundColor: '#18181b', color: '#fff'}}>Wrong Item</option>
+                                <option value="Swap" style={{backgroundColor: '#18181b', color: '#fff'}}>Swap</option>
+                                <option value="Damaged" style={{backgroundColor: '#18181b', color: '#fff'}}>Damaged</option>
+                              </select>
+                            </td>
+                            <td style={styles.td}>₱{subtotal.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+
+                  <div style={styles.totalDisplayContainer}>
+                    <span style={styles.totalLabel}>TOTAL AMOUNT:</span>
+                    <span style={styles.totalValue}>₱{calculatedTotalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+                  </div>
                 </div>
               )}
             </div>
@@ -609,25 +788,27 @@ export default function SalesReturns() {
         <div style={styles.overlay}>
           <div style={styles.modal}>
             <div style={styles.modalHeader} className="no-print">
-              <span>Sales Return Invoice: {previewReturn.srCode}</span>
+              <span style={{fontSize: '22px', fontWeight: '700'}}>Sales Return Invoice: {previewReturn.srCode}</span>
               <button style={styles.closeBtn} onClick={() => setPreviewReturn(null)}>✕</button>
             </div>
             
             <div ref={printRef} style={styles.printableArea} className="printable-invoice">
               <div style={styles.printHeader}>
                 <img src={logoImage} alt="Chinito Scento Logo" style={styles.logo} />
-                <h2>CHINITO SCENTO</h2>
-                <p style={{margin: '2px 0', fontSize: '12px', color: '#555'}}>OFFICIAL SALES RETURN INVOICE</p>
+                <h2 style={{color: '#111', margin: '5px 0', fontSize: '28px'}}>CHINITO SCENTO</h2>
+                <p style={{margin: '2px 0', fontSize: '16px', color: '#555'}}>OFFICIAL SALES RETURN INVOICE</p>
               </div>
 
               <div style={styles.invoiceMeta}>
-                <div><p style={{margin: 0}}><b>SR CODE:</b> {previewReturn.srCode}</p></div>
-                <div><p style={{margin: 0}}><b>DATE:</b> {previewReturn.returnDate}</p></div>
+                <div><p style={{margin: 0, fontSize: '15px'}}><b>SR CODE:</b> {previewReturn.srCode}</p></div>
+                <div><p style={{margin: 0, fontSize: '15px'}}><b>DATE:</b> {previewReturn.returnDate}</p></div>
               </div>
 
               <div style={styles.invoiceClient}>
-                <p style={{margin: '0 0 4px 0'}}><b>Customer:</b> {previewReturn.customerName}</p>
-                <p style={{margin: 0}}><b>Original SO:</b> {previewReturn.soNumber}</p>
+                <p style={{margin: '0 0 4px 0', fontSize: '15px'}}><b>Customer:</b> {previewReturn.customerName}</p>
+                <p style={{margin: '0 0 4px 0', fontSize: '15px'}}><b>Address:</b> {previewReturn.address || salesOrders.find(so => so.soNumber === previewReturn.soNumber)?.address || 'N/A'}</p>
+                <p style={{margin: '0 0 6px 0', fontSize: '15px'}}><b>Contact:</b> {previewReturn.contact || salesOrders.find(so => so.soNumber === previewReturn.soNumber)?.contact || 'N/A'}</p>
+                <p style={{margin: 0, fontSize: '15px'}}><b>Original SO:</b> {previewReturn.soNumber}</p>
               </div>
 
               <table style={styles.printTable}>
@@ -636,31 +817,37 @@ export default function SalesReturns() {
                     <th style={styles.printTh}>Product Code</th>
                     <th style={styles.printTh}>Product Name</th>
                     <th style={styles.printTh}>Qty Returned</th>
-                    <th style={styles.printTh}>Reason for Return</th>
+                    <th style={styles.printTh}>Reason</th>
+                    <th style={styles.printTh}>Subtotal</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {previewReturn.items.map(item => (
-                    <tr key={item.productId}>
+                  {previewReturn.items.map((item, idx) => (
+                    <tr key={idx}>
                       <td style={styles.printTd}>{item.productId}</td>
                       <td style={styles.printTd}>{item.productName}</td>
                       <td style={styles.printTd}>{item.returnQty}</td>
                       <td style={styles.printTd}>{item.reason}</td>
+                      <td style={styles.printTd}>₱{Number(item.subtotal || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
 
+              <div style={{display: 'flex', justifyContent: 'flex-end', marginTop: '15px', paddingRight: '10px'}}>
+                <span style={{fontSize: '16px', fontWeight: 'bold', color: '#111'}}>Total Amount: ₱{Number(previewReturn.totalAmount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
+              </div>
+
               <div style={styles.printFooter}>
-                <p style={{fontSize: '12px', color: '#555', marginBottom: '30px'}}>Status: <b>{previewReturn.status || 'COMPLETED'}</b></p>
-                <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '40px'}}>
+                <p style={{fontSize: '15px', color: '#555', marginBottom: '20px'}}>Status: <b>{previewReturn.status || 'COMPLETED'}</b></p>
+                <div style={{display: 'flex', justifyContent: 'space-between', marginTop: '30px'}}>
                   <div style={{textAlign: 'center', width: '40%'}}>
-                    <div style={{borderBottom: '1px solid #000', marginBottom: '5px', height: '30px'}}></div>
-                    <p style={{fontSize: '11px', margin: 0}}>Authorized Representative</p>
+                    <div style={{borderBottom: '1px solid #333', marginBottom: '5px', height: '25px'}}></div>
+                    <p style={{fontSize: '14px', margin: 0, color: '#333'}}>Authorized Representative</p>
                   </div>
                   <div style={{textAlign: 'center', width: '40%'}}>
-                    <div style={{borderBottom: '1px solid #000', marginBottom: '5px', height: '30px'}}></div>
-                    <p style={{fontSize: '11px', margin: 0}}>Customer Signature</p>
+                    <div style={{borderBottom: '1px solid #333', marginBottom: '5px', height: '25px'}}></div>
+                    <p style={{fontSize: '14px', margin: 0, color: '#333'}}>Customer Signature</p>
                   </div>
                 </div>
               </div>
@@ -675,24 +862,12 @@ export default function SalesReturns() {
 
       <style>{`
         @media print {
-            body * {
-                visibility: hidden;
-            }
-            .printable-invoice, .printable-invoice * {
-                visibility: visible;
-            }
+            body * { visibility: hidden; }
+            .printable-invoice, .printable-invoice * { visibility: visible; }
             .printable-invoice {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-                background: white;
-                padding: 20px;
-                box-sizing: border-box;
+                position: absolute; left: 0; top: 0; width: 100%; background: white; color: black; padding: 20px; box-sizing: border-box;
             }
-            .no-print {
-                display: none !important;
-            }
+            .no-print { display: none !important; }
         }
       `}</style>
     </div>
@@ -700,51 +875,53 @@ export default function SalesReturns() {
 }
 
 const styles = {
-  container: { padding: '30px', fontFamily: 'Segoe UI, sans-serif', backgroundColor: '#f9f9f9', minHeight: '100vh', textAlign: 'left' },
-  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' },
-  pageTitle: { fontSize: '24px', fontWeight: '700', color: '#333', margin: 0 },
-  sub: { fontSize: '14px', color: '#666', marginTop: '5px' },
-  roleIndicator: { fontSize: '12px', backgroundColor: '#e5e7eb', padding: '6px 10px', borderRadius: '4px', color: '#374151' },
-  notificationBanner: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#ecfdf5', border: '1px solid #10b981', color: '#065f46', padding: '15px 20px', borderRadius: '8px', marginBottom: '20px', fontWeight: '500' },
-  notificationOkBtn: { backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' },
-  card: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', boxShadow: '0 2px 5px rgba(0,0,0,0.03)', marginBottom: '30px' },
-  cardTitle: { fontSize: '18px', fontWeight: '600', color: '#444', marginBottom: '20px', marginTop: 0 },
-  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' },
-  inputGroup: { display: 'flex', flexDirection: 'column', textAlign: 'left' },
-  label: { fontSize: '13px', fontWeight: '500', color: '#555', marginBottom: '8px', textAlign: 'left' },
-  select: { padding: '10px', borderRadius: '4px', border: '1px solid #ddd', fontSize: '14px', backgroundColor: '#fff', textAlign: 'left' },
-  itemsTableWrapper: { overflowX: 'auto', marginBottom: '20px' },
-  table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' },
-  trHead: { backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' },
-  th: { padding: '10px 12px', textAlign: 'left', color: '#333', fontWeight: '600' },
-  trBody: { borderBottom: '1px solid #eee' },
-  td: { padding: '12px', color: '#333', verticalAlign: 'middle', textAlign: 'left' },
-  code: { fontSize: '11px', color: '#777' },
-  emptyCell: { textAlign: 'left', padding: '20px', color: '#777', fontStyle: 'italic' },
-  qtyInput: { width: '70px', padding: '6px', textAlign: 'left', border: '1px solid #ddd', borderRadius: '4px' },
-  reasonInput: { width: '100%', padding: '6px', border: '1px solid #ddd', borderRadius: '4px', textAlign: 'left' },
-  historyItemsList: { margin: '0', paddingLeft: '15px', fontSize: '12px', color: '#555', textAlign: 'left' },
-  previewBtn: { backgroundColor: '#e0f2fe', color: '#0369a1', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
-  approveBtn: { backgroundColor: '#10b981', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
-  declineBtn: { backgroundColor: '#ef4444', color: '#fff', border: 'none', padding: '5px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
-  badgePending: { backgroundColor: '#fef3c7', color: '#d97706', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-  badgeComplete: { backgroundColor: '#d1fae5', color: '#059669', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-  badgeDeclined: { backgroundColor: '#fee2e2', color: '#dc2626', padding: '4px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-  overlay: { position: 'fixed', top: '0', left: '0', right: '0', bottom: '0', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 },
-  modal: { backgroundColor: '#fff', borderRadius: '8px', width: '100%', maxWidth: '750px', boxShadow: '0 4px 20px rgba(0,0,0,0.15)', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: '90vh', textAlign: 'left' },
-  modalHeader: { backgroundColor: '#111827', color: '#fff', padding: '15px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontWeight: '600', fontSize: '15px', textAlign: 'left' },
-  modalBody: { padding: '25px', overflowY: 'auto', flex: 1, textAlign: 'left' },
-  closeBtn: { background: 'none', border: 'none', color: '#fff', fontSize: '16px', cursor: 'pointer' },
-  printableArea: { padding: '30px', overflowY: 'auto', flex: 1, backgroundColor: '#fff', textAlign: 'left' },
-  printHeader: { textAlign: 'center', marginBottom: '20px' },
-  logo: { width: '50px', height: '50px', objectFit: 'contain', marginBottom: '5px' },
-  invoiceMeta: { display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #eee', borderBottom: '1px solid #eee', padding: '10px 0', marginBottom: '15px', fontSize: '13px' },
-  invoiceClient: { marginBottom: '20px', fontSize: '13px', textAlign: 'left' },
-  printTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '13px', textAlign: 'left' },
-  printTh: { borderBottom: '2px solid #333', padding: '8px', textAlign: 'left', fontWeight: '700' },
-  printTd: { borderBottom: '1px solid #eee', padding: '8px', textAlign: 'left' },
-  printFooter: { marginTop: '30px', textAlign: 'left' },
-  modalActions: { padding: '15px 20px', backgroundColor: '#f9f9f9', borderTop: '1px solid #eee', display: 'flex', justifyContent: 'flex-end', gap: '10px' },
-  primaryBtn: { backgroundColor: '#111827', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '14px' },
-  cancelBtn: { backgroundColor: '#e5e7eb', color: '#374151', border: 'none', padding: '10px 18px', borderRadius: '6px', fontSize: '15px', cursor: 'pointer', fontWeight: '500' }
+  container: { padding: '24px', fontFamily: 'Inter, Segoe UI, sans-serif', backgroundColor: '#0f0f11', minHeight: '100vh', color: '#f4f4f5' },
+  headerRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
+  pageTitle: { fontSize: '28px', fontWeight: '800', color: '#ffffff', margin: 0, letterSpacing: '-0.5px' },
+  sub: { fontSize: '14px', color: '#a1a1aa', marginTop: '4px' },
+  roleIndicator: { fontSize: '13px', color: '#d4d4d8', backgroundColor: '#27272a', padding: '6px 12px', borderRadius: '6px' },
+  card: { backgroundColor: '#18181b', borderRadius: '10px', border: '1px solid #27272a', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' },
+  cardTitle: { fontSize: '18px', fontWeight: '700', padding: '16px 20px', margin: 0, borderBottom: '1px solid #27272a', color: '#fff' },
+  table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
+  trHead: { backgroundColor: '#202024', borderBottom: '1px solid #27272a' },
+  th: { padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: '#a1a1aa', letterSpacing: '0.05em' },
+  trBody: { borderBottom: '1px solid #27272a' },
+  td: { padding: '14px 16px', fontSize: '14px', color: '#f4f4f5' },
+  emptyCell: { padding: '30px', textAlign: 'center', color: '#71717a', fontStyle: 'italic' },
+  code: { fontFamily: 'monospace', color: '#fbbf24', fontSize: '13px' },
+  badgeComplete: { backgroundColor: '#064e3b', color: '#34d399', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' },
+  badgePending: { backgroundColor: '#78350f', color: '#fbbf24', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' },
+  badgeDeclined: { backgroundColor: '#7f1d1d', color: '#fca5a5', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' },
+  primaryBtn: { backgroundColor: '#f59e0b', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' },
+  previewBtn: { backgroundColor: '#27272a', color: '#f4f4f5', border: '1px solid #3f3f46', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px' },
+  approveBtn: { backgroundColor: '#059669', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+  declineBtn: { backgroundColor: '#dc2626', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+  overlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' },
+  modal: { backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid #27272a', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.5)' },
+  modalHeader: { padding: '20px 24px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
+  closeBtn: { background: 'none', border: 'none', color: '#a1a1aa', fontSize: '18px', cursor: 'pointer' },
+  modalBody: { padding: '24px', flex: 1 },
+  modalActions: { padding: '16px 24px', borderTop: '1px solid #27272a', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#121214' },
+  cancelBtn: { backgroundColor: 'transparent', color: '#a1a1aa', border: '1px solid #3f3f46', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+  formGrid: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '20px' },
+  inputGroup: { display: 'flex', flexDirection: 'column', gap: '6px' },
+  label: { fontSize: '12px', fontWeight: '600', color: '#a1a1aa' },
+  select: { backgroundColor: '#27272a', border: '1px solid #3f3f46', color: '#f4f4f5', padding: '10px 12px', borderRadius: '6px', fontSize: '14px', outline: 'none', width: '100%' },
+  qtyInput: { backgroundColor: '#27272a', border: '1px solid #3f3f46', color: '#f4f4f5', padding: '8px 12px', borderRadius: '6px', fontSize: '14px', width: '80px', outline: 'none' },
+  itemsTableWrapper: { marginTop: '20px', borderTop: '1px solid #27272a', paddingTop: '20px' },
+  totalDisplayContainer: { display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '16px', marginTop: '16px', padding: '12px 16px', backgroundColor: '#202024', borderRadius: '8px', border: '1px solid #27272a' },
+  totalLabel: { fontSize: '14px', fontWeight: '700', color: '#a1a1aa' },
+  totalValue: { fontSize: '20px', fontWeight: '800', color: '#fbbf24' },
+  notificationBanner: { display: 'flex', alignItems: 'center', backgroundColor: '#1e1b4b', border: '1px solid #312e81', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', color: '#c7d2fe', fontSize: '14px' },
+  notificationOkBtn: { backgroundColor: '#4f46e5', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
+  historyItemsList: { margin: 0, paddingLeft: '16px', fontSize: '13px' },
+  printableArea: { padding: '24px', backgroundColor: '#fff', color: '#000' },
+  printHeader: { textAlign: 'center', marginBottom: '20px', borderBottom: '2px solid #eee', paddingBottom: '15px' },
+  logo: { width: '50px', height: '50px', objectFit: 'contain' },
+  invoiceMeta: { display: 'flex', justifyContent: 'space-between', marginBottom: '15px' },
+  invoiceClient: { marginBottom: '20px', padding: '12px', backgroundColor: '#f9f9fb', borderRadius: '6px', border: '1px solid #eee' },
+  printTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '20px' },
+  printTh: { borderBottom: '2px solid #ddd', padding: '8px', textAlign: 'left', fontSize: '13px', color: '#333' },
+  printTd: { borderBottom: '1px solid #eee', padding: '8px', fontSize: '13px', color: '#111' },
+  printFooter: { marginTop: '30px', borderTop: '1px solid #eee', paddingTop: '15px' }
 };

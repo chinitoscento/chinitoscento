@@ -1,0 +1,54 @@
+-- 1. Create table with active columns if it doesn't exist yet
+CREATE TABLE IF NOT EXISTS opex_expenses (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  ref_number TEXT UNIQUE NOT NULL,
+  reference_number TEXT,
+  item_description TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+  creditor TEXT,
+  terms_of_payment TEXT DEFAULT 'Cash',
+  credit_type TEXT DEFAULT 'One Time Payment',
+  computed_interest NUMERIC(12, 2) DEFAULT 0.00,
+  computed_rate NUMERIC(5, 2) DEFAULT 0.00,
+  num_installments INT,
+  monthly_amount NUMERIC(12, 2) DEFAULT 0.00,
+  first_due_date DATE,
+  total_amount_due NUMERIC(12, 2) DEFAULT 0.00,
+  status TEXT DEFAULT 'Unpaid',
+  amount_paid NUMERIC(12, 2) DEFAULT 0.00,
+  balance_due NUMERIC(12, 2) DEFAULT 0.00,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 2. Force add missing columns if the table already exists from an older version
+ALTER TABLE opex_expenses 
+  ADD COLUMN IF NOT EXISTS reference_number TEXT,
+  ADD COLUMN IF NOT EXISTS creditor TEXT,
+  ADD COLUMN IF NOT EXISTS terms_of_payment TEXT DEFAULT 'Cash',
+  ADD COLUMN IF NOT EXISTS credit_type TEXT DEFAULT 'One Time Payment',
+  ADD COLUMN IF NOT EXISTS computed_interest NUMERIC(12, 2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS computed_rate NUMERIC(5, 2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS num_installments INT,
+  ADD COLUMN IF NOT EXISTS monthly_amount NUMERIC(12, 2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS first_due_date DATE,
+  ADD COLUMN IF NOT EXISTS total_amount_due NUMERIC(12, 2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'Unpaid',
+  ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12, 2) DEFAULT 0.00,
+  ADD COLUMN IF NOT EXISTS balance_due NUMERIC(12, 2) DEFAULT 0.00;
+
+-- 3. Drop obsolete columns safely if they exist from older table versions
+ALTER TABLE opex_expenses 
+  DROP COLUMN IF EXISTS interest_amount,
+  DROP COLUMN IF EXISTS interest_rate;
+
+-- 4. Enable RLS
+ALTER TABLE opex_expenses ENABLE ROW LEVEL SECURITY;
+
+-- 5. Drop policy if it already exists to prevent duplicate error (Error 42710)
+DROP POLICY IF EXISTS "Enable all access for opex_expenses" ON opex_expenses;
+
+-- 6. Re-create policy cleanly
+CREATE POLICY "Enable all access for opex_expenses" ON opex_expenses
+  FOR ALL USING (true) WITH CHECK (true);

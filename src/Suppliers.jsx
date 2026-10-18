@@ -25,7 +25,7 @@ export default function Suppliers() {
       const { data, error } = await supabase
         .from('suppliers')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('code', { ascending: true });
 
       if (error) throw error;
 
@@ -46,6 +46,35 @@ export default function Suppliers() {
     }
   };
 
+  const handleOpenModal = () => {
+    let nextCode = 'SUPP-0001';
+    if (suppliers.length > 0) {
+      const codes = suppliers
+        .map(s => s.code)
+        .filter(code => code && code.startsWith('SUPP-'));
+      
+      if (codes.length > 0) {
+        const numericValues = codes.map(code => {
+          const num = parseInt(code.replace('SUPP-', ''), 10);
+          return isNaN(num) ? 0 : num;
+        });
+        const maxNum = Math.max(...numericValues, 0);
+        nextCode = `SUPP-${String(maxNum + 1).padStart(4, '0')}`;
+      } else {
+        nextCode = `SUPP-${String(suppliers.length + 1).padStart(4, '0')}`;
+      }
+    }
+
+    setFormData({
+      code: nextCode,
+      name: '',
+      phone: '',
+      email: '',
+      address: ''
+    });
+    setIsModalOpen(true);
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -55,9 +84,19 @@ export default function Suppliers() {
     e.preventDefault();
     if (!formData.name) return;
 
-    const supplierCode = formData.code || `SUPP-${Math.floor(1000 + Math.random() * 9000)}`;
+    let finalCode = formData.code;
+    if (!finalCode) {
+      const numericValues = suppliers
+        .map(s => s.code)
+        .filter(code => code && code.startsWith('SUPP-'))
+        .map(code => parseInt(code.replace('SUPP-', ''), 10))
+        .filter(num => !isNaN(num));
+      const maxNum = numericValues.length > 0 ? Math.max(...numericValues) : suppliers.length;
+      finalCode = `SUPP-${String(maxNum + 1).padStart(4, '0')}`;
+    }
+
     const payload = {
-      code: supplierCode,
+      code: finalCode,
       name: formData.name,
       phone: formData.phone,
       email: formData.email,
@@ -102,7 +141,7 @@ export default function Suppliers() {
         </div>
         <button 
           style={styles.primaryButton}
-          onClick={() => setIsModalOpen(true)}
+          onClick={handleOpenModal}
           onMouseEnter={(e) => e.target.style.backgroundColor = '#d4af37'}
           onMouseLeave={(e) => e.target.style.backgroundColor = '#c5a059'}
         >
@@ -176,14 +215,13 @@ export default function Suppliers() {
 
             <form onSubmit={handleSubmit} style={styles.formGrid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Supplier Code (Optional)</label>
+                <label style={styles.label}>Supplier Code (Sequential)</label>
                 <input 
                   type="text" 
                   name="code" 
-                  placeholder="Auto-generated if blank" 
                   value={formData.code}
                   onChange={handleInputChange}
-                  style={styles.input}
+                  style={{ ...styles.input, backgroundColor: '#f9f9f9', fontWeight: 'bold' }}
                 />
               </div>
 

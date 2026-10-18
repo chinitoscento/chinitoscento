@@ -1,0 +1,3 @@
+id,so_number,customer_name,address,contact,payment_mode,total_amount,status,date,due_date,remarks,created_at
+1,SO-000001,ROMEL ESPINA,N/A,09122664624,CREDIT,1000.00,Approved,2026-09-14,2026-09-24,,2026-09-14 00:12:21.345348+00
+2,SO-000002,ROMEL ESPINA,N/A,09122664624,CREDIT,200.00,Approved,2026-09-14,2026-09-24,Refer to SR-000001,2026-09-14 00:41:17.178897+00

@@ -1,0 +1,91 @@
+-- 1. Chart of Accounts Table
+CREATE TABLE IF NOT EXISTS chart_of_accounts (
+    account_code VARCHAR(50) PRIMARY KEY,
+    account_name VARCHAR(255) NOT NULL,
+    account_type VARCHAR(50) NOT NULL CHECK (account_type IN ('Asset', 'Liability', 'Equity', 'Revenue', 'Expense')),
+    sub_category VARCHAR(100),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Seed basic accounts with separated Inventory titles for your perfumery business
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category) VALUES
+('1000', 'Cash on Hand / Bank', 'Asset', 'Current Assets'),
+('1200', 'Accounts Receivable', 'Asset', 'Current Assets'),
+('1310', 'Raw Materials Inventory', 'Asset', 'Current Assets'),
+('1320', 'Finished Goods Inventory', 'Asset', 'Current Assets'),
+('2000', 'Accounts Payable', 'Liability', 'Current Liabilities'),
+('3000', 'Owner s Capital', 'Equity', 'Equity'),
+('4000', 'Sales Revenue', 'Revenue', 'Operating Revenue'),
+('5000', 'Cost of Goods Sold (COGS)', 'Expense', 'Cost of Sales'),
+('6000', 'Operating Expenses (Opex)', 'Expense', 'Operating Expenses')
+ON CONFLICT (account_code) DO UPDATE 
+SET account_name = EXCLUDED.account_name, 
+    account_type = EXCLUDED.account_type, 
+    sub_category = EXCLUDED.sub_category;
+
+-- 2. Journal Entries Header Table
+CREATE TABLE IF NOT EXISTS journal_entries (
+    id SERIAL PRIMARY KEY,
+    je_number VARCHAR(100) UNIQUE NOT NULL,
+    date DATE NOT NULL DEFAULT CURRENT_DATE,
+    reference_no VARCHAR(100),
+    description TEXT,
+    status VARCHAR(50) DEFAULT 'Posted',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Journal Entry Line Items Table
+CREATE TABLE IF NOT EXISTS journal_entry_lines (
+    id SERIAL PRIMARY KEY,
+    je_number VARCHAR(100) REFERENCES journal_entries(je_number) ON DELETE CASCADE,
+    account_code VARCHAR(50) REFERENCES chart_of_accounts(account_code),
+    description TEXT,
+    debit NUMERIC(12, 2) DEFAULT 0.00,
+    credit NUMERIC(12, 2) DEFAULT 0.00,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Enable RLS
+ALTER TABLE chart_of_accounts ENABLE ROW LEVEL SECURITY;
+ALTER TABLE journal_entries ENABLE ROW LEVEL SECURITY;
+ALTER TABLE journal_entry_lines ENABLE ROW LEVEL SECURITY;
+
+-- Drop existing policies first to prevent re-run errors
+DROP POLICY IF EXISTS "Enable all access for chart_of_accounts" ON chart_of_accounts;
+DROP POLICY IF EXISTS "Enable all access for journal_entries" ON journal_entries;
+DROP POLICY IF EXISTS "Enable all access for journal_entry_lines" ON journal_entry_lines;
+
+-- Recreate policies safely
+CREATE POLICY "Enable all access for chart_of_accounts" ON chart_of_accounts FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all access for journal_entries" ON journal_entries FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Enable all access for journal_entry_lines" ON journal_entry_lines FOR ALL USING (true) WITH CHECK (true);
+
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category) VALUES
+('6000', 'Macerating Equipment', 'Expense', 'Operating Expenses'),
+('6010', 'Rent Expense', 'Expense', 'Operating Expenses'),
+('6020', 'Payroll & Benefits', 'Expense', 'Operating Expenses'),
+('6030', 'Tester Kits', 'Expense', 'Operating Expenses'),
+('6040', 'Shipping Fee', 'Expense', 'Operating Expenses'),
+('6050', 'Marketing Ads', 'Expense', 'Operating Expenses'),
+('6060', 'Telecom & Internet', 'Expense', 'Operating Expenses'),
+('6070', 'Transportation', 'Expense', 'Operating Expenses'),
+('6080', 'Utilities', 'Expense', 'Operating Expenses'),
+('6090', 'Interest', 'Expense', 'Operating Expenses'),
+('6100', 'Miscellaneous / Others', 'Expense', 'Operating Expenses')
+ON CONFLICT (account_code) DO UPDATE 
+SET account_name = EXCLUDED.account_name, 
+    account_type = EXCLUDED.account_type, 
+    sub_category = EXCLUDED.sub_category;
+
+
+DROP TRIGGER IF EXISTS trg_expense_journal ON opex_expenses;
+
+-- Add Work-in-Process / Macerating Inventory to Chart of Accounts
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category, normal_balance, is_active) VALUES
+('1330', 'Work-in-Process / Macerating Inventory', 'Asset', 'Current Assets')
+ON CONFLICT (account_code) DO UPDATE 
+SET account_name = EXCLUDED.account_name, 
+    account_type = EXCLUDED.account_type, 
+    sub_category = EXCLUDED.sub_category;
+

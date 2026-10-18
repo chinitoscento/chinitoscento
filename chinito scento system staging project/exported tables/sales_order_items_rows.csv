@@ -1,0 +1,4 @@
+id,so_number,product_code,quantity,unit_price,product_name,transaction,sr_reference
+1,SO-000001,CS-ANT-01,5,200.00,,,
+2,SO-000002,CS-ANT-01,1,200.00,,,
+3,SO-000003,CS-ANT-01,1,200.00,ANTONITO,,

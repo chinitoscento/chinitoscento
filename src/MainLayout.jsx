@@ -8,16 +8,26 @@ import Formulations from './Formulations.jsx';
 import Purchases from './Purchases.jsx';
 import PurchaseCostMonitoring from './PurchaseCostMonitoring.jsx';
 import Costing from './Costing.jsx';
+import Expenses from './Expenses';
 import RawMaterialsInventory from './RawMaterialsInventory.jsx';
 import Maceration from './Maceration.jsx';
 import Packaging from './Packaging.jsx';
 import FinishedGoodsInventory from './FinishedGoodsInventory.jsx';
 import Salesorder from './Salesorder.jsx';
-import Invoices from './Invoices.jsx';
 import SalesReturns from './SalesReturns.jsx';
 import Collections from './Collections.jsx';
 import CustomerLedger from './CustomerLedger.jsx';
+import Payments from './PayablesPayments.jsx';
 import SystemSettings from './SystemSettings.jsx';
+import AnalyticsReports from './AnalyticsReports.jsx';
+import SalesProductionReport from './SalesProductionReport.jsx';
+// ✦ Newly Integrated Financial Reporting Pages
+import JournalEntries from './JournalEntries.jsx';
+import BalanceSheet from './BalanceSheet.jsx';
+import IncomeStatement from './IncomeStatement.jsx';
+import StatementOfEquity from './StatementOfEquity.jsx';
+import NotesToFinancialStatements from './NotesToFinancialStatements.jsx'; // ✦ NEW
+
 import logo from './logo.png';
 import { supabase } from './supabaseClient';
 
@@ -40,10 +50,10 @@ function AtelierWorkspace({ userName, onNavigate }) {
             <p style={atelierStyles.actionText}>Process boutique or wholesale perfume requisitions.</p>
           </div>
           
-          <div style={atelierStyles.actionCard} onClick={() => onNavigate('Invoices')}>
+          <div style={atelierStyles.actionCard} onClick={() => onNavigate('Sales Production Report')}>
             <span style={atelierStyles.actionIcon}>◇</span>
-            <h3 style={atelierStyles.actionTitle}>Check Invoices?</h3>
-            <p style={atelierStyles.actionText}>Review active billing records and transaction status.</p>
+            <h3 style={atelierStyles.actionTitle}>Sales & Production Report</h3>
+            <p style={atelierStyles.actionText}>Review weekly/monthly totals and customer percentage shares.</p>
           </div>
 
           <div style={atelierStyles.actionCard} onClick={() => onNavigate('Sales Returns')}>
@@ -87,21 +97,18 @@ export default function MainLayout({ onLogout }) {
   const isManager = normalizedRole === 'manager' || !isOwnerOrAdmin;
 
   const [activePage, setActivePage] = useState(() => {
-    const savedPage = localStorage.getItem('chinito_active_page');
-    if (savedPage) return savedPage;
     return isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace';
   });
   
-  // All sidebar sections collapsed by default
+  // Sidebar section toggle state - All collapsed by default
   const [openSections, setOpenSections] = useState({
-    Masters: false,
-    Purchasing: false,
-    Inventory: false,
+    Management: false,
     Manufacturing: false,
-    Sales: false,
-    Receivables: false,
+    'Purchases & Expenses': false,
+    Selling: false,
+    Finance: false,
     Reports: false,
-    Settings: false,
+    Accounting: false,
   });
 
   const [batches, setBatches] = useState([]);
@@ -128,18 +135,33 @@ export default function MainLayout({ onLogout }) {
   });
 
   const toggleSection = (sectionName) => {
-    setOpenSections(prev => ({
-      ...prev,
-      [sectionName]: !prev[sectionName]
-    }));
+    setOpenSections(prev => {
+      const isCurrentlyOpen = prev[sectionName];
+      return {
+        Management: false,
+        Manufacturing: false,
+        'Purchases & Expenses': false,
+        Selling: false,
+        Finance: false,
+        Reports: false,
+        Accounting: false,
+        [sectionName]: !isCurrentlyOpen
+      };
+    });
   };
 
-const handleNavClick = (pageName, sectionName) => {
+  const handleNavClick = (pageName, sectionName) => {
     setActivePage(pageName);
     localStorage.setItem('chinito_active_page', pageName);
     if (sectionName) {
       setOpenSections(prev => ({
-        ...prev,
+        Management: false,
+        Manufacturing: false,
+        'Purchases & Expenses': false,
+        Selling: false,
+        Finance: false,
+        Reports: false,
+        Accounting: false,
         [sectionName]: true
       }));
     }
@@ -185,7 +207,7 @@ const handleNavClick = (pageName, sectionName) => {
   const renderContent = () => {
     switch (activePage) {
       case 'Dashboard':
-        return isOwnerOrAdmin ? <Dashboard /> : <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
+        return isOwnerOrAdmin ? <Dashboard onNavigate={(page) => handleNavClick(page, 'Reports')} /> : <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
       case 'Atelier Workspace':
         return <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
       case 'Customers':
@@ -200,10 +222,12 @@ const handleNavClick = (pageName, sectionName) => {
         return <Formulations />;
       case 'Purchases': 
         return <Purchases />;
-      case 'Costing':
-        return <Costing />;
       case 'Purchase Cost Monitoring':
         return <PurchaseCostMonitoring />;
+      case 'Costing':
+        return <Costing />;
+      case 'Expenses':
+        return <Expenses />;      
       case 'Raw Materials':
         return <RawMaterialsInventory />;
       case 'Maceration':
@@ -214,16 +238,31 @@ const handleNavClick = (pageName, sectionName) => {
         return <FinishedGoodsInventory />;
       case 'Sales Order':
         return <Salesorder />;
-      case 'Invoices':
-        return <Invoices />;
       case 'Sales Returns':
         return <SalesReturns />;
+      case 'Analytics Reports':
+        return <AnalyticsReports />;
+      case 'Sales Production Report': 
+        return <SalesProductionReport />;
       case 'Collections':
         return <Collections />;
       case 'Customer Ledger':
         return <CustomerLedger />;
+      case 'Payments':
+        return <Payments />;
       case 'System Settings':
         return <SystemSettings />;      
+      // ✦ Accounting Module Routes
+      case 'Journal Entries':
+        return <JournalEntries />;
+      case 'Balance Sheet':
+        return <BalanceSheet />;
+      case 'Income Statement':
+        return <IncomeStatement />;
+      case 'Equity':
+        return <StatementOfEquity />;
+      case 'Notes to Financial Statements':
+        return <NotesToFinancialStatements />;
       default:
         return (
           <div style={{ padding: '30px' }}>
@@ -241,7 +280,7 @@ const handleNavClick = (pageName, sectionName) => {
           <img src={logo} alt="Logo" style={styles.sidebarLogo} />
           <div style={styles.sidebarBrandText}>
             <span style={styles.brandTitle}>CHINITO SCENTO</span>
-            <span style={styles.brandSubtitle}>PERFUME MANAGEMENT SYSTEM</span>
+            <span style={styles.brandSubtitle}>INTEGRATED PERFUMERY ERP</span>
           </div>
         </div>
 
@@ -262,16 +301,28 @@ const handleNavClick = (pageName, sectionName) => {
             </div>
           )}
 
-          {!isManager && renderSection('Masters', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue','Formulations'])}
-          {!isManager && renderSection('Purchasing', ['Purchases', 'Purchase Cost Monitoring', 'Costing'])}
-          {!isManager && renderSection('Inventory', ['Raw Materials', 'Finished Goods'])}
-          {!isManager && renderSection('Production', ['Maceration', 'Packaging'])}
+          {!isManager && renderSection('Management', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue', 'System Settings'])}
           
-          {renderSection('Sales', ['Sales Order', 'Invoices', 'Sales Returns'])}
+          {!isManager && renderSection('Manufacturing', [
+            'Formulations', 
+            'Purchase Cost Monitoring', 
+            'Costing', 
+            'Raw Materials', 
+            'Maceration', 
+            'Packaging', 
+            'Finished Goods'
+          ])}
           
-          {!isManager && renderSection('Receivables', ['Collections', 'Customer Ledger'])}
-          {!isManager && renderSection('Reports', ['Reports Center'])}
-          {!isManager && renderSection('Settings', ['System Settings'])}
+          {!isManager && renderSection('Purchases & Expenses', ['Purchases', 'Expenses'])}
+
+          {renderSection('Selling', ['Sales Order', 'Sales Returns'])}
+                  
+          {!isManager && renderSection('Finance', ['Collections', 'Customer Ledger', 'Payments'])}
+
+          {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
+
+          {/* ✦ Accounting Section */}
+          {!isManager && renderSection('Accounting', ['Journal Entries', 'Balance Sheet', 'Income Statement', 'Equity', 'Notes to Financial Statements'])}
         </div>
       </aside>
 
@@ -495,7 +546,7 @@ const styles = {
     color: primaryGold, 
     fontWeight: '600', 
     borderLeft: `3px solid ${primaryGold}`,
-    boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)'
+    boxShadow: 'inset 1px 0 rgba(255,255,255,0.05)'
   },
   mainWrapper: { 
     flex: 1, 
@@ -526,7 +577,7 @@ const styles = {
     fontWeight: '700'
   },
   headerRightGroup: {
-    display: 'flex',
+    display: 'center',
     alignItems: 'center',
     gap: '30px',
   },

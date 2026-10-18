@@ -134,7 +134,7 @@ export default function RawMaterialsCatalogue() {
 
         if (error) throw error;
 
-        setMaterials(prev => prev.refine ? prev : prev.filter(m => m.id !== id));
+        setMaterials(prev => prev.filter(m => m.id !== id));
       } catch (err) {
         console.error('Error deleting raw material from Supabase:', err.message);
         alert('Failed to delete record: ' + err.message);
@@ -147,7 +147,7 @@ export default function RawMaterialsCatalogue() {
       <div style={styles.contentHeaderRow}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <h2 style={{ fontFamily: "'Cinzel', serif", margin: 0, color: '#1a1a1a', fontSize: '24px', letterSpacing: '0.5px' }}>Raw Materials Catalogue</h2>
+            <h2 style={{ fontFamily: "'Cinzel', serif", margin: 0, color: '#ffffff', fontSize: '20px', letterSpacing: '0.5px' }}>Raw Materials Catalogue</h2>
             <span style={styles.totalBadge}>Total: {materials.length}</span>
           </div>
           <p style={styles.subText}>Distinct master list for fragrance components, solvents, and packaging specifications across production cycles.</p>
@@ -171,7 +171,7 @@ export default function RawMaterialsCatalogue() {
           <tbody>
             {materials.length === 0 ? (
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', color: '#888', padding: '40px', fontStyle: 'italic' }}>
+                <td colSpan="5" style={{ textAlign: 'center', color: '#71717a', padding: '40px', fontStyle: 'italic' }}>
                   No raw materials registered. Click "+ Add New Raw Material" above.
                 </td>
               </tr>
@@ -179,13 +179,13 @@ export default function RawMaterialsCatalogue() {
               materials.map(m => (
                 <tr key={m.id} style={styles.trBody}>
                   <td style={styles.tdCode}><span style={styles.idBadge}>{m.id}</span></td>
-                  <td style={styles.tdMaterial}><strong style={{ color: '#1a1a1a', fontSize: '14px', fontWeight: '600' }}>{m.rawMaterial}</strong></td>
+                  <td style={styles.tdMaterial}><strong style={{ color: '#f3f4f6', fontSize: '13.5px', fontWeight: '500' }}>{m.rawMaterial}</strong></td>
                   <td style={styles.tdCategory}><span style={styles.categoryBadge}>{m.category || 'OIL'}</span></td>
                   <td style={styles.tdVolume}><span style={styles.volumePill}>{m.baseUnit || '—'}</span></td>
                   <td style={styles.tdActions}>
                     <button style={styles.actionLinkBtn} onClick={() => handleOpenEdit(m)}>Edit</button>
-                    <span style={{ color: '#d3cbbd', margin: '0 8px' }}>|</span>
-                    <button style={{ ...styles.actionLinkBtn, color: '#b33939' }} onClick={() => handleDelete(m.id)}>Delete</button>
+                    <span style={{ color: '#3f3f46', margin: '0 8px' }}>|</span>
+                    <button style={{ ...styles.actionLinkBtn, color: '#f87171' }} onClick={() => handleDelete(m.id)}>Delete</button>
                   </td>
                 </tr>
               ))
@@ -200,7 +200,7 @@ export default function RawMaterialsCatalogue() {
             <div style={styles.modalHeader}>
               <div>
                 <div style={{ fontSize: '10px', letterSpacing: '2px', color: '#c5a059', fontWeight: '700' }}>CATALOGUE SPECIFICATION</div>
-                <h3 style={{ margin: '2px 0 0 0', color: '#fff', fontFamily: "'Cinzel', serif" }}>
+                <h3 style={{ margin: '2px 0 0 0', color: '#fff', fontSize: '16px', fontFamily: "'Cinzel', serif" }}>
                   {editingItem ? 'Edit Raw Material' : 'Add Raw Material'}
                 </h3>
               </div>
@@ -239,7 +239,7 @@ export default function RawMaterialsCatalogue() {
                   style={styles.inputDark}
                 >
                   {CATEGORY_OPTIONS.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+                    <option key={cat} value={cat} style={{ backgroundColor: '#141416', color: '#f3f4f6' }}>{cat}</option>
                   ))}
                 </select>
               </div>
@@ -274,48 +274,47 @@ const primaryGold = '#c5a059';
 
 const styles = {
   moduleCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2ded8',
+    backgroundColor: '#141416',
+    border: '1px solid #232328',
     borderRadius: '10px',
-    padding: '32px',
-    boxShadow: '0 6px 20px rgba(0,0,0,0.04)'
+    padding: '24px 28px',
+    boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.4)',
+    color: '#ffffff'
   },
   contentHeaderRow: {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottom: '1px solid #eee5dc',
-    paddingBottom: '22px',
+    borderBottom: '1px solid #202025',
+    paddingBottom: '18px',
     marginBottom: '20px',
   },
   goldActionBtn: {
     backgroundColor: primaryGold,
-    color: '#ffffff',
+    color: '#121212',
     border: 'none',
-    padding: '11px 22px',
+    padding: '9px 16px',
     borderRadius: '6px',
     fontWeight: '600',
-    fontSize: '13.5px',
+    fontSize: '13px',
     cursor: 'pointer',
-    fontFamily: "'Cinzel', 'Segoe UI', serif",
-    boxShadow: '0 4px 12px rgba(197,160,89,0.3)',
-    letterSpacing: '0.5px'
+    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+    letterSpacing: '0.3px'
   },
   subText: {
-    color: '#777',
-    fontSize: '13.5px',
-    marginTop: '6px',
+    color: '#9ca3af',
+    fontSize: '13px',
+    marginTop: '4px',
     marginBottom: '0px'
   },
   totalBadge: {
-    backgroundColor: '#f4efe6',
-    color: '#8c733f',
-    padding: '4px 10px',
-    borderRadius: '12px',
-    fontSize: '12px',
-    fontWeight: '700',
-    border: '1px solid #e2dbcc',
-    fontFamily: "'Segoe UI', sans-serif"
+    backgroundColor: '#1c1c21',
+    color: '#c5a059',
+    padding: '3px 9px',
+    borderRadius: '6px',
+    fontSize: '11.5px',
+    fontWeight: '600',
+    border: '1px solid #2c2c35',
   },
   tableContainer: {
     overflowX: 'auto',
@@ -323,119 +322,106 @@ const styles = {
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '13.5px',
+    fontSize: '13px',
   },
   trHead: {
-    backgroundColor: '#faf8f5',
-    borderBottom: '2px solid #e2ded8',
+    backgroundColor: '#18181c',
+    borderBottom: '1px solid #26262c',
   },
   thCode: {
-    width: '13%',
-    padding: '16px 18px',
+    width: '14%',
+    padding: '12px 16px',
     textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '11.5px',
-    letterSpacing: '1.2px',
+    color: '#9ca3af',
+    fontWeight: '600',
+    fontSize: '11px',
+    letterSpacing: '0.8px',
   },
   thMaterial: {
-    width: '31%',
-    padding: '16px 18px',
+    width: '32%',
+    padding: '12px 16px',
     textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '11.5px',
-    letterSpacing: '1.2px',
+    color: '#9ca3af',
+    fontWeight: '600',
+    fontSize: '11px',
+    letterSpacing: '0.8px',
   },
   thCategory: {
     width: '22%',
-    padding: '16px 18px',
+    padding: '12px 16px',
     textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '11.5px',
-    letterSpacing: '1.2px',
+    color: '#9ca3af',
+    fontWeight: '600',
+    fontSize: '11px',
+    letterSpacing: '0.8px',
   },
   thVolume: {
-    width: '18%',
-    padding: '16px 18px',
+    width: '16%',
+    padding: '12px 16px',
     textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '11.5px',
-    letterSpacing: '1.2px',
+    color: '#9ca3af',
+    fontWeight: '600',
+    fontSize: '11px',
+    letterSpacing: '0.8px',
   },
   thActions: {
     width: '16%',
-    padding: '16px 18px',
+    padding: '12px 16px',
     textAlign: 'center',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '11.5px',
-    letterSpacing: '1.2px',
+    color: '#9ca3af',
+    fontWeight: '600',
+    fontSize: '11px',
+    letterSpacing: '0.8px',
   },
   trBody: {
-    borderBottom: '1px solid #f1ece4',
-    transition: 'background-color 0.2s',
+    borderBottom: '1px solid #1c1c21',
+    transition: 'background-color 0.15s ease',
   },
   tdCode: {
-    padding: '16px 18px',
+    padding: '14px 16px',
     verticalAlign: 'middle',
     textAlign: 'left',
   },
   tdMaterial: {
-    padding: '16px 18px',
+    padding: '14px 16px',
     verticalAlign: 'middle',
     textAlign: 'left',
   },
   tdCategory: {
-    padding: '16px 18px',
+    padding: '14px 16px',
     verticalAlign: 'middle',
     textAlign: 'left',
   },
   tdVolume: {
-    padding: '16px 18px',
+    padding: '14px 16px',
     verticalAlign: 'middle',
     textAlign: 'left',
   },
   tdActions: {
-    padding: '16px 18px',
+    padding: '14px 16px',
     verticalAlign: 'middle',
     textAlign: 'center',
   },
   idBadge: {
-    backgroundColor: '#f4efe6',
-    color: '#8c733f',
-    padding: '5px 10px',
-    borderRadius: '4px',
+    color: '#c5a059',
     fontFamily: 'monospace',
-    fontWeight: '700',
-    fontSize: '12px',
-    border: '1px solid #e2dbcc',
-    display: 'inline-block'
+    fontWeight: '600',
+    fontSize: '12.5px',
   },
   categoryBadge: {
-    backgroundColor: '#f0ece1',
-    color: '#554a36',
-    padding: '4px 8px',
+    backgroundColor: '#1b1b20',
+    color: '#d4d4d8',
+    padding: '3px 8px',
     borderRadius: '4px',
-    fontSize: '11.5px',
-    fontWeight: '700',
-    letterSpacing: '0.5px',
-    fontFamily: "'Segoe UI', sans-serif",
-    border: '1px solid #e4dbc8',
+    fontSize: '11px',
+    fontWeight: '600',
+    border: '1px solid #2c2c35',
     display: 'inline-block'
   },
   volumePill: {
-    backgroundColor: '#f8f6f0',
-    color: '#555',
-    padding: '5px 12px',
-    borderRadius: '4px',
+    color: '#9ca3af',
     fontSize: '12.5px',
-    fontWeight: '600',
     fontFamily: 'monospace',
-    border: '1px solid #eae5dc',
-    display: 'inline-block'
   },
   actionLinkBtn: {
     backgroundColor: 'transparent',
@@ -443,8 +429,7 @@ const styles = {
     color: '#c5a059',
     fontWeight: '600',
     cursor: 'pointer',
-    fontSize: '13px',
-    letterSpacing: '0.3px',
+    fontSize: '12.5px',
   },
   modalOverlay: {
     position: 'fixed',
@@ -452,8 +437,8 @@ const styles = {
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-    backdropFilter: 'blur(4px)',
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
+    backdropFilter: 'blur(3px)',
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
@@ -461,18 +446,18 @@ const styles = {
     padding: '20px',
   },
   modalContent: {
-    backgroundColor: '#141414',
-    border: '1px solid #c5a059',
-    borderRadius: '8px',
+    backgroundColor: '#141416',
+    border: '1px solid #232328',
+    borderRadius: '10px',
     width: '100%',
-    maxWidth: '480px',
-    boxShadow: '0 25px 50px rgba(0,0,0,0.8)',
+    maxWidth: '460px',
+    boxShadow: '0 20px 30px -10px rgba(0, 0, 0, 0.6)',
     overflow: 'hidden',
   },
   modalHeader: {
-    padding: '20px 24px',
-    backgroundColor: '#1c1c1c',
-    borderBottom: '1px solid #2a2a2a',
+    padding: '18px 24px',
+    backgroundColor: '#18181c',
+    borderBottom: '1px solid #26262c',
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -480,14 +465,13 @@ const styles = {
   modalCloseBtn: {
     backgroundColor: 'transparent',
     border: 'none',
-    color: '#aaa',
-    fontSize: '26px',
+    color: '#9ca3af',
+    fontSize: '24px',
     cursor: 'pointer',
     lineHeight: '1',
   },
   modalForm: {
     padding: '24px',
-    fontFamily: "'Segoe UI', sans-serif",
   },
   inputGroup: {
     display: 'flex',
@@ -496,16 +480,15 @@ const styles = {
   },
   label: {
     fontSize: '11px',
-    fontWeight: '700',
-    color: '#b0b8c0',
-    letterSpacing: '1px',
-    fontFamily: "'Cinzel', serif"
+    fontWeight: '600',
+    color: '#9ca3af',
+    letterSpacing: '0.5px',
   },
   inputDark: {
-    padding: '11px 14px',
-    borderRadius: '4px',
-    border: '1px solid #333',
-    backgroundColor: '#1c1c1c',
+    padding: '10px 14px',
+    borderRadius: '6px',
+    border: '1px solid #2a2a32',
+    backgroundColor: '#1a1a1e',
     color: '#ffffff',
     fontSize: '13.5px',
     outline: 'none',
@@ -513,30 +496,30 @@ const styles = {
   modalFooter: {
     display: 'flex',
     justifyContent: 'flex-end',
-    gap: '12px',
+    gap: '10px',
     marginTop: '24px',
-    borderTop: '1px solid #2a2a2a',
-    paddingTop: '18px',
+    borderTop: '1px solid #26262c',
+    paddingTop: '16px',
   },
   cancelBtn: {
     backgroundColor: 'transparent',
-    color: '#aaa',
-    border: '1px solid #444',
-    padding: '9px 18px',
-    borderRadius: '4px',
-    fontWeight: '600',
+    color: '#9ca3af',
+    border: '1px solid #2a2a32',
+    padding: '8px 16px',
+    borderRadius: '6px',
+    fontWeight: '500',
     fontSize: '13px',
     cursor: 'pointer',
   },
   submitBtn: {
     backgroundColor: primaryGold,
-    color: '#000000',
+    color: '#121212',
     border: 'none',
-    padding: '9px 20px',
-    borderRadius: '4px',
-    fontWeight: '700',
+    padding: '8px 18px',
+    borderRadius: '6px',
+    fontWeight: '600',
     fontSize: '13px',
     cursor: 'pointer',
-    boxShadow: '0 4px 12px rgba(197,160,89,0.3)',
+    boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
   }
 };

@@ -1,0 +1,76 @@
+-- Drop dependent tables in correct order first to avoid foreign key conflicts
+DROP TABLE IF EXISTS finished_goods_ledger CASCADE;
+DROP TABLE IF EXISTS finished_goods CASCADE;
+
+-- 1. Create finished_goods table with product_code as primary key
+CREATE TABLE finished_goods (
+    product_code VARCHAR(100) PRIMARY KEY,
+    id SERIAL UNIQUE,
+    code VARCHAR(100),
+    name VARCHAR(255) NOT NULL,
+    scent VARCHAR(255),
+    stock INT DEFAULT 0,
+    threshold INT DEFAULT 15,
+    price NUMERIC(10, 2) DEFAULT 0.00,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 2. Create finished_goods_ledger table to trace all movements
+CREATE TABLE finished_goods_ledger (
+    id SERIAL PRIMARY KEY,
+    transaction_type VARCHAR(50) NOT NULL, -- e.g., 'PACKAGING', 'OUT', 'RETURN_IN', 'RETURN_LOSS'
+    reference_number VARCHAR(100),         -- e.g., SO Number or Production/Packaging ID
+    product_code VARCHAR(100) REFERENCES finished_goods(product_code) ON DELETE CASCADE,
+    qty_change INT NOT NULL DEFAULT 0,     -- Positive for additions/returns, negative for sales, 0 for damage losses
+    damaged_qty INT DEFAULT 0,             -- Tracks quantity specifically for damaged returns
+    reason VARCHAR(100),                   -- e.g., 'Wrong Item', 'Swap', 'Damaged'
+    running_balance INT,                   -- Stock balance after this transaction
+    remarks TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 3. Function and Trigger to automatically update finished_goods stock from finished_goods_ledger
+CREATE OR REPLACE FUNCTION update_finished_goods_stock()
+RETURNS TRIGGER AS $$
+DECLARE
+    current_stock INT;
+    target_product VARCHAR(100);
+BEGIN
+    IF (TG_OP = 'INSERT') THEN
+        target_product := NEW.product_code;
+    ELSIF (TG_OP = 'DELETE') THEN
+        target_product := OLD.product_code;
+    ELSE
+        target_product := NEW.product_code;
+    END IF;
+
+    -- Calculate total stock dynamically from the ledger (only summing qty_change, completely ignoring damaged_qty)
+    SELECT COALESCE(SUM(qty_change), 0) INTO current_stock
+    FROM finished_goods_ledger
+    WHERE product_code = target_product;
+
+    -- Update the master finished_goods stock level
+    UPDATE finished_goods
+    SET stock = current_stock
+    WHERE product_code = target_product;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_update_finished_goods_stock ON finished_goods_ledger;
+CREATE TRIGGER trg_update_finished_goods_stock
+AFTER INSERT OR UPDATE OR DELETE ON finished_goods_ledger
+FOR EACH ROW
+EXECUTE FUNCTION update_finished_goods_stock();
+
+-- Enable RLS
+ALTER TABLE finished_goods ENABLE ROW LEVEL SECURITY;
+ALTER TABLE finished_goods_ledger ENABLE ROW LEVEL SECURITY;
+
+-- Allow public or authenticated access policies
+CREATE POLICY "Enable all access for finished_goods" ON finished_goods
+    FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Enable all access for finished_goods_ledger" ON finished_goods_ledger
+    FOR ALL USING (true) WITH CHECK (true);

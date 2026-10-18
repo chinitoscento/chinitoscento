@@ -1,0 +1,61 @@
+-- 1. Create sales_returns table if it does not exist
+CREATE TABLE IF NOT EXISTS sales_returns (
+    id SERIAL PRIMARY KEY,
+    sr_code TEXT UNIQUE,
+    so_number TEXT,
+    customer_id TEXT,
+    customer_name TEXT,
+    return_date DATE,
+    product_code TEXT,
+    product_name TEXT,
+    qty_returned NUMERIC(12, 2) DEFAULT 0,
+    reason TEXT,
+    total_amount NUMERIC(12, 2) DEFAULT 0,
+    status TEXT DEFAULT 'PENDING FOR APPROVAL',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Ensure all required columns exist in sales_returns if table already existed
+DO $$ 
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='sr_code') THEN
+        ALTER TABLE sales_returns ADD COLUMN sr_code TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='so_number') THEN
+        ALTER TABLE sales_returns ADD COLUMN so_number TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='customer_id') THEN
+        ALTER TABLE sales_returns ADD COLUMN customer_id TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='customer_name') THEN
+        ALTER TABLE sales_returns ADD COLUMN customer_name TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='return_date') THEN
+        ALTER TABLE sales_returns ADD COLUMN return_date DATE;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='product_code') THEN
+        ALTER TABLE sales_returns ADD COLUMN product_code TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='product_name') THEN
+        ALTER TABLE sales_returns ADD COLUMN product_name TEXT;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='qty_returned') THEN
+        ALTER TABLE sales_returns ADD COLUMN qty_returned NUMERIC(12, 2) DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='reason') THEN
+        ALTER TABLE sales_returns ADD COLUMN reason TEXT;
+    END IF;
+    -- Drop old 'items' column if it exists from previous structure
+    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='items') THEN
+        ALTER TABLE sales_returns DROP COLUMN items;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='total_amount') THEN
+        ALTER TABLE sales_returns ADD COLUMN total_amount NUMERIC(12, 2) DEFAULT 0;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='status') THEN
+        ALTER TABLE sales_returns ADD COLUMN status TEXT DEFAULT 'PENDING FOR APPROVAL';
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='sales_returns' AND column_name='created_at') THEN
+        ALTER TABLE sales_returns ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW();
+    END IF;
+END $$;

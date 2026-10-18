@@ -12,41 +12,293 @@ const parseVolumeInMl = (volumeStr) => {
   return num; // Default to given number (assumed mL or unit multiplier)
 };
 
+// Helper function to get ordinal suffix for dates (e.g., 5 -> 5th, 18 -> 18th)
+const getOrdinalSuffix = (day) => {
+  if (day > 3 && day < 21) return 'th';
+  switch (day % 10) {
+    case 1: return 'st';
+    case 2: return 'nd';
+    case 3: return 'rd';
+    default: return 'th';
+  }
+};
+
+// Helper function to compute transaction status badge configuration based on balance_due and total_amount_due
+const getTransactionStatus = (balanceDue, totalDue) => {
+  const bal = Number(balanceDue) || 0;
+  const tot = Number(totalDue) || 0;
+
+  if (bal === 0) {
+    return { text: 'PAID', color: '#5cb85c' }; // Green
+  } else if (bal === tot) {
+    return { text: 'UNPAID', color: '#d9534f' }; // Red / Coral
+  } else if (bal < tot && bal > 0) {
+    return { text: 'PARTIALLY PAID', color: '#f0ad4e' }; // Yellow / Orange
+  }
+  return { text: 'UNPAID', color: '#d9534f' };
+};
+
+// --- DARK LUXURY THEME STYLES (Scaled Fonts 1.5x) ---
+const styles = {
+  container: {
+    padding: '30px',
+    backgroundColor: '#121212',
+    color: '#e0e0e0',
+    minHeight: '100vh',
+    fontFamily: 'Inter, sans-serif',
+    fontSize: '18px',
+  },
+  headerBlockWithBtn: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '30px',
+    borderBottom: '1px solid #2a2a2a',
+    paddingBottom: '20px',
+  },
+  pageTitle: {
+    fontSize: '30px',
+    fontWeight: '700',
+    color: '#c5a059',
+    margin: '0 0 8px 0',
+  },
+  subText: {
+    fontSize: '21px',
+    color: '#a0a0a0',
+    margin: 0,
+  },
+  primaryBtn: {
+    backgroundColor: '#c5a059',
+    color: '#121212',
+    border: 'none',
+    padding: '15px 24px',
+    fontSize: '21px',
+    fontWeight: 'bold',
+    borderRadius: '6px',
+    cursor: 'pointer',
+    transition: 'background 0.2s',
+  },
+  secondaryBtn: {
+    backgroundColor: '#2a2a2a',
+    color: '#c5a059',
+    border: '1px solid #c5a059',
+    padding: '12px 18px',
+    fontSize: '19px',
+    fontWeight: '600',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  },
+  listHeading: {
+    fontSize: '24px',
+    fontWeight: '600',
+    color: '#ffffff',
+    marginBottom: '15px',
+  },
+  historyTable: {
+    width: '100%',
+    borderCollapse: 'collapse',
+    backgroundColor: '#1a1a1a',
+    borderRadius: '8px',
+    overflow: 'hidden',
+    border: '1px solid #2a2a2a',
+  },
+  trHead: {
+    backgroundColor: '#222222',
+    borderBottom: '2px solid #333333',
+  },
+  thLeft: {
+    textAlign: 'left',
+    padding: '15px',
+    fontSize: '18px',
+    fontWeight: 'bold',
+    color: '#c5a059',
+    textTransform: 'uppercase',
+    letterSpacing: '0.05em',
+  },
+  trBody: {
+    borderBottom: '1px solid #252525',
+  },
+  td: {
+    padding: '15px',
+    fontSize: '19px',
+    color: '#d0d0d0',
+    verticalAlign: 'top',
+    textAlign: 'left',
+  },
+  emptyTd: {
+    textAlign: 'center',
+    padding: '30px',
+    color: '#777',
+    fontStyle: 'italic',
+    fontSize: '19px',
+  },
+  modalOverlay: {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    display: 'flex',
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+    backdropFilter: 'blur(4px)',
+  },
+  modalContentLarge: {
+    backgroundColor: '#181818',
+    borderRadius: '10px',
+    width: '90%',
+    maxWidth: '1200px',
+    maxHeight: '90vh',
+    overflowY: 'auto',
+    border: '1px solid #333',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+  },
+  modalHeader: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: '20px 30px',
+    borderBottom: '1px solid #2a2a2a',
+    backgroundColor: '#1f1f1f',
+  },
+  modalTitle: {
+    fontSize: '27px',
+    color: '#c5a059',
+    margin: 0,
+    fontWeight: '600',
+  },
+  closeBtnIcon: {
+    background: 'none',
+    border: 'none',
+    color: '#aaa',
+    fontSize: '27px',
+    cursor: 'pointer',
+  },
+  formCard: {
+    padding: '30px',
+  },
+  gridThree: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(3, 1fr)',
+    gap: '20px',
+    marginBottom: '20px',
+  },
+  gridTwo: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(2, 1fr)',
+    gap: '20px',
+  },
+  twoColumnGrid: {
+    display: 'grid',
+    gridTemplateColumns: '1fr 1fr',
+    gap: '30px',
+    marginTop: '20px',
+  },
+  leftColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '20px',
+  },
+  sectionBox: {
+    backgroundColor: '#1f1f1f',
+    padding: '20px',
+    borderRadius: '8px',
+    border: '1px solid #2a2a2a',
+  },
+  sectionHeading: {
+    fontSize: '22px',
+    color: '#c5a059',
+    marginTop: 0,
+    marginBottom: '15px',
+    borderBottom: '1px solid #2a2a2a',
+    paddingBottom: '8px',
+  },
+  inputGroup: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '8px',
+  },
+  label: {
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#b0b0b0',
+    textTransform: 'uppercase',
+    letterSpacing: '0.04em',
+  },
+  input: {
+    backgroundColor: '#121212',
+    border: '1px solid #333',
+    borderRadius: '6px',
+    padding: '14px',
+    color: '#ffffff',
+    fontSize: '19px',
+    outline: 'none',
+    width: '100%',
+    boxSizing: 'border-box',
+  },
+  helperText: {
+    fontSize: '15px',
+    color: '#a0a0a0',
+    marginTop: '4px',
+  },
+  btnRowRight: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    marginTop: '15px',
+  },
+  modalFooter: {
+    display: 'flex',
+    justifyContent: 'flex-end',
+    gap: '15px',
+    padding: '20px 30px',
+    borderTop: '1px solid #2a2a2a',
+    backgroundColor: '#1f1f1f',
+    marginTop: '20px',
+  },
+  cancelBtn: {
+    backgroundColor: 'transparent',
+    color: '#a0a0a0',
+    border: '1px solid #444',
+    padding: '12px 18px',
+    fontSize: '19px',
+    borderRadius: '6px',
+    cursor: 'pointer',
+  }
+};
+
 export default function Purchases() {
-  // --- STATE FOR FORM FIELDS ---
   const [suppliers, setSuppliers] = useState([]);
   const [rawCatalogue, setRawCatalogue] = useState([]);
   
   const [selectedSupplier, setSelectedSupplier] = useState('');
+  const [invoiceReference, setInvoiceReference] = useState(''); 
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [currentRefId, setCurrentRefId] = useState('');
   
-  // Item entry state
-  const [purchaseType, setPurchaseType] = useState('COGS'); // 'COGS' or 'OPEX'
-  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); // Stores strict Raw Material ID or Code
-  const [opexDescription, setOpexDescription] = useState('');
-  const [containerVolume, setContainerVolume] = useState(''); // Editable container size/volume per batch
+  const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); 
+  const [containerVolume, setContainerVolume] = useState(''); 
   const [quantity, setQuantity] = useState('');
   const [unitCost, setUnitCost] = useState('');
 
-  // List of added items in current transaction
   const [lineItems, setLineItems] = useState([]);
 
-  // Payment terms state
-  const [paymentMode, setPaymentMode] = useState('Cash'); // 'Cash' or 'Credit'
-  const [creditOption, setCreditOption] = useState('One-Time'); // 'One-Time' or 'Installment'
-  const [monthlyAmortization, setMonthlyAmortization] = useState('');
+  const [paymentMode, setPaymentMode] = useState('Cash'); 
+  const [creditOption, setCreditOption] = useState('One-Time'); 
+  const [creditorName, setCreditorName] = useState(''); 
+  
+  const [oneTimeAmountDue, setOneTimeAmountDue] = useState('');
+  const [oneTimeDueDate, setOneTimeDueDate] = useState('');
   const [installmentCount, setInstallmentCount] = useState('');
-  const [totalAmountDueInput, setTotalAmountDueInput] = useState(''); // User encodes total amount due for One-Time credit
+  const [monthlyAmortization, setMonthlyAmortization] = useState('');
+  const [firstDueDate, setFirstDueDate] = useState('');
 
-  // Saved purchases history state
   const [purchaseHistory, setPurchaseHistory] = useState([]);
 
-  // Modal Visibility States
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [submittedModalData, setSubmittedModalData] = useState(null);
   const [loadingData, setLoadingData] = useState(true);
 
-  // Fetch initial data from Supabase on mount
   useEffect(() => {
     fetchInitialData();
   }, []);
@@ -54,7 +306,6 @@ export default function Purchases() {
   const fetchInitialData = async () => {
     setLoadingData(true);
     try {
-      // 1. Fetch Suppliers
       const { data: supData, error: supError } = await supabase
         .from('suppliers')
         .select('*')
@@ -62,14 +313,12 @@ export default function Purchases() {
       if (supError) throw supError;
       setSuppliers(supData || []);
 
-      // 2. Fetch Raw Materials Catalogue
       const { data: catData, error: catError } = await supabase
         .from('raw_materials_catalogue')
         .select('*');
       if (catError) throw catError;
       setRawCatalogue(catData || []);
 
-      // 3. Fetch Purchase History with nested line items
       const { data: purchData, error: purchError } = await supabase
         .from('purchase_transactions')
         .select(`
@@ -80,20 +329,21 @@ export default function Purchases() {
       
       if (purchError) throw purchError;
 
-      // Map snake_case database schema back cleanly to UI state objects if necessary
       const formattedHistory = (purchData || []).map(p => ({
         id: p.ref_id,
         supplier: p.supplier_name,
+        invoiceReference: p.invoice_reference || '', 
         date: p.transaction_date,
         paymentMode: p.payment_mode,
         creditOption: p.credit_option,
+        creditorName: p.creditor_name || '',
         monthlyAmortization: p.monthly_amortization,
         installmentCount: p.installment_count,
-        totalAmountDueInput: p.total_amount_due_input,
         totalPurchaseAmount: p.total_purchase_amount,
         computedInterest: p.computed_interest,
         computedRate: p.computed_rate,
         totalAmountDue: p.total_amount_due,
+        balanceDue: p.balance_due ?? (p.payment_mode === 'Cash' ? 0 : p.total_amount_due),
         items: (p.purchase_line_items || []).map(li => ({
           id: li.id,
           type: li.type,
@@ -114,21 +364,88 @@ export default function Purchases() {
     }
   };
 
-  // Generate next sequence reference ID from existing state or database count
-  const getNextRefId = () => {
-    if (!purchaseHistory || purchaseHistory.length === 0) return 'PUR-000001';
-    let maxNum = 0;
-    purchaseHistory.forEach(item => {
-      if (item.id && item.id.startsWith('PUR-')) {
-        const num = parseInt(item.id.replace('PUR-', ''), 10);
-        if (!isNaN(num) && num > maxNum) maxNum = num;
-      }
-    });
-    const next = Math.max(purchaseHistory.length, maxNum) + 1;
-    return `PUR-${String(next).padStart(6, '0')}`;
+  
+  // Helper function to generate the next Journal Entry number cleanly
+  const getNextJeNumber = async () => {
+    const { data } = await supabase
+      .from('journal_entries')
+      .select('je_number');
+
+    let maxSeq = 0;
+    if (data && data.length > 0) {
+      data.forEach(item => {
+        if (item.je_number) {
+          const match = item.je_number.match(/(\d{6})$/);
+          if (match) {
+            const seqNum = parseInt(match[1], 10);
+            if (!isNaN(seqNum) && seqNum > maxSeq) {
+              maxSeq = seqNum;
+            }
+          }
+        }
+      });
+    }
+
+    const nextSeq = maxSeq + 1;
+    
+    // Extract year and month cleanly from transactionDate (e.g. "2026-07-02")
+    const dateParts = transactionDate ? transactionDate.split('-') : [];
+    const year = dateParts[0] || new Date().getFullYear();
+    const month = dateParts[1] || String(new Date().getMonth() + 1).padStart(2, '0');
+    
+    // Assembled strictly once
+    return `JE-PUR-${year}${month}${String(nextSeq).padStart(6, '0')}`;
   };
 
-  // When catalogue selection changes, auto-populate container volume if available
+  // Updated to generate ref ID starting with PUR-
+  const getNextRefId = async () => {
+    const { data, error } = await supabase
+      .from('purchase_transactions')
+      .select('ref_id')
+      .order('created_at', { ascending: false });
+
+    let maxSeq = 0;
+    
+    if (data && data.length > 0) {
+      data.forEach(item => {
+        if (item.ref_id) {
+          const match = item.ref_id.match(/PUR-\d{6}(\d+)/) || item.ref_id.match(/(\d+)$/);
+          if (match) {
+            const seqNum = parseInt(match[1], 10);
+            if (!isNaN(seqNum) && seqNum > maxSeq) {
+              maxSeq = seqNum;
+            }
+          }
+        }
+      });
+    }
+
+    purchaseHistory.forEach(item => {
+      if (item.id) {
+        const match = item.id.match(/PUR-\d{6}(\d+)/) || item.id.match(/(\d+)$/);
+        if (match) {
+          const seqNum = parseInt(match[1], 10);
+          if (!isNaN(seqNum) && seqNum > maxSeq) {
+            maxSeq = seqNum;
+          }
+        }
+      }
+    });
+
+    const nextSeq = maxSeq + 1;
+    const dateObj = transactionDate ? new Date(transactionDate) : new Date();
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    
+    return `PUR-${year}${month}${String(nextSeq).padStart(6, '0')}`;
+  };
+
+  const handleOpenModal = async () => {
+    const newId = await getNextRefId();
+    setCurrentRefId(newId);
+    setIsAddModalOpen(true);
+  };
+
   const handleCatalogueChange = (e) => {
     const itemId = e.target.value;
     setSelectedCatalogueItem(itemId);
@@ -144,15 +461,10 @@ export default function Purchases() {
     }
   };
 
-  // Handle adding an item to the current transaction list
   const handleAddItem = (e) => {
     e.preventDefault();
-    if (purchaseType === 'COGS' && !selectedCatalogueItem) {
+    if (!selectedCatalogueItem) {
       alert('Please select an item from the Raw Materials Catalogue.');
-      return;
-    }
-    if (purchaseType === 'OPEX' && !opexDescription.trim()) {
-      alert('Please enter an OPEX description.');
       return;
     }
     if (!quantity || !unitCost) {
@@ -160,20 +472,10 @@ export default function Purchases() {
       return;
     }
 
-    let itemCode = '';
-    let itemName = '';
-    let parsedVolumeStr = '1';
-
-    if (purchaseType === 'COGS') {
-      const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
-      itemCode = selectedCatalogueItem; 
-      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
-      parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || foundCat?.volume_size || '1');
-    } else {
-      itemName = opexDescription.trim();
-      itemCode = 'OPEX';
-      parsedVolumeStr = '1';
-    }
+    const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
+    const itemCode = selectedCatalogueItem; 
+    const itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
+    const parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || foundCat?.volume_size || '1');
 
     const qtyNum = Number(quantity);
     const costNum = Number(unitCost);
@@ -181,7 +483,7 @@ export default function Purchases() {
 
     const newItem = {
       id: Date.now() + Math.random(),
-      type: purchaseType,
+      type: 'RM',
       code: itemCode, 
       name: itemName,
       containerVolume: parsedVolumeStr,
@@ -191,10 +493,7 @@ export default function Purchases() {
     };
 
     setLineItems(prev => [...prev, newItem]);
-
-    // Reset item inputs
     setSelectedCatalogueItem('');
-    setOpexDescription('');
     setContainerVolume('');
     setQuantity('');
     setUnitCost('');
@@ -204,7 +503,6 @@ export default function Purchases() {
     setLineItems(prev => prev.filter(item => item.id !== id));
   };
 
-  // --- CALCULATIONS ---
   const totalPurchaseAmount = lineItems.reduce((acc, item) => acc + item.total, 0);
 
   let computedInterest = 0;
@@ -212,31 +510,36 @@ export default function Purchases() {
   let totalAmountDue = totalPurchaseAmount;
 
   if (paymentMode === 'Credit') {
-    if (creditOption === 'Installment') {
-      const amort = Number(monthlyAmortization) || 0;
+    if (creditOption === 'One-Time') {
+      const dueInput = Number(oneTimeAmountDue) || 0;
+      if (dueInput > 0) {
+        totalAmountDue = dueInput;
+        if (totalAmountDue > totalPurchaseAmount) {
+          computedInterest = totalAmountDue - totalPurchaseAmount;
+          computedRate = totalPurchaseAmount > 0 ? (computedInterest / totalPurchaseAmount) * 100 : 0;
+        }
+      }
+    } else if (creditOption === 'Installment') {
       const count = Number(installmentCount) || 0;
-      const totalInstallmentPayable = amort * count;
+      const amort = Number(monthlyAmortization) || 0;
+      const totalInstallmentPayable = count * amort;
 
       if (totalInstallmentPayable > totalPurchaseAmount) {
         computedInterest = totalInstallmentPayable - totalPurchaseAmount;
         computedRate = totalPurchaseAmount > 0 ? (computedInterest / totalPurchaseAmount) * 100 : 0;
       }
       totalAmountDue = totalInstallmentPayable > 0 ? totalInstallmentPayable : totalPurchaseAmount;
-    } else if (creditOption === 'One-Time') {
-      const customDue = Number(totalAmountDueInput);
-      if (customDue > 0) {
-        totalAmountDue = customDue;
-        if (customDue > totalPurchaseAmount) {
-          computedInterest = customDue - totalPurchaseAmount;
-          computedRate = totalPurchaseAmount > 0 ? (computedInterest / totalPurchaseAmount) * 100 : 0;
-        }
-      } else {
-        totalAmountDue = totalPurchaseAmount;
-      }
     }
   }
 
-  // Handle final submission of transaction to Supabase
+  const getSucceedingInstallmentText = () => {
+    if (!firstDueDate) return 'Succeeding instalment due date is every ___';
+    const dateObj = new Date(firstDueDate);
+    if (isNaN(dateObj.getTime())) return 'Succeeding instalment due date is every ___';
+    const dayNum = dateObj.getDate();
+    return `Succeeding instalment due date is every ${dayNum}${getOrdinalSuffix(dayNum)} of the month`;
+  };
+
   const handleSubmitTransaction = async (e) => {
     e.preventDefault();
     if (!selectedSupplier) {
@@ -244,29 +547,38 @@ export default function Purchases() {
       return;
     }
     if (lineItems.length === 0) {
-      alert('Please add at least one item or expense to the purchase list.');
+      alert('Please add at least one item to the purchase list.');
+      return;
+    }
+    if (paymentMode === 'Credit' && !creditorName.trim()) {
+      alert('Please enter the creditor name for credit transactions.');
       return;
     }
 
-    const newRefId = getNextRefId();
+    const newRefId = currentRefId || (await getNextRefId());
+    const initialBalanceDue = paymentMode === 'Cash' ? 0 : totalAmountDue;
+    const initialPaymentStatus = paymentMode === 'Cash' ? 'PAID' : 'UNPAID';
 
     const transactionPayload = {
       ref_id: newRefId,
       supplier_name: selectedSupplier,
+      invoice_reference: invoiceReference.trim() || null,
       transaction_date: transactionDate,
       payment_mode: paymentMode,
       credit_option: paymentMode === 'Credit' ? creditOption : 'N/A',
+      creditor_name: paymentMode === 'Credit' ? creditorName.trim() : null,
       monthly_amortization: paymentMode === 'Credit' && creditOption === 'Installment' ? Number(monthlyAmortization) || null : null,
       installment_count: paymentMode === 'Credit' && creditOption === 'Installment' ? Number(installmentCount) || null : null,
-      total_amount_due_input: paymentMode === 'Credit' && creditOption === 'One-Time' ? Number(totalAmountDueInput) || null : null,
+      first_due_date: paymentMode === 'Credit' ? (creditOption === 'One-Time' ? oneTimeDueDate || null : firstDueDate || null) : null,
       total_purchase_amount: totalPurchaseAmount,
       computed_interest: computedInterest,
       computed_rate: computedRate,
-      total_amount_due: totalAmountDue
+      total_amount_due: totalAmountDue,
+      balance_due: initialBalanceDue,
+      payment_status: initialPaymentStatus
     };
 
     try {
-      // 1. Insert Transaction Header
       const { data: insertedHeader, error: headerError } = await supabase
         .from('purchase_transactions')
         .insert([transactionPayload])
@@ -275,7 +587,6 @@ export default function Purchases() {
 
       if (headerError) throw headerError;
 
-      // 2. Prepare & Insert Line Items
       const lineItemsPayload = lineItems.map(item => ({
         transaction_id: insertedHeader.id,
         type: item.type,
@@ -293,7 +604,72 @@ export default function Purchases() {
 
       if (linesError) throw linesError;
 
-      // 3. Update Inventory Stock Quantities in Supabase
+      // Automatically generate unified Journal Entry number by querying the journal_entries table
+      const jeNumber = await getNextJeNumber();
+      
+      const itemsStr = lineItems.map(i => `${i.code ? `[${i.code}] ` : ''}${i.name}${i.containerVolume ? ` (${i.containerVolume})` : ''} (${i.quantity} x ₱${i.unitCost})`).join(', ');
+      const supplierRefStr = invoiceReference.trim() ? `${selectedSupplier} (${invoiceReference.trim()})` : selectedSupplier;
+      const termsStr = paymentMode === 'Cash' ? 'Cash' : `Credit ${creditorName} ${creditOption}`;
+      const consolidatedMemo = `Purchase of ${itemsStr} from ${supplierRefStr} ${termsStr}`;
+      
+      // 1. Insert into Journal Entries Header Table
+      const { error: headerJeError } = await supabase
+        .from('journal_entries')
+        .insert([{
+          je_number: jeNumber,
+          date: transactionDate,
+          reference_no: invoiceReference.trim() || null,
+          description: consolidatedMemo,
+          status: 'Posted'
+        }]);
+
+      if (headerJeError) throw headerJeError;
+
+      // 2. Prepare Line Items using consolidated memo and correct Chart of Accounts codes
+      const linesPayload = [
+        {
+          je_number: jeNumber,
+          account_code: '1300', // Matched with Chart of Accounts '1310' (Raw Materials Inventory)
+          description: consolidatedMemo,
+          debit: totalPurchaseAmount,
+          credit: 0
+        }
+      ];
+
+      if (paymentMode === 'Cash') {
+        linesPayload.push({
+          je_number: jeNumber,
+          account_code: '1000', // Matched with Chart of Accounts '1000' (Cash on Hand / Bank)
+          description: consolidatedMemo,
+          debit: 0,
+          credit: totalPurchaseAmount
+        });
+      } else {
+        if (computedInterest > 0) {
+          linesPayload.push({
+            je_number: jeNumber,
+            account_code: '6090', // Matched with Chart of Accounts '6090' (Operating Expenses / Opex)
+            description: consolidatedMemo,
+            debit: computedInterest,
+            credit: 0
+          });
+        }
+        linesPayload.push({
+          je_number: jeNumber,
+          account_code: '2000', // Matched with Chart of Accounts '2000' (Accounts Payable)
+          description: consolidatedMemo,
+          debit: 0,
+          credit: totalAmountDue
+        });
+      }
+
+      // 3. Insert into Journal Entry Line Items Table
+      const { error: linesJeError } = await supabase
+        .from('journal_entry_lines')
+        .insert(linesPayload);
+
+      if (linesJeError) throw linesJeError;
+
       for (const line of lineItems) {
         if (line.type === 'COGS') {
           const catMeta = rawCatalogue.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name || c.raw_material === line.name);
@@ -301,24 +677,36 @@ export default function Purchases() {
           const multiplier = parseVolumeInMl(volumeStr);
           const totalToAdd = Number(line.quantity || 0) * multiplier;
 
-          // Check if item already exists in inventory table
-          const { data: existingInv, error: fetchInvErr } = await supabase
-            .from('inventory')
-            .select('*')
-            .or(`code.eq.${line.code},raw_material.eq.${line.name}`)
-            .maybeSingle();
-
-          if (fetchInvErr) console.error('Error checking inventory:', fetchInvErr);
+          let existingInv = null;
+          if (line.code) {
+            const { data } = await supabase
+              .from('inventory')
+              .select('*')
+              .eq('code', line.code)
+              .maybeSingle();
+            existingInv = data;
+          }
+          if (!existingInv && line.name) {
+            const { data } = await supabase
+              .from('inventory')
+              .select('*')
+              .eq('raw_material', line.name)
+              .maybeSingle();
+            existingInv = data;
+          }
 
           if (existingInv) {
-            // Update existing stock quantity
-            const updatedStock = Number(existingInv.stockQty || existingInv.stock_qty || 0) + totalToAdd;
+            const currentStock = Number(existingInv.stockQty ?? existingInv.stock_qty ?? 0);
+            const updatedStock = currentStock + totalToAdd;
+            const updatePayload = {};
+            if ('stockQty' in existingInv) updatePayload.stockQty = updatedStock;
+            if ('stock_qty' in existingInv) updatePayload.stock_qty = updatedStock;
+
             await supabase
               .from('inventory')
-              .update({ stockQty: updatedStock, stock_qty: updatedStock })
+              .update(updatePayload)
               .eq('id', existingInv.id);
           } else {
-            // Insert new inventory record
             const newInvItem = {
               code: line.code,
               raw_material: line.name,
@@ -337,29 +725,33 @@ export default function Purchases() {
       const transactionRecord = {
         id: newRefId,
         supplier: selectedSupplier,
+        invoiceReference: invoiceReference.trim(),
         date: transactionDate,
         paymentMode,
         creditOption: paymentMode === 'Credit' ? creditOption : 'N/A',
+        creditorName: paymentMode === 'Credit' ? creditorName.trim() : '',
         monthlyAmortization: paymentMode === 'Credit' && creditOption === 'Installment' ? monthlyAmortization : null,
         installmentCount: paymentMode === 'Credit' && creditOption === 'Installment' ? installmentCount : null,
-        totalAmountDueInput: paymentMode === 'Credit' && creditOption === 'One-Time' ? totalAmountDueInput : null,
         items: lineItems,
         totalPurchaseAmount,
         computedInterest,
         computedRate,
-        totalAmountDue
+        totalAmountDue,
+        balanceDue: initialBalanceDue
       };
 
       setPurchaseHistory(prev => [transactionRecord, ...prev]);
       setIsAddModalOpen(false);
-      setSubmittedModalData(transactionRecord);
 
-      // Reset Form State
       setLineItems([]);
       setSelectedSupplier('');
-      setMonthlyAmortization('');
+      setInvoiceReference('');
+      setCreditorName('');
+      setOneTimeAmountDue('');
+      setOneTimeDueDate('');
       setInstallmentCount('');
-      setTotalAmountDueInput('');
+      setMonthlyAmortization('');
+      setFirstDueDate('');
     } catch (err) {
       console.error('Error saving transaction to Supabase:', err.message);
       alert('Failed to save purchase transaction: ' + err.message);
@@ -370,99 +762,120 @@ export default function Purchases() {
     <div style={styles.container}>
       <div style={styles.headerBlockWithBtn}>
         <div>
-          <h2 style={styles.pageTitle}>Purchases & Expenses Ledger</h2>
-          <p style={styles.subText}>Record raw material acquisitions (COGS) with batch container sizes and operational expenses (OPEX).</p>
+          <h2 style={styles.pageTitle}>Purchases Transactions</h2>
+          <p style={styles.subText}>Record raw material acquisitions</p>
         </div>
-        <button 
-          onClick={() => setIsAddModalOpen(true)} 
-          style={styles.primaryBtn}
-        >
-          + Add Purchase Transaction
+        <button onClick={handleOpenModal} style={styles.primaryBtn}>
+          Add Purchase Transaction
         </button>
       </div>
 
-      {/* Recorded Purchase Transactions History Table */}
       <div style={{ marginTop: '25px' }}>
         <h3 style={styles.listHeading}>Recorded Purchase Transactions History</h3>
         {loadingData ? (
-          <p style={{ color: '#666', fontStyle: 'italic' }}>Loading purchase history from database...</p>
+          <p style={{ color: '#888', fontStyle: 'italic', fontSize: '19px' }}>Loading purchase history from database...</p>
         ) : (
           <table style={styles.historyTable}>
             <colgroup>
-              <col style={{ width: '15%' }} />
+              <col style={{ width: '13%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '13%' }} />
               <col style={{ width: '20%' }} />
-              <col style={{ width: '15%' }} />
-              <col style={{ width: '25%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '13%' }} />
+              <col style={{ width: '12%' }} />
             </colgroup>
             <thead>
               <tr style={styles.trHead}>
                 <th style={styles.thLeft}>Ref / Date</th>
-                <th style={styles.thLeft}>Supplier</th>
+                <th style={styles.thLeft}>Supplier / Invoice Ref</th>
                 <th style={styles.thLeft}>Terms</th>
                 <th style={styles.thLeft}>Items</th>
                 <th style={styles.thLeft}>Total Purchase</th>
                 <th style={styles.thLeft}>Total Amount Due</th>
+                <th style={styles.thLeft}>Status</th>
               </tr>
             </thead>
             <tbody>
               {purchaseHistory.length === 0 ? (
                 <tr>
-                  <td colSpan="6" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
+                  <td colSpan="7" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
                 </tr>
               ) : (
-                purchaseHistory.map(p => (
-                  <tr key={p.id} style={styles.trBody}>
-                    <td style={styles.td}>
-                      <div style={{ fontWeight: 'bold' }}>{p.id}</div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>{p.date}</div>
-                    </td>
-                    <td style={styles.td}><b>{p.supplier}</b></td>
-                    <td style={styles.td}>
-                      <div>{p.paymentMode}</div>
-                      <div style={{ fontSize: '13px', color: '#666' }}>
-                        {p.creditOption === 'Installment' && p.installmentCount
-                          ? `Installment (${p.installmentCount} mos)`
-                          : p.creditOption}
-                      </div>
-                    </td>
-                    <td style={styles.td}>
-                      {p.items && p.items.map((i, idx) => (
-                        <div key={idx} style={{ fontSize: '14px', marginBottom: '4px' }}>
-                          &bull; {i.code && i.code !== 'OPEX' ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
-                          {i.containerVolume ? ` (${i.containerVolume})` : ''} 
-                          {' '}({i.quantity} x ₱{i.unitCost})
+                purchaseHistory.map(p => {
+                  const statusInfo = getTransactionStatus(p.balanceDue, p.totalAmountDue);
+                  return (
+                    <tr key={p.id} style={styles.trBody}>
+                      <td style={styles.td}>
+                        <div style={{ fontWeight: 'bold' }}>{p.id}</div>
+                        <div style={{ fontSize: '16px', color: '#888' }}>{p.date}</div>
+                      </td>
+                      <td style={styles.td}>
+                        <b>{p.supplier}</b>
+                        {p.invoiceReference && (
+                          <div style={{ fontSize: '16px', color: '#5bc0de', marginTop: '2px' }}>
+                            Inv: {p.invoiceReference}
+                          </div>
+                        )}
+                      </td>
+                      <td style={styles.td}>
+                        <div>{p.paymentMode}</div>
+                        {p.paymentMode === 'Credit' && p.creditorName ? (
+                          <div style={{ fontSize: '16px', color: '#c5a059', fontWeight: '600', marginTop: '2px' }}>
+                            {p.creditorName}
+                          </div>
+                        ) : null}
+                        <div style={{ fontSize: '16px', color: '#888', marginTop: '2px' }}>
+                          {p.creditOption === 'Installment' && p.installmentCount
+                            ? `Installment (${p.installmentCount} mos)`
+                            : p.creditOption}
                         </div>
-                      ))}
-                    </td>
-                    <td style={styles.td}>₱{Number(p.totalPurchaseAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                    <td style={styles.td}><strong>₱{Number(p.totalAmountDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
-                  </tr>
-                ))
+                      </td>
+                      <td style={styles.td}>
+                        {p.items && p.items.map((i, idx) => (
+                          <div key={idx} style={{ fontSize: '18px', marginBottom: '4px' }}>
+                            &bull; {i.code ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
+                            {i.containerVolume ? ` (${i.containerVolume})` : ''} 
+                            {' '}({i.quantity} x ₱{i.unitCost})
+                          </div>
+                        ))}
+                      </td>
+                      <td style={styles.td}>₱{Number(p.totalPurchaseAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                      <td style={styles.td}><strong>₱{Number(p.totalAmountDue || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
+                      <td style={styles.td}>
+                        <span style={{
+                          display: 'inline-block',
+                          padding: '6px 10px',
+                          borderRadius: '4px',
+                          fontSize: '15px',
+                          fontWeight: 'bold',
+                          backgroundColor: '#222',
+                          color: statusInfo.color,
+                          border: `1px solid ${statusInfo.color}`,
+                          letterSpacing: '0.03em'
+                        }}>
+                          {statusInfo.text}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
         )}
       </div>
 
-      {/* ADD PURCHASE TRANSACTION MODAL */}
       {isAddModalOpen && (
         <div style={styles.modalOverlay}>
-          <div style={styles.modalContent}>
+          <div style={styles.modalContentLarge}>
             <div style={styles.modalHeader}>
               <h3 style={styles.modalTitle}>New Purchase Transaction Form</h3>
-              <button 
-                onClick={() => setIsAddModalOpen(false)} 
-                style={styles.closeBtnIcon}
-              >
-                ✕
-              </button>
+              <button onClick={() => setIsAddModalOpen(false)} style={styles.closeBtnIcon}>✕</button>
             </div>
 
             <form onSubmit={handleSubmitTransaction} style={styles.formCard}>
-              {/* Supplier & Date selection */}
-              <div style={styles.gridTwo}>
+              <div style={styles.gridThree}>
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Supplier *</label>
                   <select 
@@ -479,38 +892,41 @@ export default function Purchases() {
                     ))}
                   </select>
                 </div>
+
+                <div style={styles.inputGroup}>
+                  <label style={styles.label}>Supplier Invoice Ref</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. INV-2026-9082" 
+                    value={invoiceReference} 
+                    onChange={(e) => setInvoiceReference(e.target.value)} 
+                    style={styles.input}
+                  />
+                </div>
                 
                 <div style={styles.inputGroup}>
                   <label style={styles.label}>Date of Transaction *</label>
                   <input 
                     type="date" 
                     value={transactionDate} 
-                    onChange={(e) => setTransactionDate(e.target.value)} 
+                    onChange={async (e) => {
+                      const newDate = e.target.value;
+                      setTransactionDate(newDate);
+                      const nextId = await getNextRefId();
+                      setCurrentRefId(nextId);
+                    }} 
                     style={styles.input}
                     required 
                   />
                 </div>
               </div>
 
-              {/* Recording Portion */}
-              <div style={styles.sectionBox}>
-                <h4 style={styles.sectionHeading}>Add Purchase Items / Expenses</h4>
-                
-                <div style={styles.gridRowCustom}>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Classification</label>
-                    <select 
-                      value={purchaseType} 
-                      onChange={(e) => setPurchaseType(e.target.value)} 
-                      style={styles.input}
-                    >
-                      <option value="COGS">COGS (Raw Materials)</option>
-                      <option value="OPEX">OPEX (Expense)</option>
-                    </select>
-                  </div>
-
-                  {purchaseType === 'COGS' ? (
-                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
+              <div style={styles.twoColumnGrid}>
+                <div style={styles.leftColumn}>
+                  <div style={styles.sectionBox}>
+                    <h4 style={styles.sectionHeading}>Add Purchase Items</h4>
+                    
+                    <div style={styles.inputGroup}>
                       <label style={styles.label}>Item (Catalogue)</label>
                       <select 
                         value={selectedCatalogueItem} 
@@ -531,207 +947,220 @@ export default function Purchases() {
                         })}
                       </select>
                     </div>
-                  ) : (
-                    <div style={{ ...styles.inputGroup, gridColumn: 'span 2' }}>
-                      <label style={styles.label}>Expense Description</label>
-                      <input 
-                        type="text" 
-                        placeholder="e.g. Utilities, Rent" 
-                        value={opexDescription} 
-                        onChange={(e) => setOpexDescription(e.target.value)} 
-                        style={styles.input}
-                      />
-                    </div>
-                  )}
 
-                  {purchaseType === 'COGS' && (
+                    <div style={styles.gridTwo}>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}>Container Vol / Size</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. 250ml, 1L" 
+                          value={containerVolume} 
+                          onChange={(e) => setContainerVolume(e.target.value)} 
+                          style={styles.input} 
+                        />
+                      </div>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}>Quantity</label>
+                        <input 
+                          type="number" 
+                          placeholder="0" 
+                          value={quantity} 
+                          onChange={(e) => setQuantity(e.target.value)} 
+                          style={styles.input} 
+                        />
+                      </div>
+                    </div>
+
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Container Vol / Size</label>
+                      <label style={styles.label}>Unit Cost (₱)</label>
                       <input 
-                        type="text" 
-                        placeholder="e.g. 250ml, 1L" 
-                        value={containerVolume} 
-                        onChange={(e) => setContainerVolume(e.target.value)} 
+                        type="number" 
+                        step="0.01" 
+                        placeholder="0.00" 
+                        value={unitCost} 
+                        onChange={(e) => setUnitCost(e.target.value)} 
                         style={styles.input} 
                       />
                     </div>
-                  )}
 
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Quantity</label>
-                    <input 
-                      type="number" 
-                      placeholder="0" 
-                      value={quantity} 
-                      onChange={(e) => setQuantity(e.target.value)} 
-                      style={styles.input} 
-                    />
+                    <div style={styles.btnRowRight}>
+                      <button type="button" onClick={handleAddItem} style={styles.secondaryBtn}>
+                        + Add to Item List
+                      </button>
+                    </div>
                   </div>
 
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Unit Cost (₱)</label>
-                    <input 
-                      type="number" 
-                      step="0.01" 
-                      placeholder="0.00" 
-                      value={unitCost} 
-                      onChange={(e) => setUnitCost(e.target.value)} 
-                      style={styles.input} 
-                    />
+                  <div style={styles.sectionBox}>
+                    <h4 style={styles.sectionHeading}>Payment Terms</h4>
+                    
+                    <div style={styles.gridTwo}>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}>Payment Mode</label>
+                        <select 
+                          value={paymentMode} 
+                          onChange={(e) => setPaymentMode(e.target.value)} 
+                          style={styles.input}
+                        >
+                          <option value="Cash">Cash</option>
+                          <option value="Credit">Credit</option>
+                        </select>
+                      </div>
+
+                      {paymentMode === 'Credit' && (
+                        <div style={styles.inputGroup}>
+                          <label style={styles.label}>Credit Type</label>
+                          <select 
+                            value={creditOption} 
+                            onChange={(e) => setCreditOption(e.target.value)} 
+                            style={styles.input}
+                          >
+                            <option value="One-Time">One-Time Pay</option>
+                            <option value="Installment">Installment</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+
+                    {paymentMode === 'Credit' && (
+                      <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                        <label style={styles.label}>Creditor Name *</label>
+                        <input 
+                          type="text" 
+                          placeholder="Enter creditor name" 
+                          value={creditorName} 
+                          onChange={(e) => setCreditorName(e.target.value)} 
+                          style={styles.input}
+                          required
+                        />
+                      </div>
+                    )}
+
+                    {paymentMode === 'Credit' && creditOption === 'One-Time' && (
+                      <div style={{ ...styles.gridTwo, marginTop: '15px' }}>
+                        <div style={styles.inputGroup}>
+                          <label style={styles.label}>Total Amount Due (₱)</label>
+                          <input 
+                            type="number" 
+                            step="0.01" 
+                            placeholder="0.00" 
+                            value={oneTimeAmountDue} 
+                            onChange={(e) => setOneTimeAmountDue(e.target.value)} 
+                            style={styles.input} 
+                          />
+                        </div>
+                        <div style={styles.inputGroup}>
+                          <label style={styles.label}>Due Date</label>
+                          <input 
+                            type="date" 
+                            value={oneTimeDueDate} 
+                            onChange={(e) => setOneTimeDueDate(e.target.value)} 
+                            style={styles.input} 
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {paymentMode === 'Credit' && creditOption === 'Installment' && (
+                      <div style={{ marginTop: '15px' }}>
+                        <div style={styles.gridTwo}>
+                          <div style={styles.inputGroup}>
+                            <label style={styles.label}># of Instalment</label>
+                            <input 
+                              type="number" 
+                              placeholder="e.g. 5" 
+                              value={installmentCount} 
+                              onChange={(e) => setInstallmentCount(e.target.value)} 
+                              style={styles.input} 
+                            />
+                          </div>
+                          <div style={styles.inputGroup}>
+                            <label style={styles.label}>Monthly Amount Due (₱)</label>
+                            <input 
+                              type="number" 
+                              step="0.01" 
+                              placeholder="0.00" 
+                              value={monthlyAmortization} 
+                              onChange={(e) => setMonthlyAmortization(e.target.value)} 
+                              style={styles.input} 
+                            />
+                          </div>
+                        </div>
+
+                        <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                          <label style={styles.label}>First Due Date</label>
+                          <input 
+                            type="date" 
+                            value={firstDueDate} 
+                            onChange={(e) => setFirstDueDate(e.target.value)} 
+                            style={styles.input} 
+                          />
+                          <span style={styles.helperText}>{getSucceedingInstallmentText()}</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                <div style={styles.btnRowRight}>
-                  <button type="button" onClick={handleAddItem} style={styles.secondaryBtn}>
-                    + Add to Item List
-                  </button>
-                </div>
-              </div>
+                <div style={styles.sectionBox}>
+                  <h4 style={styles.sectionHeading}>Current Transaction Summary</h4>
+                  <div style={{ fontSize: '18px', color: '#888', marginBottom: '15px' }}>
+                    Ref ID: <strong style={{ color: '#c5a059' }}>{currentRefId || 'Generating...'}</strong>
+                  </div>
 
-              {/* Added Items List Form */}
-              <div>
-                <h4 style={styles.listHeading}>Added Items / Expenses List</h4>
-                <table style={styles.table}>
-                  <thead>
-                    <tr style={styles.trHead}>
-                      <th style={styles.thLeft}>Type</th>
-                      <th style={styles.thLeft}>ID / Item Name</th>
-                      <th style={styles.thLeft}>Size/Vol</th>
-                      <th style={styles.thLeft}>Quantity</th>
-                      <th style={styles.thLeft}>Unit Cost</th>
-                      <th style={styles.thLeft}>Total Amount</th>
-                      <th style={styles.thLeft}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
+                  <h5 style={{ fontSize: '18px', color: '#ffffff', marginBottom: '10px' }}>
+                    Line Items ({lineItems.length})
+                  </h5>
+
+                  <div style={{ maxHeight: '250px', overflowY: 'auto', marginBottom: '15px', border: '1px solid #2a2a2a', borderRadius: '6px', backgroundColor: '#161616', padding: '10px' }}>
                     {lineItems.length === 0 ? (
-                      <tr>
-                        <td colSpan="7" style={styles.emptyTd}>No items added yet. Complete the fields above.</td>
-                      </tr>
+                      <p style={{ color: '#777', fontStyle: 'italic', textAlign: 'center', padding: '20px' }}>No items added yet.</p>
                     ) : (
-                      lineItems.map(item => (
-                        <tr key={item.id} style={styles.trBody}>
-                          <td style={styles.td}>
-                            <span style={item.type === 'COGS' ? styles.cogsBadge : styles.opexBadge}>
-                              {item.type}
-                            </span>
-                          </td>
-                          <td style={styles.td}>
-                            {item.code && item.code !== 'OPEX' ? <span style={{ fontSize: '12px', fontWeight: 'bold', color: '#c5a059', marginRight: '6px' }}>[{item.code}]</span> : null}
-                            <b>{item.name}</b>
-                          </td>
-                          <td style={styles.td}>{item.containerVolume || '-'}</td>
-                          <td style={styles.td}>{item.quantity.toLocaleString()}</td>
-                          <td style={styles.td}>₱{item.unitCost.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
-                          <td style={styles.td}><strong>₱{item.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong></td>
-                          <td style={styles.td}>
-                            <button type="button" onClick={() => handleRemoveLineItem(item.id)} style={styles.removeBtn}>Remove</button>
-                          </td>
-                        </tr>
+                      lineItems.map((li) => (
+                        <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222', padding: '10px 0' }}>
+                          <div>
+                            <div style={{ fontWeight: 'bold' }}>{li.code ? `[${li.code}] ` : ''}{li.name}</div>
+                            <div style={{ fontSize: '16px', color: '#888' }}>
+                              {li.quantity} {li.containerVolume ? `(${li.containerVolume})` : ''} @ ₱{li.unitCost}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#c5a059' }}>₱{li.total.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                            <button type="button" onClick={() => handleRemoveLineItem(li.id)} style={{ background: 'none', border: 'none', color: '#d9534f', fontSize: '18px', cursor: 'pointer' }}>✕</button>
+                          </div>
+                        </div>
                       ))
                     )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Payment Terms Section */}
-              <div style={styles.sectionBox}>
-                <h4 style={styles.sectionHeading}>Payment Terms</h4>
-                
-                <div style={styles.gridTwo}>
-                  <div style={styles.inputGroup}>
-                    <label style={styles.label}>Payment Mode</label>
-                    <select 
-                      value={paymentMode} 
-                      onChange={(e) => setPaymentMode(e.target.value)} 
-                      style={styles.input}
-                    >
-                      <option value="Cash">Cash</option>
-                      <option value="Credit">Credit</option>
-                    </select>
                   </div>
 
-                  {paymentMode === 'Credit' && (
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Credit Type</label>
-                      <select 
-                        value={creditOption} 
-                        onChange={(e) => setCreditOption(e.target.value)} 
-                        style={styles.input}
-                      >
-                        <option value="One-Time">One-Time Pay</option>
-                        <option value="Installment">Installment</option>
-                      </select>
+                  <div style={{ backgroundColor: '#151515', padding: '20px', borderRadius: '6px', border: '1px solid #333' }}>
+                    <div style={{ fontSize: '15px', color: '#888', fontWeight: 'bold' }}>TOTAL PURCHASE AMOUNT</div>
+                    <div style={{ fontSize: '27px', fontWeight: 'bold', color: '#ffffff', marginTop: '4px' }}>
+                      ₱{totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
                     </div>
-                  )}
-                </div>
 
-                {paymentMode === 'Credit' && creditOption === 'Installment' && (
-                  <div style={{ ...styles.gridTwo, marginTop: '15px' }}>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Monthly Amortization Due (₱)</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        placeholder="0.00" 
-                        value={monthlyAmortization} 
-                        onChange={(e) => setMonthlyAmortization(e.target.value)} 
-                        style={styles.input} 
-                      />
-                    </div>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Number of Installments (Months)</label>
-                      <input 
-                        type="number" 
-                        placeholder="0" 
-                        value={installmentCount} 
-                        onChange={(e) => setInstallmentCount(e.target.value)} 
-                        style={styles.input} 
-                      />
+                    {paymentMode === 'Credit' && computedInterest > 0 && (
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px', fontSize: '16px', color: '#c5a059' }}>
+                        <span>Computed Interest Expense ({computedRate.toFixed(1)}%):</span>
+                        <span>+₱{computedInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '15px', paddingTop: '12px', borderTop: '1px dashed #333' }}>
+                      <span style={{ fontSize: '18px', fontWeight: 'bold', color: '#b0b0b0' }}>Final Amount Due (Payable):</span>
+                      <span style={{ fontSize: '24px', fontWeight: 'bold', color: '#c5a059' }}>
+                        ₱{totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                      </span>
                     </div>
                   </div>
-                )}
-
-                {paymentMode === 'Credit' && creditOption === 'One-Time' && (
-                  <div style={{ marginTop: '15px' }}>
-                    <div style={styles.inputGroup}>
-                      <label style={styles.label}>Total Amount Due (₱)</label>
-                      <input 
-                        type="number" 
-                        step="0.01" 
-                        placeholder="0.00" 
-                        value={totalAmountDueInput} 
-                        onChange={(e) => setTotalAmountDueInput(e.target.value)} 
-                        style={styles.input} 
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Summary Card */}
-              <div style={styles.summaryCard}>
-                <div>
-                  <div style={styles.summaryLabel}>TOTAL PURCHASE AMOUNT</div>
-                  <div style={styles.summaryMainVal}>₱{totalPurchaseAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
-                  {paymentMode === 'Credit' && (
-                    <div style={styles.summarySubText}>
-                      Computed Interest: ₱{computedInterest.toLocaleString(undefined, { minimumFractionDigits: 2 })} ({computedRate.toFixed(2)}%)
-                    </div>
-                  )}
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={styles.summaryLabel}>TOTAL AMOUNT DUE</div>
-                  <div style={styles.summaryDueVal}>₱{totalAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</div>
                 </div>
               </div>
 
-              <div style={styles.modalFooterActions}>
+              <div style={styles.modalFooter}>
                 <button type="button" onClick={() => setIsAddModalOpen(false)} style={styles.cancelBtn}>
                   Cancel
                 </button>
                 <button type="submit" style={styles.primaryBtn}>
-                  Save Purchase Transaction
+                  Save & Record Transaction
                 </button>
               </div>
             </form>
@@ -741,49 +1170,3 @@ export default function Purchases() {
     </div>
   );
 }
-
-// Inline styles for basic UI safety
-const styles = {
-  container: { padding: '20px', fontFamily: 'sans-serif', color: '#333' },
-  headerBlockWithBtn: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
-  pageTitle: { margin: 0, fontSize: '24px' },
-  subText: { margin: '5px 0 0', color: '#666', fontSize: '14px' },
-  primaryBtn: { backgroundColor: '#c5a059', color: '#fff', border: 'none', padding: '10px 18px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' },
-  secondaryBtn: { backgroundColor: '#444', color: '#fff', border: 'none', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer' },
-  cancelBtn: { backgroundColor: '#ccc', color: '#333', border: 'none', padding: '10px 18px', borderRadius: '4px', cursor: 'pointer' },
-  removeBtn: { backgroundColor: '#d9534f', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '3px', cursor: 'pointer', fontSize: '12px' },
-  listHeading: { fontSize: '18px', marginTop: '10px', marginBottom: '10px' },
-  historyTable: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.1)' },
-  table: { width: '100%', borderCollapse: 'collapse', backgroundColor: '#fff' },
-  trHead: { backgroundColor: '#f9f9f9', borderBottom: '2px solid #ddd' },
-  thLeft: { textAlign: 'left', padding: '12px', fontSize: '13px', color: '#444', fontWeight: 'bold' },
-  trBody: { borderBottom: '1px solid #eee' },
-  td: { padding: '12px', fontSize: '14px', verticalAlign: 'top', textAlign: 'left' },
-  emptyTd: { padding: '20px', textAlign: 'center', color: '#777', fontStyle: 'italic' },
-  
-  // Modal & Form styles
-  modalOverlay: { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '20px' },
-  modalContent: { backgroundColor: '#fff', borderRadius: '6px', width: '100%', maxWidth: '800px', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,0.15)' },
-  modalHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', borderBottom: '1px solid #eee' },
-  modalTitle: { margin: 0, fontSize: '18px' },
-  closeBtnIcon: { background: 'none', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#666' },
-  formCard: { padding: '20px' },
-  gridTwo: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' },
-  gridRowCustom: { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '15px' },
-  inputGroup: { marginBottom: '12px', display: 'flex', flexDirection: 'column' },
-  label: { marginBottom: '5px', fontSize: '13px', fontWeight: 'bold', color: '#444' },
-  input: { padding: '8px 10px', borderRadius: '4px', border: '1px solid #ccc', fontSize: '14px' },
-  sectionBox: { marginTop: '20px', padding: '15px', backgroundColor: '#fcfcfc', border: '1px solid #eaeaea', borderRadius: '4px' },
-  sectionHeading: { margin: '0 0 12px 0', fontSize: '15px', color: '#333' },
-  btnRowRight: { display: 'flex', justifyContent: 'flex-end', marginTop: '10px' },
-  
-  cogsBadge: { backgroundColor: '#e2f0d9', color: '#385723', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-  opexBadge: { backgroundColor: '#fff2cc', color: '#7f6000', padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 'bold' },
-
-  summaryCard: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', padding: '15px', backgroundColor: '#f4f4f4', borderRadius: '4px', border: '1px solid #ddd' },
-  summaryLabel: { fontSize: '11px', color: '#666', fontWeight: 'bold' },
-  summaryMainVal: { fontSize: '18px', fontWeight: 'bold', color: '#333', marginTop: '2px' },
-  summaryDueVal: { fontSize: '20px', fontWeight: 'bold', color: '#c5a059', marginTop: '2px' },
-  summarySubText: { fontSize: '12px', color: '#666', marginTop: '4px' },
-  modalFooterActions: { display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px', paddingTop: '15px', borderTop: '1px solid #eee' }
-};

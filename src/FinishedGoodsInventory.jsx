@@ -6,6 +6,17 @@ export default function FinishedGoodsInventory() {
 
   useEffect(() => {
     loadFinishedGoods();
+
+    const finishedGoodsSubscription = supabase
+      .channel('public:finished_goods')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finished_goods' }, () => {
+        loadFinishedGoods();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(finishedGoodsSubscription);
+    };
   }, []);
 
   const loadFinishedGoods = async () => {
@@ -38,41 +49,62 @@ export default function FinishedGoodsInventory() {
 
       const fgMap = new Map();
 
-      // 1. Include products with 0 stock from masters first as a base structure
+      const resolveProductInfo = (rawName, rawCode) => {
+        let scent = rawName && rawName.trim() !== '' && rawName.toUpperCase() !== 'UNKNOWN' ? rawName.trim() : '';
+        let code = rawCode && rawCode.trim() !== '' ? rawCode.trim() : '';
+
+        if (code && !scent) {
+          const matchedByCode = productsList.find(p => (p.product_code || p.code || p.productCode) === code);
+          if (matchedByCode) {
+            scent = matchedByCode.name || matchedByCode.scent || matchedByCode.item_name || '';
+          }
+        }
+
+        if (scent && !code) {
+          const matchedByName = productsList.find(p => (p.name || p.scent || '').toLowerCase() === scent.toLowerCase());
+          code = matchedByName?.product_code || matchedByName?.code || matchedByName?.productCode || 'CS-GEN-01';
+        }
+
+        return {
+          scent: scent ? scent.toUpperCase() : 'UNKNOWN',
+          productCode: code || 'CS-GEN-01'
+        };
+      };
+
       productsList.forEach(prod => {
         const scent = prod.name || prod.scent || prod.item_name || prod.itemName;
-        const code = prod.code || prod.product_code || prod.productCode || 'CS-GEN-01';
-        const key = (scent || '').toLowerCase();
-        if (scent && !fgMap.has(key)) {
-          fgMap.set(key, {
-            productCode: code,
-            scent: scent.toUpperCase(),
-            availableQty: Number(prod.stock_qty || prod.stockQty || prod.available_qty || prod.availableQty || 0),
-            threshold: prod.threshold || 15
-          });
+        const code = prod.product_code || prod.code || prod.productCode || 'CS-GEN-01';
+        if (scent) {
+          const key = scent.toLowerCase();
+          if (!fgMap.has(key)) {
+            fgMap.set(key, {
+              productCode: code,
+              scent: scent.toUpperCase(),
+              availableQty: Number(prod.stock_qty || prod.stockQty || prod.available_qty || prod.availableQty || 0),
+              threshold: prod.threshold || 15
+            });
+          }
         }
       });
 
-      // 2. Aggregate from packaging list
       packagingList.forEach(pack => {
-        const scent = pack.scent || 'Unknown';
         const actual = Number(pack.actual_qty || pack.actualQty || 0);
-
+        let rawScent = pack.scent;
         let prodCode = pack.product_code || pack.productCode || '';
-        if (!prodCode) {
-          const matchedProd = productionList.find(p => p.scent === scent || p.production_code === pack.mac_code || p.productionCode === pack.macCode);
+
+        if (!prodCode && rawScent) {
+          const matchedProd = productionList.find(p => p.scent === rawScent || p.production_code === pack.mac_code || p.productionCode === pack.macCode);
           prodCode = matchedProd?.product_code || matchedProd?.productCode || '';
         }
-        if (!prodCode) {
-          const matchedMaster = productsList.find(p => (p.name || p.scent || '').toLowerCase() === scent.toLowerCase());
-          prodCode = matchedMaster?.code || matchedMaster?.product_code || matchedMaster?.productCode || 'CS-GEN-01';
-        }
 
-        const key = scent.toLowerCase();
+        const resolved = resolveProductInfo(rawScent, prodCode);
+        if (resolved.scent === 'UNKNOWN') return;
+
+        const key = resolved.scent.toLowerCase();
         if (!fgMap.has(key)) {
           fgMap.set(key, {
-            productCode: prodCode,
-            scent: scent.toUpperCase(),
+            productCode: resolved.productCode,
+            scent: resolved.scent,
             availableQty: 0,
             threshold: 15
           });
@@ -80,52 +112,63 @@ export default function FinishedGoodsInventory() {
 
         const current = fgMap.get(key);
         current.availableQty += actual;
-        if (!current.productCode && prodCode) {
-          current.productCode = prodCode;
+        if (resolved.productCode && (!current.productCode || current.productCode === 'CS-GEN-01')) {
+          current.productCode = resolved.productCode;
         }
       });
 
-      // 3. Ensure approved sales returns are accounted for
       salesReturnsList.forEach(sr => {
         const items = sr.items || [];
         if (Array.isArray(items)) {
           items.forEach(returnItem => {
-            const scent = returnItem.product_name || returnItem.productName || 'Unknown';
-            const code = returnItem.product_id || returnItem.productId || 'CS-GEN-01';
-            const returnQty = Number(returnItem.return_qty || returnItem.returnQty || 0);
-            const key = scent.toLowerCase();
+            const rawScent = returnItem.product_name || returnItem.productName || returnItem.scent;
+            const rawCode = returnItem.product_id || returnItem.productId || returnItem.product_code;
+            const returnQty = Number(returnItem.return_qty || returnItem.returnQty || returnItem.qty || 0);
 
+            const resolved = resolveProductInfo(rawScent, rawCode);
+            if (resolved.scent === 'UNKNOWN') return;
+
+            const key = resolved.scent.toLowerCase();
             if (!fgMap.has(key)) {
               fgMap.set(key, {
-                productCode: code,
-                scent: scent.toUpperCase(),
-                availableQty: returnQty,
+                productCode: resolved.productCode,
+                scent: resolved.scent,
+                availableQty: 0,
                 threshold: 15
               });
             }
+
+            const current = fgMap.get(key);
+            current.availableQty += returnQty;
           });
         }
       });
 
-      // 4. Load from direct finished_goods store LAST to override with authoritative stock values
       directFGList.forEach(fg => {
-        const scent = fg.name || fg.scent || fg.product_name || fg.productName || 'Unknown';
-        const code = fg.code || fg.product_code || fg.productCode || 'CS-GEN-01';
-        const qty = Number(fg.stock_qty || fg.stockQty || fg.available_qty || fg.availableQty || 0);
-        const key = scent.toLowerCase();
+        const rawScent = fg.name || fg.scent || fg.product_name || fg.productName;
+        const rawCode = fg.product_code || fg.code || fg.productCode;
+        const qty = Number(fg.stock_qty || fg.stock || fg.available_qty || fg.availableQty || 0);
+        
+        const resolved = resolveProductInfo(rawScent, rawCode);
+        if (resolved.scent === 'UNKNOWN') return;
 
+        const key = resolved.scent.toLowerCase();
+        
         fgMap.set(key, {
-          productCode: code,
-          scent: scent.toUpperCase(),
+          productCode: resolved.productCode,
+          scent: resolved.scent,
           availableQty: qty,
           threshold: fg.threshold || 15
         });
       });
 
-      // Sort ascending by product code
-      const sortedGoods = Array.from(fgMap.values()).sort((a, b) => 
-        (a.productCode || '').localeCompare(b.productCode || '')
-      );
+      const sortedGoods = Array.from(fgMap.values()).sort((a, b) => {
+        const getSuffixNum = (code) => {
+          const match = (code || '').match(/(\d+)$/);
+          return match ? parseInt(match[1], 10) : 0;
+        };
+        return getSuffixNum(a.productCode) - getSuffixNum(b.productCode);
+      });
 
       setFinishedGoods(sortedGoods);
     } catch (err) {
@@ -134,131 +177,146 @@ export default function FinishedGoodsInventory() {
   };
 
   return (
-    <div style={styles.moduleCard}>
+    <div style={styles.container}>
       <div style={styles.headerBlock}>
         <div>
-          <h2>Finished Goods Inventory</h2>
+          <h2 style={styles.title}>Finished Goods Inventory</h2>
           <p style={styles.subText}>View available packaged perfume stocks ready for sale and monitor inventory alert thresholds.</p>
         </div>
       </div>
 
-      <table style={styles.table}>
-        <thead>
-          <tr style={styles.trHead}>
-            <th style={styles.th}>PRODUCT CODE</th>
-            <th style={styles.th}>SCENT</th>
-            <th style={styles.th}>AVAILABLE QTY</th>
-            <th style={styles.th}>STATUS</th>
-          </tr>
-        </thead>
-        <tbody>
-          {finishedGoods.length === 0 ? (
-            <tr>
-              <td colSpan="4" style={styles.emptyTd}>No finished goods available yet. Complete a packaging run to populate inventory.</td>
+      <div style={styles.tableWrapper}>
+        <table style={styles.table}>
+          <thead>
+            <tr style={styles.trHead}>
+              <th style={styles.th}>PRODUCT CODE</th>
+              <th style={styles.th}>SCENT</th>
+              <th style={styles.th}>AVAILABLE QTY</th>
+              <th style={styles.th}>STATUS</th>
             </tr>
-          ) : (
-            finishedGoods.map((item, idx) => {
-              const isAlert = item.availableQty <= item.threshold;
-              return (
-                <tr key={idx} style={styles.trBody}>
-                  <td style={styles.td}><span style={styles.codeBadge}>{item.productCode}</span></td>
-                  <td style={styles.td}><b>{item.scent}</b></td>
-                  <td style={styles.td}>{item.availableQty.toLocaleString()} units</td>
-                  <td style={styles.td}>
-                    <span style={isAlert ? styles.alertBadge : styles.normalBadge}>
-                      {isAlert ? 'ALERT (Low Stock)' : 'NORMAL'}
-                    </span>
-                  </td>
-                </tr>
-              );
-            })
-          )}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {finishedGoods.length === 0 ? (
+              <tr>
+                <td colSpan="4" style={styles.emptyTd}>No finished goods available yet. Complete a packaging run to populate inventory.</td>
+              </tr>
+            ) : (
+              finishedGoods.map((item, idx) => {
+                const isAlert = item.availableQty <= item.threshold;
+                return (
+                  <tr key={idx} style={styles.trBody}>
+                    <td style={styles.td}><span style={styles.codeBadge}>{item.productCode}</span></td>
+                    <td style={styles.td}><span style={styles.scentText}>{item.scent}</span></td>
+                    <td style={styles.td}>{item.availableQty.toLocaleString()} units</td>
+                    <td style={styles.td}>
+                      <span style={isAlert ? styles.alertBadge : styles.normalBadge}>
+                        {isAlert ? 'ALERT (Low Stock)' : 'Approved'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
 
 const styles = {
-  moduleCard: {
-    backgroundColor: '#ffffff',
-    border: '1px solid #e2ded8',
-    borderRadius: '8px',
+  container: {
+    backgroundColor: '#121212',
+    minHeight: '100vh',
     padding: '30px',
-    boxShadow: '0 4px 15px rgba(0,0,0,0.03)',
-    fontFamily: "'Cormorant Garamond', 'Cinzel', 'Segoe UI', serif",
+    color: '#e5e7eb',
+    fontFamily: "'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
   },
   headerBlock: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottom: '1px solid #eee',
-    paddingBottom: '20px',
-    marginBottom: '20px',
+    marginBottom: '24px',
+  },
+  title: {
+    color: '#fbbf24',
+    fontSize: '33px',
+    fontWeight: 'bold',
+    marginBottom: '6px',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
   },
   subText: {
-    color: '#666',
-    fontSize: '13.5px',
-    marginTop: '6px',
-    marginBottom: 0,
+    color: '#9ca3af',
+    fontSize: '20.25px',
+    margin: 0,
+  },
+  tableWrapper: {
+    backgroundColor: '#18181b',
+    border: '1px solid #27272a',
+    borderRadius: '10px',
+    overflow: 'hidden',
+    boxShadow: '0 4px 20px rgba(0, 0, 0, 0.4)',
   },
   table: {
     width: '100%',
     borderCollapse: 'collapse',
-    fontSize: '13.5px',
+    fontSize: '20.25px',
+    textAlign: 'left',
   },
   trHead: {
-    backgroundColor: '#f9f8f6',
-    borderBottom: '2px solid #e2ded8',
+    backgroundColor: '#1f1f23',
+    borderBottom: '1px solid #27272a',
   },
   th: {
-    padding: '12px 16px',
-    textAlign: 'left',
-    color: '#444',
-    fontFamily: "'Cinzel', serif",
-    fontSize: '12px',
-    letterSpacing: '0.5px',
+    padding: '14px 20px',
+    color: '#9ca3af',
+    fontSize: '17.25px',
+    fontWeight: '600',
+    letterSpacing: '0.8px',
   },
   trBody: {
-    borderBottom: '1px solid #eee',
+    borderBottom: '1px solid #222225',
+    transition: 'background-color 0.2s',
   },
   td: {
-    padding: '14px 16px',
-    color: '#333',
+    padding: '16px 20px',
+    color: '#f3f4f6',
     verticalAlign: 'middle',
-    textAlign: 'left',
+  },
+  scentText: {
+    fontWeight: '600',
+    color: '#ffffff',
   },
   emptyTd: {
     textAlign: 'center',
-    color: '#888',
-    padding: '30px',
+    color: '#71717a',
+    padding: '40px',
     fontStyle: 'italic',
   },
   codeBadge: {
-    fontSize: '11.5px',
-    fontWeight: 'bold',
-    color: '#0369a1',
-    backgroundColor: '#e0f2fe',
-    padding: '2px 6px',
-    borderRadius: '4px',
-    border: '1px solid #bae6fd',
+    fontSize: '18px',
+    fontWeight: '600',
+    color: '#fbbf24',
+    backgroundColor: 'transparent',
+    padding: '0',
   },
   normalBadge: {
-    padding: '4px 10px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 'bold',
-    backgroundColor: '#dcfce7',
-    color: '#166534',
-    letterSpacing: '1px',
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '16.5px',
+    fontWeight: '600',
+    backgroundColor: 'rgba(6, 95, 70, 0.4)',
+    color: '#34d399',
+    border: '1px solid rgba(52, 211, 153, 0.2)',
+    letterSpacing: '0.5px',
   },
   alertBadge: {
-    padding: '4px 10px',
-    borderRadius: '4px',
-    fontSize: '11px',
-    fontWeight: 'bold',
-    backgroundColor: '#fef2f2',
-    color: '#991b1b',
-    letterSpacing: '1px',
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '16.5px',
+    fontWeight: '600',
+    backgroundColor: 'rgba(153, 27, 27, 0.4)',
+    color: '#f87171',
+    border: '1px solid rgba(248, 113, 113, 0.2)',
+    letterSpacing: '0.5px',
   }
 };

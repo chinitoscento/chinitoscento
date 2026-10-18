@@ -1,0 +1,66 @@
+-- 1. Sales Orders Header Table
+CREATE TABLE IF NOT EXISTS sales_orders (
+    id SERIAL PRIMARY KEY,
+    so_number TEXT UNIQUE NOT NULL,
+    customer_name TEXT,
+    address TEXT,
+    contact TEXT,
+    payment_mode TEXT,
+    total_amount NUMERIC(12, 2) DEFAULT 0,
+    status TEXT DEFAULT 'Pending',
+    invoice_status TEXT DEFAULT 'Unpaid',
+    date DATE,
+    due_date DATE,
+    remarks TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 2. Sales Order Line Items Table (Handles both ORDERS and RETURNS)
+CREATE TABLE IF NOT EXISTS sales_order_items (
+    id SERIAL PRIMARY KEY,
+    so_number TEXT REFERENCES sales_orders(so_number) ON DELETE CASCADE,
+    transaction TEXT DEFAULT 'ORDER' CHECK (transaction IN ('ORDER', 'RETURN')),
+    product_code TEXT,
+    sr_reference TEXT,
+    product_name TEXT,
+    quantity INTEGER DEFAULT 1,
+    unit_price NUMERIC(12, 2) DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 3. Function to automatically recalculate and update sales_orders total_amount
+-- ORDER items add to the total, while RETURN items subtract from it.
+CREATE OR REPLACE FUNCTION update_sales_order_total()
+RETURNS TRIGGER AS $$
+DECLARE
+    target_so TEXT;
+BEGIN
+    IF (TG_OP = 'DELETE') THEN
+        target_so := OLD.so_number;
+    ELSE
+        target_so := NEW.so_number;
+    END IF;
+
+    UPDATE sales_orders
+    SET total_amount = COALESCE((
+        SELECT SUM(
+            CASE 
+                WHEN transaction = 'RETURN' THEN - (quantity * unit_price)
+                ELSE (quantity * unit_price)
+            END
+        )
+        FROM sales_order_items
+        WHERE so_number = target_so
+    ), 0)
+    WHERE so_number = target_so;
+
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 4. Trigger to execute the total calculation on any change to sales_order_items
+DROP TRIGGER IF EXISTS trg_update_so_total ON sales_order_items;
+CREATE TRIGGER trg_update_so_total
+AFTER INSERT OR UPDATE OR DELETE ON sales_order_items
+FOR EACH ROW
+EXECUTE FUNCTION update_sales_order_total();
