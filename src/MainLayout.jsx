@@ -313,7 +313,7 @@ export default function MainLayout({ onLogout }) {
             'Finished Goods'
           ])}
           
-          {!isManager && renderSection('Purchases & Expenses', ['Purchases', 'Expenses'])}
+          {!isManager && renderSection('Procurement', ['Purchases', 'Expenses'])}
 
           {renderSection('Selling', ['Sales Order', 'Sales Returns'])}
                   
