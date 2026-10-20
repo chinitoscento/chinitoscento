@@ -11,6 +11,7 @@ export default function Packaging() {
   const [selectedMac, setSelectedMac] = useState(null);
   const [actualQty, setActualQty] = useState('');
   const [reason, setReason] = useState('');
+  const [packagingDate, setPackagingDate] = useState(new Date().toISOString().split('T')[0]);
   const [packagingStockStatus, setPackagingStockStatus] = useState(null);
 
   // Data sources from Supabase
@@ -25,11 +26,22 @@ export default function Packaging() {
     loadData();
   }, []);
 
-  const generateNextPackCode = (existingList) => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0');
-    const prefix = `PACK-${year}${month}`;
+  // Helper to accurately extract Year and Month string directly from YYYY-MM-DD
+  const generateNextPackCode = (existingList, targetDateStr) => {
+    let yearStr = '';
+    let monthStr = '';
+
+    if (targetDateStr && targetDateStr.includes('-')) {
+      const parts = targetDateStr.split('-');
+      yearStr = parts[0];
+      monthStr = parts[1];
+    } else {
+      const d = new Date();
+      yearStr = String(d.getFullYear());
+      monthStr = String(d.getMonth() + 1).padStart(2, '0');
+    }
+
+    const prefix = `PACK-${yearStr}${monthStr}`;
 
     if (!existingList || existingList.length === 0) {
       return `${prefix}000001`;
@@ -50,6 +62,11 @@ export default function Packaging() {
     const nextNum = maxNum + 1;
     return `${prefix}${String(nextNum).padStart(6, '0')}`;
   };
+
+  // Re-generate code whenever packagingDate OR packagingList changes
+  useEffect(() => {
+    setPackCode(generateNextPackCode(packagingList, packagingDate));
+  }, [packagingDate, packagingList]);
 
   const generateNextJePackCode = async (prefixType = 'JE-PACK') => {
     try {
@@ -144,7 +161,6 @@ export default function Packaging() {
       setPurchaseLineItems(pliRows || []);
       setJournalEntries(jeRows || []);
       setWipBatchesList(wipRows || []);
-      setPackCode(generateNextPackCode(savedPack));
     } catch (err) {
       console.error('Error loading packaging data from Supabase:', err);
     }
@@ -371,7 +387,6 @@ export default function Packaging() {
       if (wipBatch) {
         juiceCostPerMl = Number(wipBatch.unit_cost_per_ml || (wipBatch.total_cost / wipBatch.initial_volume_ml) || 0);
       } else {
-        // Fallback calculation from selectedMac metadata
         juiceCostPerMl = Number(selectedMac.unitCostPerMl || selectedMac.unit_cost_ml || selectedMac.costPerMl || selectedMac.cost_per_ml || 0);
         if (juiceCostPerMl === 0) {
           const totalCostVal = Number(selectedMac.totalCost || selectedMac.total_cost || 0);
@@ -402,7 +417,6 @@ export default function Packaging() {
 
         if (wipUpdateError) throw wipUpdateError;
       }
-      // -------------------------------------------------------
 
       const { data: existingFg, error: fgFetchError } = await supabase
         .from('finished_goods')
@@ -447,15 +461,14 @@ export default function Packaging() {
 
       if (ledgerError) throw ledgerError;
 
-      // --- FIXED: Properly awaited async journal number generator ---
       const jeNumber = await generateNextJePackCode('JE-PACK');
-      const currentDate = new Date().toISOString().split('T')[0];
+      const transactionDate = packagingDate;
 
       const { error: jeError } = await supabase
         .from('journal_entries')
         .insert([{
           je_number: jeNumber,
-          date: currentDate,
+          date: transactionDate,
           description: `Packaging run for ${fgScentName} (${parsedActual} units)`,
           reference_no: packCode,
           status: 'Posted'
@@ -507,7 +520,7 @@ export default function Packaging() {
         expected_qty: selectedMac.expectedQty || selectedMac.expected_qty,
         actual_qty: parsedActual,
         reason: reason || 'Standard Packaging',
-        date: currentDate
+        date: transactionDate
       };
 
       const { error: insertError } = await supabase.from('packaging').insert([newRecord]);
@@ -523,6 +536,7 @@ export default function Packaging() {
       setSelectedMac(null);
       setActualQty('');
       setReason('');
+      setPackagingDate(new Date().toISOString().split('T')[0]);
       setPackagingStockStatus(null);
       loadData();
     } catch (err) {
@@ -541,7 +555,8 @@ export default function Packaging() {
         <div>
           <button onClick={() => {
             loadData();
-            setPackCode(generateNextPackCode(packagingList));
+            const today = new Date().toISOString().split('T')[0];
+            setPackagingDate(today);
             setIsModalOpen(true);
           }} style={styles.primaryBtn}>
             + Add Packaging Run
@@ -601,6 +616,17 @@ export default function Packaging() {
                     <div style={styles.formGroup}>
                       <label style={styles.label}>Code</label>
                       <input type="text" value={packCode} disabled style={styles.disabledInput} />
+                    </div>
+
+                    <div style={styles.formGroup}>
+                      <label style={styles.label}>Packaging Date</label>
+                      <input 
+                        type="date" 
+                        value={packagingDate} 
+                        onChange={(e) => setPackagingDate(e.target.value)} 
+                        style={styles.input}
+                        required
+                      />
                     </div>
 
                     <div style={styles.formGroup}>
