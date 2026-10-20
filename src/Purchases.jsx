@@ -629,7 +629,7 @@ export default function Purchases() {
       const linesPayload = [
         {
           je_number: jeNumber,
-          account_code: '1300', // Matched with Chart of Accounts '1310' (Raw Materials Inventory)
+          account_code: '1310', // Matched with Chart of Accounts '1310' (Raw Materials Inventory)
           description: consolidatedMemo,
           debit: totalPurchaseAmount,
           credit: 0
