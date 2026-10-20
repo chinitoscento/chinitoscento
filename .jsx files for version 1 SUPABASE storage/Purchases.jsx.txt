@@ -277,7 +277,7 @@ export default function Purchases() {
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [currentRefId, setCurrentRefId] = useState('');
   
-  const [itemType, setItemType] = useState('RM'); // 'RM' = Raw Material, 'PKG' = Packaging, 'EQP' = Equipment / Capital Asset
+  const [itemType, setItemType] = useState('RM'); // 'RM' = Raw Material, 'PKG' = Packaging, 'EQP' = Equipment / Capital Asset, 'SUP' = Supplies
   const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); 
   const [containerVolume, setContainerVolume] = useState(''); 
   const [quantity, setQuantity] = useState('');
@@ -460,7 +460,7 @@ export default function Purchases() {
   const handleAddItem = (e) => {
     e.preventDefault();
     if (!selectedCatalogueItem) {
-      alert('Please select an item from the Raw Materials Catalogue.');
+      alert('Please select or type an item name.');
       return;
     }
     if (!quantity || !unitCost) {
@@ -468,18 +468,26 @@ export default function Purchases() {
       return;
     }
 
-    const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
-    const itemCode = selectedCatalogueItem; 
-    const itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
-    const parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || foundCat?.volume_size || '1');
+    let itemName = '';
+    let itemCode = null;
 
+    if (itemType === 'RM' || itemType === 'PKG') {
+      const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
+      itemCode = selectedCatalogueItem;
+      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
+    } else {
+      itemName = selectedCatalogueItem;
+      itemCode = `${itemType}-${Date.now().toString().slice(-4)}`;
+    }
+
+    const parsedVolumeStr = containerVolume !== '' ? containerVolume : '1';
     const qtyNum = Number(quantity);
     const costNum = Number(unitCost);
     const totalLineAmount = qtyNum * costNum;
 
     const newItem = {
       id: Date.now() + Math.random(),
-      type: itemType, // 'RM', 'PKG', or 'EQP'
+      type: itemType, // 'RM', 'PKG', 'EQP', or 'SUP'
       code: itemCode, 
       name: itemName,
       containerVolume: parsedVolumeStr,
@@ -630,6 +638,10 @@ export default function Purchases() {
         .filter(i => i.type === 'EQP')
         .reduce((sum, i) => sum + i.total, 0);
 
+      const totalSuppliesAmount = lineItems
+        .filter(i => i.type === 'SUP')
+        .reduce((sum, i) => sum + i.total, 0);
+
       const linesPayload = [];
 
       if (totalInventoryAmount > 0) {
@@ -648,6 +660,16 @@ export default function Purchases() {
           account_code: '1500', // Equipment & Perfume Vessels / Fixed Assets account code
           description: consolidatedMemo,
           debit: totalEquipmentAmount,
+          credit: 0
+        });
+      }
+
+      if (totalSuppliesAmount > 0) {
+        linesPayload.push({
+          je_number: jeNumber,
+          account_code: '6090', // Operating Expenses / Supplies
+          description: consolidatedMemo,
+          debit: totalSuppliesAmount,
           credit: 0
         });
       }
@@ -780,7 +802,7 @@ export default function Purchases() {
       <div style={styles.headerBlockWithBtn}>
         <div>
           <h2 style={styles.pageTitle}>Purchases Transactions</h2>
-          <p style={styles.subText}>Record raw material, packaging, and equipment acquisitions</p>
+          <p style={styles.subText}>Record raw material, packaging, equipment, and supply acquisitions</p>
         </div>
         <button onClick={handleOpenModal} style={styles.primaryBtn}>
           Add Purchase Transaction
@@ -948,43 +970,60 @@ export default function Purchases() {
                       <label style={styles.label}>Item Category / Type *</label>
                       <select 
                         value={itemType} 
-                        onChange={(e) => setItemType(e.target.value)} 
+                        onChange={(e) => {
+                          setItemType(e.target.value);
+                          setSelectedCatalogueItem('');
+                        }} 
                         style={styles.input}
                       >
                         <option value="RM">Raw Material (Inventory)</option>
                         <option value="PKG">Packaging Material (Inventory)</option>
                         <option value="EQP">Equipment / Capital Asset</option>
+                        <option value="SUP">General Supplies / Expense</option>
                       </select>
                     </div>
 
-                    <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
-                      <label style={styles.label}>Item (Catalogue)</label>
-                      <select 
-                        value={selectedCatalogueItem} 
-                        onChange={handleCatalogueChange} 
-                        style={styles.input}
-                      >
-                        <option value="">-- Select Catalogue Item --</option>
-                        {rawCatalogue.map((cat, idx) => {
-                          const itemName = cat.rawMaterial || cat.name || cat.raw_material;
-                          const itemId = cat.id; 
-                          const volSize = cat.volumeSize || cat.volume_size;
-                          const bUnit = cat.baseUnit || cat.unit;
-                          return (
-                            <option key={cat.id || idx} value={itemId}>
-                              {itemId ? `[${itemId}] ` : ''}{itemName} {volSize ? `(${volSize})` : bUnit ? `(${bUnit})` : ''}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </div>
+                    {(itemType === 'RM' || itemType === 'PKG') ? (
+                      <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                        <label style={styles.label}>Item (Catalogue)</label>
+                        <select 
+                          value={selectedCatalogueItem} 
+                          onChange={handleCatalogueChange} 
+                          style={styles.input}
+                        >
+                          <option value="">-- Select Catalogue Item --</option>
+                          {rawCatalogue.map((cat, idx) => {
+                            const itemName = cat.rawMaterial || cat.name || cat.raw_material;
+                            const itemId = cat.id; 
+                            const volSize = cat.volumeSize || cat.volume_size;
+                            const bUnit = cat.baseUnit || cat.unit;
+                            return (
+                              <option key={cat.id || idx} value={itemId}>
+                                {itemId ? `[${itemId}] ` : ''}{itemName} {volSize ? `(${volSize})` : bUnit ? `(${bUnit})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    ) : (
+                      <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                        <label style={styles.label}>Item Name / Description *</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. Macerating Tank, Stainless Funnel" 
+                          value={selectedCatalogueItem} 
+                          onChange={(e) => setSelectedCatalogueItem(e.target.value)} 
+                          style={styles.input} 
+                        />
+                      </div>
+                    )}
 
                     <div style={{ ...styles.gridTwo, marginTop: '15px' }}>
                       <div style={styles.inputGroup}>
-                        <label style={styles.label}>Container Vol / Size</label>
+                        <label style={styles.label}>Container Vol / Size / Specs</label>
                         <input 
                           type="text" 
-                          placeholder="e.g. 250ml, 1L" 
+                          placeholder="e.g. 50L, 1 unit" 
                           value={containerVolume} 
                           onChange={(e) => setContainerVolume(e.target.value)} 
                           style={styles.input} 
