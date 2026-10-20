@@ -143,7 +143,6 @@ export default function NotesToFinancialStatements() {
   const fetchFinancialDetails = async () => {
     setLoading(true);
     try {
-      // Querying journal entry lines to accurately extract balances by account codes
       const { data, error } = await supabase.from('journal_entry_lines').select('*');
       if (error && error.code !== 'PGRST116') console.error(error);
 
@@ -157,13 +156,23 @@ export default function NotesToFinancialStatements() {
           const code = entry.account_code || '';
           const net = Number(entry.debit || 0) - Number(entry.credit || 0);
 
-          // Explicitly exclude account 1500 from inventories
+          // Explicitly exclude fixed assets account 1500 series from inventory
           if (code !== '1500' && !code.startsWith('15')) {
-            if (code === '1310' || code === '1410-RM' || code === '1320') rm += net;
-            else if (code === '1330' || code === '1410-WIP') wip += net;
-            else if (code === '1410' || code === '1410-FG') fg += net;
+            // Raw Materials & Packaging
+            if (code === '1310' || code === '1410-RM') {
+              rm += net;
+            } 
+            // Work-in-Process (WIP)
+            else if (code === '1330' || code === '1410-WIP') {
+              wip += net;
+            } 
+            // Finished Goods Inventory
+            else if (code === '1320' || code === '1410' || code === '1410-FG') {
+              fg += net;
+            } 
+            // Fallback for general inventory accounts starting with 13/14
             else if (code.startsWith('13') || code.startsWith('14')) {
-              rm += net; // General inventory bucket fallback
+              rm += net;
             }
           }
 
