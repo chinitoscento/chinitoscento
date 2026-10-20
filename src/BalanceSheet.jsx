@@ -154,7 +154,9 @@ export default function BalanceSheet() {
     payables: 0,
     loansPayable: 0,
     capital: 0,
-    retainedEarnings: 0,
+    additionalCapital: 0,
+    drawings: 0,
+    netIncomeForPeriod: 0
   });
 
   useEffect(() => {
@@ -164,7 +166,6 @@ export default function BalanceSheet() {
   const fetchBalanceSheetData = async () => {
     setLoading(true);
     try {
-      // Corrected to query journal_entry_lines instead of journal_entries header table
       const { data, error } = await supabase.from('journal_entry_lines').select('*');
       if (error) console.error(error);
       
@@ -176,25 +177,40 @@ export default function BalanceSheet() {
         payables: 0, 
         loansPayable: 0,
         capital: 0, 
-        retainedEarnings: 0 
+        additionalCapital: 0,
+        drawings: 0,
+        netIncomeForPeriod: 0
       };
+
+      let totalRevenue = 0;
+      let totalExpenses = 0;
 
       if (data) {
         data.forEach(entry => {
-          const code = entry.account_code || '';
+          const code = String(entry.account_code || '').trim();
           const debit = Number(entry.debit || 0);
           const credit = Number(entry.credit || 0);
 
           if (code.startsWith('10')) totals.cash += debit - credit;
-          if (code.startsWith('12')) totals.receivables += debit - credit;
-          if (code.startsWith('13')) totals.inventory += debit - credit;   // Matches 1310, 1320, 1330
-          if (code.startsWith('15')) totals.equipment += debit - credit;   // Matches 1500 Equipment & Vessels
-          if (code.startsWith('20')) totals.payables += credit - debit;
-          if (code.startsWith('21')) totals.loansPayable += credit - debit;
-          if (code.startsWith('30')) totals.capital += credit - debit;
-          if (code.startsWith('35')) totals.retainedEarnings += credit - debit;
+          else if (code.startsWith('12')) totals.receivables += debit - credit;
+          else if (code.startsWith('13')) totals.inventory += debit - credit;   
+          else if (code.startsWith('15')) totals.equipment += debit - credit;   
+          else if (code.startsWith('20')) totals.payables += credit - debit;
+          else if (code.startsWith('21')) totals.loansPayable += credit - debit;
+          else if (code.startsWith('30')) {
+            // Differentiating initial vs additional capital or combining them based on account structure
+            totals.capital += credit - debit;
+          }
+          else if (code.startsWith('31')) {
+            totals.drawings += debit - credit; // Owner withdrawals / drawings
+          }
+          else {
+            // Universal Income Statement calculation for Net Income / Loss
+            totals.netIncomeForPeriod += (credit - debit);
+          }
         });
       }
+
       setBalances(totals);
     } catch (err) {
       console.error('Error fetching balance sheet:', err);
@@ -206,7 +222,10 @@ export default function BalanceSheet() {
   const totalCurrentAssets = balances.cash + balances.receivables + balances.inventory;
   const totalAssets = totalCurrentAssets + balances.equipment;
   const totalLiabilities = balances.payables + balances.loansPayable;
-  const totalEquity = balances.capital + balances.retainedEarnings;
+  
+  // Ending Capital matching Statement of Changes in Equity
+  const endingCapital = balances.capital + balances.netIncomeForPeriod - balances.drawings;
+  const totalEquity = endingCapital;
 
   const handlePrint = () => {
     const printContent = document.getElementById('printable-report-card');
@@ -225,7 +244,6 @@ export default function BalanceSheet() {
       .column-header { font-size: 14px; font-weight: 700; color: #1a1a1a; letter-spacing: 1.5px; border-bottom: 2px solid #c5a059; padding-bottom: 8px; margin-bottom: 15px; }
       .section-title { font-size: 11px; font-weight: 700; color: #c5a059; letter-spacing: 1.2px; text-transform: uppercase; margin-bottom: 8px; margin-top: 15px; }
       .row { display: flex; justify-content: space-between; align-items: baseline; padding: 8px 0; border-bottom: 1px solid #f0ece4; font-size: 13px; color: #333333; gap: 10px; }
-      .note-ref { font-size: 10px; color: #c5a059; font-weight: 600; margin-left: 4px; }
       .amount { font-weight: 600; color: #111111; white-space: nowrap; }
       .total-row { display: flex !important; justify-content: space-between !important; align-items: center !important; background-color: #ffffff !important; color: #1a1a1a !important; border-top: 2px solid #1a1a1a !important; border-bottom: 2px solid #1a1a1a !important; padding: 12px 4px !important; font-weight: 700 !important; font-size: 13.5px !important; letter-spacing: 0.8px !important; margin-top: 25px !important; }
       .header-card { background: #ffffff !important; border: 1px solid #dcd6cd !important; border-radius: 8px !important; padding: 20px 25px !important; margin-bottom: 20px !important; }
@@ -255,8 +273,7 @@ export default function BalanceSheet() {
       ['Total Assets', '', totalAssets],
       ['Current Liabilities', 'Accounts Payable', balances.payables],
       ['Non-Current Liabilities', 'Loans Payable', balances.loansPayable],
-      ['Equity', "Owner's Capital", balances.capital],
-      ['Equity', 'Retained Earnings', balances.retainedEarnings],
+      ['Equity', "Ending Owner's Capital", endingCapital],
       ['Total Liabilities & Equity', '', totalLiabilities + totalEquity]
     ];
 
@@ -350,12 +367,13 @@ export default function BalanceSheet() {
 
               <div style={{ ...styles.sectionTitle, marginTop: '24px' }} className="section-title">Equity</div>
               <div style={styles.row} className="row">
-                <span>Owner's Capital</span>
-                <span style={styles.amount} className="amount">₱ {balances.capital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-              </div>
-              <div style={styles.row} className="row">
-                <span>Retained Earnings</span>
-                <span style={styles.amount} className="amount">₱ {balances.retainedEarnings.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+                <span>Ending Owner's Capital</span>
+                <span style={{ 
+                  ...styles.amount, 
+                  color: endingCapital < 0 ? '#d9534f' : '#111111' 
+                }} className="amount">
+                  ₱ {endingCapital.toLocaleString('en-PH', { minimumFractionDigits: 2 })}
+                </span>
               </div>
             </div>
 
