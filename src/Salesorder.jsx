@@ -147,7 +147,7 @@ export default function Salesorder() {
       const fgList = (fgData || []).map(item => ({
         productCode: String(item.product_code || item.code || ''),
         name: String(item.name || item.scent || ''),
-        stockQty: Number(item.stock || item.quantity || item.stock || 0),
+        stockQty: Number(item.stock || item.quantity || 0),
         price: Number(item.price || 0),
         cost: Number(item.cost || item.unit_cost || 0)
       }));
@@ -303,7 +303,7 @@ export default function Salesorder() {
 
   const postJournalEntriesForSale = async (soRecord) => {
     try {
-      const totalAmount = soRecord.totalDue || 0;
+      const totalAmount = Number(soRecord.totalDue || 0);
       const isCash = (soRecord.paymentMode || '').toUpperCase() === 'CASH';
       
       const jeNumber = await generateNextJournalNumber('JE-SO', soRecord.date);
@@ -325,9 +325,20 @@ export default function Salesorder() {
       let totalCogs = 0;
 
       soRecord.items.forEach(item => {
-        const formulation = formulations.find(
-          f => f.product_code === item.productCode || f.scent_name === item.productName
-        );
+        const itemCodeClean = String(item.productCode || '').trim().toLowerCase();
+        const itemNameClean = String(item.productName || '').trim().toLowerCase();
+
+        const formulation = formulations.find(f => {
+          const fCode = String(f.product_code || f.productCode || '').trim().toLowerCase();
+          const fScent = String(f.scent_name || f.scentName || '').trim().toLowerCase();
+          return fCode === itemCodeClean || fScent === itemNameClean || fCode === itemNameClean;
+        });
+
+        const matchedFg = finishedGoods.find(fg => {
+          const fgCode = String(fg.productCode || '').trim().toLowerCase();
+          const fgName = String(fg.name || '').trim().toLowerCase();
+          return fgCode === itemCodeClean || fgName === itemNameClean;
+        });
 
         let unitCost = 0;
 
@@ -337,7 +348,8 @@ export default function Salesorder() {
             let latestPrice = null;
             for (const purchase of purchases) {
               const foundItem = (purchase.items || []).find(
-                pi => pi.code === materialId || pi.raw_material === materialId
+                pi => String(pi.code || '').trim().toLowerCase() === String(materialId).trim().toLowerCase() || 
+                      String(pi.raw_material || '').trim().toLowerCase() === String(materialId).trim().toLowerCase()
               );
               if (foundItem && foundItem.unit_price) {
                 latestPrice = Number(foundItem.unit_price);
@@ -348,17 +360,17 @@ export default function Salesorder() {
             return Number(settings?.[defaultCostKey] || 0);
           };
 
-          const sizeMl = parseFloat(formulation.size_value) || 50;
-          const oilPct = (parseFloat(formulation.oil_percentage) || 20) / 100;
-          const solventPct = (parseFloat(formulation.solvent_percentage) || 80) / 100;
+          const sizeMl = parseFloat(formulation.size_value || formulation.sizeValue) || 50;
+          const oilPct = (parseFloat(formulation.oil_percentage || formulation.oilPercentage) || 20) / 100;
+          const solventPct = (parseFloat(formulation.solvent_percentage || formulation.solventPercentage) || 80) / 100;
 
-          const oilUnitCost = getMaterialCost(formulation.oil_id, 'default_oil_cost');
-          const solventUnitCost = getMaterialCost(formulation.solvent_id, 'default_solvent_cost');
-          const bottleCost = getMaterialCost(formulation.bottle_id, 'default_bottle_cost');
-          const bottleStickerCost = getMaterialCost(formulation.bottle_sticker_id, 'default_bottle_sticker');
-          const boxCost = getMaterialCost(formulation.box_id, 'default_box_cost');
-          const boxStickerCost = getMaterialCost(formulation.box_sticker_id, 'default_box_sticker');
-          const wrappingCost = getMaterialCost(formulation.wrapping_id, 'default_shrink_wrap');
+          const oilUnitCost = getMaterialCost(formulation.oil_id || formulation.oilId, 'default_oil_cost');
+          const solventUnitCost = getMaterialCost(formulation.solvent_id || formulation.solventId, 'default_solvent_cost');
+          const bottleCost = getMaterialCost(formulation.bottle_id || formulation.bottleId, 'default_bottle_cost');
+          const bottleStickerCost = getMaterialCost(formulation.bottle_sticker_id || formulation.bottleStickerId, 'default_bottle_sticker');
+          const boxCost = getMaterialCost(formulation.box_id || formulation.boxId, 'default_box_cost');
+          const boxStickerCost = getMaterialCost(formulation.box_sticker_id || formulation.boxStickerId, 'default_box_sticker');
+          const wrappingCost = getMaterialCost(formulation.wrapping_id || formulation.wrappingId, 'default_shrink_wrap');
 
           const calculatedOilCost = (sizeMl * oilPct) * oilUnitCost;
           const calculatedSolventCost = (sizeMl * solventPct) * solventUnitCost;
@@ -372,12 +384,18 @@ export default function Salesorder() {
             boxStickerCost +
             wrappingCost
           );
+        } else if (matchedFg && Number(matchedFg.cost || 0) > 0) {
+          unitCost = Number(matchedFg.cost);
         } else {
           unitCost = Number(item.price || 0) * 0.4;
         }
 
         totalCogs += Number(item.qty || 0) * Number(unitCost);
       });
+
+      if (totalCogs <= 0) {
+        totalCogs = totalAmount * 0.4; 
+      }
 
       const linesPayload = [
         {
@@ -610,7 +628,6 @@ export default function Salesorder() {
             console.error(`Failed to record ledger entry for ${matchingFg.productCode}:`, ledgerError.message);
           }
 
-          // FIXED: Removed non-existent 'quantity' column, updating 'stock' only
           const { error: updateError } = await supabase
             .from('finished_goods')
             .update({ stock: newQty })
