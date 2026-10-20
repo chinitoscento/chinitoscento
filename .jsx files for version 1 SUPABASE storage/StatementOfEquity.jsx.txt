@@ -131,33 +131,92 @@ export default function StatementOfEquity() {
   const fetchEquityData = async () => {
     setLoading(true);
     try {
-      // Pulling from journal entries or specific equity/income accounts if applicable
-      const { data, error } = await supabase.from('journal_entries').select('*');
-      if (error && error.code !== 'PGRST116') console.error(error);
+      // 1. Fetch historical journal entries PRIOR to startDate to calculate Beginning Capital accurately
+      const { data: priorEntries, error: priorError } = await supabase
+        .from('journal_entries')
+        .select(`
+          date,
+          journal_entry_lines (
+            account_code,
+            debit,
+            credit
+          )
+        `)
+        .lt('date', startDate);
 
-      // Example calculation placeholders driven by your journal entries
-      let beginning = 0;
-      let contributions = 0;
-      let netInc = 0;
-      let drawingsVal = 0;
+      if (priorError && priorError.code !== 'PGRST116') console.error(priorError);
 
-      if (data) {
-        data.forEach(entry => {
-          const code = entry.account_code || '';
-          const netAmt = Number(entry.credit || 0) - Number(entry.debit || 0);
-          const debAmt = Number(entry.debit || 0) - Number(entry.credit || 0);
+      let beginningCap = 0;
+      let priorRetainedEarnings = 0;
 
-          // Map your respective Chart of Accounts codes for Equity here
-          if (code.startsWith('300')) beginning += netAmt; // Capital
-          if (code.startsWith('301')) contributions += netAmt; // Additional Paid-in Capital / Contributions
-          if (code.startsWith('302')) drawingsVal += debAmt; // Drawings
+      if (priorEntries) {
+        priorEntries.forEach(entry => {
+          if (entry.journal_entry_lines) {
+            entry.journal_entry_lines.forEach(line => {
+              const code = line.account_code || '';
+              const netCredit = Number(line.credit || 0) - Number(line.debit || 0);
+              const netDebit = Number(line.debit || 0) - Number(line.credit || 0);
+
+              // Accumulate prior owner's capital (30x)
+              if (code.startsWith('30')) beginningCap += netCredit;
+              // Accumulate prior net income / retained earnings if applicable
+              if (code.startsWith('4')) priorRetainedEarnings += netCredit;
+              if (code.startsWith('5') || code.startsWith('6')) priorRetainedEarnings -= netDebit;
+            });
+          }
         });
       }
 
+      // If beginning capital is empty from account 30, fallback to include prior retained earnings continuity
+      const totalBeginningCapital = beginningCap !== 0 ? beginningCap + priorRetainedEarnings : priorRetainedEarnings;
+
+      // 2. Fetch journal entries WITHIN the selected date range (startDate to endDate)
+      const { data: currentEntries, error: currentError } = await supabase
+        .from('journal_entries')
+        .select(`
+          date,
+          journal_entry_lines (
+            account_code,
+            debit,
+            credit
+          )
+        `)
+        .gte('date', startDate)
+        .lte('date', endDate);
+
+      if (currentError && currentError.code !== 'PGRST116') console.error(currentError);
+
+      let contributions = 0;
+      let drawingsVal = 0;
+      let totalRevenues = 0;
+      let totalExpenses = 0;
+
+      if (currentEntries) {
+        currentEntries.forEach(entry => {
+          if (entry.journal_entry_lines) {
+            entry.journal_entry_lines.forEach(line => {
+              const code = line.account_code || '';
+              const netCreditAmt = Number(line.credit || 0) - Number(line.debit || 0);
+              const netDebitAmt = Number(line.debit || 0) - Number(line.credit || 0);
+
+              // Current period equity movements
+              if (code === '3000' || code.startsWith('300')) contributions += netCreditAmt; // Additional Capital
+              if (code === '3020' || code.startsWith('302')) drawingsVal += netDebitAmt; // Drawings
+
+              // Income Statement linkage for current period Net Income
+              if (code.startsWith('4')) totalRevenues += netCreditAmt;
+              if (code.startsWith('5') || code.startsWith('6')) totalExpenses += netDebitAmt;
+            });
+          }
+        });
+      }
+
+      const linkedNetIncome = totalRevenues - totalExpenses;
+
       setEquityData({
-        beginningCapital: beginning,
+        beginningCapital: totalBeginningCapital,
         additionalContributions: contributions,
-        netIncome: netInc, // Can be linked directly from Income Statement state/prop if needed
+        netIncome: linkedNetIncome,
         drawings: drawingsVal,
       });
     } catch (err) {

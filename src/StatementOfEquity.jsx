@@ -131,7 +131,7 @@ export default function StatementOfEquity() {
   const fetchEquityData = async () => {
     setLoading(true);
     try {
-      // 1. Fetch historical journal entries PRIOR to startDate to calculate Beginning Capital accurately
+      // 1. Fetch historical journal entries ON OR PRIOR to startDate to calculate Beginning Capital accurately
       const { data: priorEntries, error: priorError } = await supabase
         .from('journal_entries')
         .select(`
@@ -142,7 +142,7 @@ export default function StatementOfEquity() {
             credit
           )
         `)
-        .lt('date', startDate);
+        .lte('date', startDate); // Changed from .lt to .lte so startDate entries form the beginning balance
 
       if (priorError && priorError.code !== 'PGRST116') console.error(priorError);
 
@@ -167,10 +167,9 @@ export default function StatementOfEquity() {
         });
       }
 
-      // If beginning capital is empty from account 30, fallback to include prior retained earnings continuity
       const totalBeginningCapital = beginningCap !== 0 ? beginningCap + priorRetainedEarnings : priorRetainedEarnings;
 
-      // 2. Fetch journal entries WITHIN the selected date range (startDate to endDate)
+      // 2. Fetch journal entries STRICTLY AFTER startDate up to endDate for current period changes
       const { data: currentEntries, error: currentError } = await supabase
         .from('journal_entries')
         .select(`
@@ -181,7 +180,7 @@ export default function StatementOfEquity() {
             credit
           )
         `)
-        .gte('date', startDate)
+        .gt('date', startDate)
         .lte('date', endDate);
 
       if (currentError && currentError.code !== 'PGRST116') console.error(currentError);
@@ -199,9 +198,9 @@ export default function StatementOfEquity() {
               const netCreditAmt = Number(line.credit || 0) - Number(line.debit || 0);
               const netDebitAmt = Number(line.debit || 0) - Number(line.credit || 0);
 
-              // Current period equity movements
-              if (code === '3000' || code.startsWith('300')) contributions += netCreditAmt; // Additional Capital
-              if (code === '3020' || code.startsWith('302')) drawingsVal += netDebitAmt; // Drawings
+              // Current period equity movements after start date
+              if (code === '3000' || code.startsWith('300')) contributions += netCreditAmt; 
+              if (code === '3020' || code.startsWith('302')) drawingsVal += netDebitAmt; 
 
               // Income Statement linkage for current period Net Income
               if (code.startsWith('4')) totalRevenues += netCreditAmt;
