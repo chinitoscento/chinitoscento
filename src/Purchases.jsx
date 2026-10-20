@@ -277,6 +277,7 @@ export default function Purchases() {
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [currentRefId, setCurrentRefId] = useState('');
   
+  const [itemType, setItemType] = useState('RM'); // 'RM' = Raw Material, 'PKG' = Packaging, 'EQP' = Equipment / Capital Asset, 'SUP' = Supplies
   const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); 
   const [containerVolume, setContainerVolume] = useState(''); 
   const [quantity, setQuantity] = useState('');
@@ -363,7 +364,6 @@ export default function Purchases() {
       setLoadingData(false);
     }
   };
-
   
   // Helper function to generate the next Journal Entry number cleanly
   const getNextJeNumber = async () => {
@@ -387,17 +387,13 @@ export default function Purchases() {
     }
 
     const nextSeq = maxSeq + 1;
-    
-    // Extract year and month cleanly from transactionDate (e.g. "2026-07-02")
     const dateParts = transactionDate ? transactionDate.split('-') : [];
     const year = dateParts[0] || new Date().getFullYear();
     const month = dateParts[1] || String(new Date().getMonth() + 1).padStart(2, '0');
     
-    // Assembled strictly once
     return `JE-PUR-${year}${month}${String(nextSeq).padStart(6, '0')}`;
   };
 
-  // Updated to generate ref ID starting with PUR-
   const getNextRefId = async () => {
     const { data, error } = await supabase
       .from('purchase_transactions')
@@ -464,7 +460,7 @@ export default function Purchases() {
   const handleAddItem = (e) => {
     e.preventDefault();
     if (!selectedCatalogueItem) {
-      alert('Please select an item from the Raw Materials Catalogue.');
+      alert('Please select or type an item name.');
       return;
     }
     if (!quantity || !unitCost) {
@@ -472,18 +468,26 @@ export default function Purchases() {
       return;
     }
 
-    const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
-    const itemCode = selectedCatalogueItem; 
-    const itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
-    const parsedVolumeStr = containerVolume !== '' ? containerVolume : (foundCat?.volumeSize || foundCat?.volume_size || '1');
+    let itemName = '';
+    let itemCode = null;
 
+    if (itemType === 'RM' || itemType === 'PKG') {
+      const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
+      itemCode = selectedCatalogueItem;
+      itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
+    } else {
+      itemName = selectedCatalogueItem;
+      itemCode = `${itemType}-${Date.now().toString().slice(-4)}`;
+    }
+
+    const parsedVolumeStr = containerVolume !== '' ? containerVolume : '1';
     const qtyNum = Number(quantity);
     const costNum = Number(unitCost);
     const totalLineAmount = qtyNum * costNum;
 
     const newItem = {
       id: Date.now() + Math.random(),
-      type: 'RM',
+      type: itemType, // 'RM', 'PKG', 'EQP', or 'SUP'
       code: itemCode, 
       name: itemName,
       containerVolume: parsedVolumeStr,
@@ -604,7 +608,7 @@ export default function Purchases() {
 
       if (linesError) throw linesError;
 
-      // Automatically generate unified Journal Entry number by querying the journal_entries table
+      // Automatically generate unified Journal Entry number
       const jeNumber = await getNextJeNumber();
       
       const itemsStr = lineItems.map(i => `${i.code ? `[${i.code}] ` : ''}${i.name}${i.containerVolume ? ` (${i.containerVolume})` : ''} (${i.quantity} x ₱${i.unitCost})`).join(', ');
@@ -625,21 +629,55 @@ export default function Purchases() {
 
       if (headerJeError) throw headerJeError;
 
-      // 2. Prepare Line Items using consolidated memo and correct Chart of Accounts codes
-      const linesPayload = [
-        {
+      // 2. Prepare Line Items separating Inventory items vs Equipment / Capital Assets
+      const totalInventoryAmount = lineItems
+        .filter(i => i.type === 'RM' || i.type === 'PKG')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const totalEquipmentAmount = lineItems
+        .filter(i => i.type === 'EQP')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const totalSuppliesAmount = lineItems
+        .filter(i => i.type === 'SUP')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const linesPayload = [];
+
+      if (totalInventoryAmount > 0) {
+        linesPayload.push({
           je_number: jeNumber,
-          account_code: '1310', // Matched with Chart of Accounts '1310' (Raw Materials Inventory)
+          account_code: '1310', // Raw Materials / Packaging Inventory
           description: consolidatedMemo,
-          debit: totalPurchaseAmount,
+          debit: totalInventoryAmount,
           credit: 0
-        }
-      ];
+        });
+      }
+
+      if (totalEquipmentAmount > 0) {
+        linesPayload.push({
+          je_number: jeNumber,
+          account_code: '1500', // Equipment & Perfume Vessels / Fixed Assets account code
+          description: consolidatedMemo,
+          debit: totalEquipmentAmount,
+          credit: 0
+        });
+      }
+
+      if (totalSuppliesAmount > 0) {
+        linesPayload.push({
+          je_number: jeNumber,
+          account_code: '6090', // Operating Expenses / Supplies
+          description: consolidatedMemo,
+          debit: totalSuppliesAmount,
+          credit: 0
+        });
+      }
 
       if (paymentMode === 'Cash') {
         linesPayload.push({
           je_number: jeNumber,
-          account_code: '1000', // Matched with Chart of Accounts '1000' (Cash on Hand / Bank)
+          account_code: '1000', // Cash on Hand / Bank
           description: consolidatedMemo,
           debit: 0,
           credit: totalPurchaseAmount
@@ -648,7 +686,7 @@ export default function Purchases() {
         if (computedInterest > 0) {
           linesPayload.push({
             je_number: jeNumber,
-            account_code: '6090', // Matched with Chart of Accounts '6090' (Operating Expenses / Opex)
+            account_code: '6090', // Operating Expenses / Interest
             description: consolidatedMemo,
             debit: computedInterest,
             credit: 0
@@ -656,7 +694,7 @@ export default function Purchases() {
         }
         linesPayload.push({
           je_number: jeNumber,
-          account_code: '2000', // Matched with Chart of Accounts '2000' (Accounts Payable)
+          account_code: '2000', // Accounts Payable
           description: consolidatedMemo,
           debit: 0,
           credit: totalAmountDue
@@ -670,8 +708,9 @@ export default function Purchases() {
 
       if (linesJeError) throw linesJeError;
 
+      // 4. Update Inventory stock levels only for inventory-type items
       for (const line of lineItems) {
-        if (line.type === 'COGS') {
+        if (line.type === 'RM' || line.type === 'PKG') {
           const catMeta = rawCatalogue.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name || c.raw_material === line.name);
           const volumeStr = line.containerVolume || (catMeta ? (catMeta.volumeSize || catMeta.volume_size) : '1');
           const multiplier = parseVolumeInMl(volumeStr);
@@ -763,7 +802,7 @@ export default function Purchases() {
       <div style={styles.headerBlockWithBtn}>
         <div>
           <h2 style={styles.pageTitle}>Purchases Transactions</h2>
-          <p style={styles.subText}>Record raw material acquisitions</p>
+          <p style={styles.subText}>Record raw material, packaging, equipment, and supply acquisitions</p>
         </div>
         <button onClick={handleOpenModal} style={styles.primaryBtn}>
           Add Purchase Transaction
@@ -834,7 +873,8 @@ export default function Purchases() {
                       <td style={styles.td}>
                         {p.items && p.items.map((i, idx) => (
                           <div key={idx} style={{ fontSize: '18px', marginBottom: '4px' }}>
-                            &bull; {i.code ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
+                            &bull; <span style={{ fontSize: '13px', padding: '2px 6px', background: '#222', borderRadius: '4px', color: '#c5a059', marginRight: '4px' }}>{i.type || 'RM'}</span>
+                            {i.code ? <strong style={{ color: '#c5a059' }}>[{i.code}]</strong> : ''} {i.name} 
                             {i.containerVolume ? ` (${i.containerVolume})` : ''} 
                             {' '}({i.quantity} x ₱{i.unitCost})
                           </div>
@@ -927,33 +967,63 @@ export default function Purchases() {
                     <h4 style={styles.sectionHeading}>Add Purchase Items</h4>
                     
                     <div style={styles.inputGroup}>
-                      <label style={styles.label}>Item (Catalogue)</label>
+                      <label style={styles.label}>Item Category / Type *</label>
                       <select 
-                        value={selectedCatalogueItem} 
-                        onChange={handleCatalogueChange} 
+                        value={itemType} 
+                        onChange={(e) => {
+                          setItemType(e.target.value);
+                          setSelectedCatalogueItem('');
+                        }} 
                         style={styles.input}
                       >
-                        <option value="">-- Select Raw Material --</option>
-                        {rawCatalogue.map((cat, idx) => {
-                          const itemName = cat.rawMaterial || cat.name || cat.raw_material;
-                          const itemId = cat.id; 
-                          const volSize = cat.volumeSize || cat.volume_size;
-                          const bUnit = cat.baseUnit || cat.unit;
-                          return (
-                            <option key={cat.id || idx} value={itemId}>
-                              {itemId ? `[${itemId}] ` : ''}{itemName} {volSize ? `(${volSize})` : bUnit ? `(${bUnit})` : ''}
-                            </option>
-                          );
-                        })}
+                        <option value="RM">Raw Material (Inventory)</option>
+                        <option value="PKG">Packaging Material (Inventory)</option>
+                        <option value="EQP">Equipment / Capital Asset</option>
+                        <option value="SUP">General Supplies / Expense</option>
                       </select>
                     </div>
 
-                    <div style={styles.gridTwo}>
-                      <div style={styles.inputGroup}>
-                        <label style={styles.label}>Container Vol / Size</label>
+                    {(itemType === 'RM' || itemType === 'PKG') ? (
+                      <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                        <label style={styles.label}>Item (Catalogue)</label>
+                        <select 
+                          value={selectedCatalogueItem} 
+                          onChange={handleCatalogueChange} 
+                          style={styles.input}
+                        >
+                          <option value="">-- Select Catalogue Item --</option>
+                          {rawCatalogue.map((cat, idx) => {
+                            const itemName = cat.rawMaterial || cat.name || cat.raw_material;
+                            const itemId = cat.id; 
+                            const volSize = cat.volumeSize || cat.volume_size;
+                            const bUnit = cat.baseUnit || cat.unit;
+                            return (
+                              <option key={cat.id || idx} value={itemId}>
+                                {itemId ? `[${itemId}] ` : ''}{itemName} {volSize ? `(${volSize})` : bUnit ? `(${bUnit})` : ''}
+                              </option>
+                            );
+                          })}
+                        </select>
+                      </div>
+                    ) : (
+                      <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
+                        <label style={styles.label}>Item Name / Description *</label>
                         <input 
                           type="text" 
-                          placeholder="e.g. 250ml, 1L" 
+                          placeholder="e.g. Macerating Tank, Stainless Funnel" 
+                          value={selectedCatalogueItem} 
+                          onChange={(e) => setSelectedCatalogueItem(e.target.value)} 
+                          style={styles.input} 
+                        />
+                      </div>
+                    )}
+
+                    <div style={{ ...styles.gridTwo, marginTop: '15px' }}>
+                      <div style={styles.inputGroup}>
+                        <label style={styles.label}>Container Vol / Size / Specs</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g. 50L, 1 unit" 
                           value={containerVolume} 
                           onChange={(e) => setContainerVolume(e.target.value)} 
                           style={styles.input} 
@@ -971,7 +1041,7 @@ export default function Purchases() {
                       </div>
                     </div>
 
-                    <div style={styles.inputGroup}>
+                    <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
                       <label style={styles.label}>Unit Cost (₱)</label>
                       <input 
                         type="number" 
@@ -1118,7 +1188,10 @@ export default function Purchases() {
                       lineItems.map((li) => (
                         <div key={li.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #222', padding: '10px 0' }}>
                           <div>
-                            <div style={{ fontWeight: 'bold' }}>{li.code ? `[${li.code}] ` : ''}{li.name}</div>
+                            <div style={{ fontWeight: 'bold' }}>
+                              <span style={{ fontSize: '12px', padding: '2px 5px', background: '#222', borderRadius: '3px', color: '#c5a059', marginRight: '6px' }}>{li.type}</span>
+                              {li.code ? `[${li.code}] ` : ''}{li.name}
+                            </div>
                             <div style={{ fontSize: '16px', color: '#888' }}>
                               {li.quantity} {li.containerVolume ? `(${li.containerVolume})` : ''} @ ₱{li.unitCost}
                             </div>

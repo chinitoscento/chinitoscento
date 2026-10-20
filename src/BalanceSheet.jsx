@@ -164,20 +164,9 @@ export default function BalanceSheet() {
   const fetchBalanceSheetData = async () => {
     setLoading(true);
     try {
-      // Query journal_entry_lines and join journal_entries for date filtering
-      const { data, error } = await supabase
-        .from('journal_entry_lines')
-        .select(`
-          account_code,
-          debit,
-          credit,
-          journal_entries!inner (
-            date
-          )
-        `)
-        .lte('journal_entries.date', asOfDate);
-
-      if (error) console.error('Error fetching balance sheet lines:', error);
+      // Corrected to query journal_entry_lines instead of journal_entries header table
+      const { data, error } = await supabase.from('journal_entry_lines').select('*');
+      if (error) console.error(error);
       
       let totals = { 
         cash: 0, 
@@ -191,15 +180,15 @@ export default function BalanceSheet() {
       };
 
       if (data) {
-        data.forEach(line => {
-          const code = line.account_code || '';
-          const debit = Number(line.debit || 0);
-          const credit = Number(line.credit || 0);
+        data.forEach(entry => {
+          const code = entry.account_code || '';
+          const debit = Number(entry.debit || 0);
+          const credit = Number(entry.credit || 0);
 
           if (code.startsWith('10')) totals.cash += debit - credit;
           if (code.startsWith('12')) totals.receivables += debit - credit;
-          if (code.startsWith('13') || code.startsWith('14')) totals.inventory += debit - credit;
-          if (code.startsWith('16')) totals.equipment += debit - credit;
+          if (code.startsWith('13')) totals.inventory += debit - credit;   // Matches 1310, 1320, 1330
+          if (code.startsWith('15')) totals.equipment += debit - credit;   // Matches 1500 Equipment & Vessels
           if (code.startsWith('20')) totals.payables += credit - debit;
           if (code.startsWith('21')) totals.loansPayable += credit - debit;
           if (code.startsWith('30')) totals.capital += credit - debit;
