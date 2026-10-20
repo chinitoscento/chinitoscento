@@ -277,7 +277,7 @@ export default function Purchases() {
   const [transactionDate, setTransactionDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [currentRefId, setCurrentRefId] = useState('');
   
-  const [itemType, setItemType] = useState('RM'); // 'RM' = Raw Material, 'PKG' = Packaging, 'EQP' = Equipment / Capital Asset, 'SUP' = Supplies
+  const [itemType, setItemType] = useState('RM'); // 'RM' = Raw & Packaging Materials, 'EQP' = Equipment / Capital Asset, 'SUP' = Supplies
   const [selectedCatalogueItem, setSelectedCatalogueItem] = useState(''); 
   const [containerVolume, setContainerVolume] = useState(''); 
   const [quantity, setQuantity] = useState('');
@@ -471,7 +471,7 @@ export default function Purchases() {
     let itemName = '';
     let itemCode = null;
 
-    if (itemType === 'RM' || itemType === 'PKG') {
+    if (itemType === 'RM') {
       const foundCat = rawCatalogue.find(cat => String(cat.id) === String(selectedCatalogueItem));
       itemCode = selectedCatalogueItem;
       itemName = foundCat ? (foundCat.rawMaterial || foundCat.name || foundCat.raw_material || 'Unknown Material') : 'Unknown Material';
@@ -487,7 +487,7 @@ export default function Purchases() {
 
     const newItem = {
       id: Date.now() + Math.random(),
-      type: itemType, // 'RM', 'PKG', 'EQP', or 'SUP'
+      type: itemType, // 'RM', 'EQP', or 'SUP'
       code: itemCode, 
       name: itemName,
       containerVolume: parsedVolumeStr,
@@ -631,7 +631,7 @@ export default function Purchases() {
 
       // 2. Prepare Line Items separating Inventory items vs Equipment / Capital Assets
       const totalInventoryAmount = lineItems
-        .filter(i => i.type === 'RM' || i.type === 'PKG')
+        .filter(i => i.type === 'RM')
         .reduce((sum, i) => sum + i.total, 0);
 
       const totalEquipmentAmount = lineItems
@@ -647,7 +647,7 @@ export default function Purchases() {
       if (totalInventoryAmount > 0) {
         linesPayload.push({
           je_number: jeNumber,
-          account_code: '1310', // Raw Materials / Packaging Inventory
+          account_code: '1310', // Raw Materials & Packaging Inventory
           description: consolidatedMemo,
           debit: totalInventoryAmount,
           credit: 0
@@ -710,7 +710,7 @@ export default function Purchases() {
 
       // 4. Update Inventory stock levels only for inventory-type items
       for (const line of lineItems) {
-        if (line.type === 'RM' || line.type === 'PKG') {
+        if (line.type === 'RM') {
           const catMeta = rawCatalogue.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name || c.raw_material === line.name);
           const volumeStr = line.containerVolume || (catMeta ? (catMeta.volumeSize || catMeta.volume_size) : '1');
           const multiplier = parseVolumeInMl(volumeStr);
@@ -802,7 +802,7 @@ export default function Purchases() {
       <div style={styles.headerBlockWithBtn}>
         <div>
           <h2 style={styles.pageTitle}>Purchases Transactions</h2>
-          <p style={styles.subText}>Record raw material, packaging, equipment, and supply acquisitions</p>
+          <p style={styles.subText}>Record raw materials, packaging, equipment, and supply acquisitions</p>
         </div>
         <button onClick={handleOpenModal} style={styles.primaryBtn}>
           Add Purchase Transaction
@@ -976,14 +976,13 @@ export default function Purchases() {
                         }} 
                         style={styles.input}
                       >
-                        <option value="RM">Raw Material (Inventory)</option>
-                        <option value="PKG">Packaging Material (Inventory)</option>
+                        <option value="RM">Raw & Packaging Materials (Inventory)</option>
                         <option value="EQP">Equipment / Capital Asset</option>
                         <option value="SUP">General Supplies / Expense</option>
                       </select>
                     </div>
 
-                    {(itemType === 'RM' || itemType === 'PKG') ? (
+                    {itemType === 'RM' ? (
                       <div style={{ ...styles.inputGroup, marginTop: '15px' }}>
                         <label style={styles.label}>Item (Catalogue)</label>
                         <select 

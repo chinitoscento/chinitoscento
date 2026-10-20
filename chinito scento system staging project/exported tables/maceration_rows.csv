@@ -1,3 +1,0 @@
-id,production_code,scent,product_code,volume_desired,expected_qty,status,date,ready_date,created_at
-2,MAC-20260700001,ANTONITO,CS-ANT-01,50.00,1,Bottled,2026-07-01,2026-07-31,2026-09-12 11:00:38+00
-3,MAC-20260700002,AURELIUS,CS-AUR-02,1000.00,20,Bottled,2026-07-01,2026-07-31,2026-09-12 12:10:46.50053+00

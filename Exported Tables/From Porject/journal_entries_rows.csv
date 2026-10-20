@@ -1,0 +1,9 @@
+id,je_number,date,reference_no,description,status,created_at
+1,JE-202610000001,2026-06-30,,INITIAL CAPITAL,Posted,2026-10-19 09:37:21.889775+08
+2,JE-PUR-202606000002,2026-06-30,2606252P4CJS0T,"Purchase of [RM-012] BLACK BOTTLE v1 (50ml) (1) (20 x ₱30.8), [RM-013] CLEAR BOTTLE v1 (50ml) (1) (20 x ₱30.8) from Liiv-B (Shopee) (2606252P4CJS0T) Cash",Posted,2026-10-19 09:40:13.623155+08
+3,JE-EXP-202606000003,2026-06-30,,To Record Expense made for AMBER GLASS - 1L Cash,Posted,2026-10-19 09:53:51.210716+08
+4,JE-PUR-202606000004,2026-06-30,,"Purchase of [RM-011] EASYBLEND (2880) (1 x ₱1496.88), [RM-001] ANT OIL (40) (1 x ₱48), [RM-004] GAB OIL (345) (1 x ₱1793.66), [RM-008] EMI OIL (200) (1 x ₱1039.8), [RM-009] KIT OIL (490) (1 x ₱3087) from CHEMWORLD - DAVAO Cash",Posted,2026-10-20 08:25:09.146338+08
+5,JE-202610000005,2026-06-30,,ADJUSTING Entry. To crroect recording of Amber Glasses as capital asset instead of expense,Posted,2026-10-20 09:49:15.704866+08
+6,JE-PUR-202606000006,2026-06-30,,Purchase of [EQP-2812] Amber Glass (1L) (30 x ₱75) from CHEMWORLD - DAVAO Cash,Posted,2026-10-20 09:59:53.79053+08
+7,JE-PUR-202606000007,2026-06-30,,"Purchase of [RM-014] ANT BTL STKR (50ml) (1) (1 x ₱6.13), [RM-017] GAB BTL STKR (50ml) (1) (22 x ₱6.13), [RM-021] EMI BTL STKR (50ml) (1) (20 x ₱6.13), [RM-022] KIT BTL STKR (50ml) (1) (29 x ₱6.13) from DAVAO DTF PRINTS Cash",Posted,2026-10-20 10:22:49.800716+08
+8,JE-PUR-202606000008,2026-06-30,,Purchase of [RM-024] BOX v1 (50ml) (1) (72 x ₱12) from BPdesign Digos Signagemaker Cash,Posted,2026-10-20 12:22:42.914629+08

@@ -977,7 +977,7 @@ export default function Purchases() {
                         style={styles.input}
                       >
                         <option value="RM">Raw Material (Inventory)</option>
-                        <option value="PKG">Packaging Material (Inventory)</option>
+                        <option value="RM">Packaging Material (Inventory)</option>
                         <option value="EQP">Equipment / Capital Asset</option>
                         <option value="SUP">General Supplies / Expense</option>
                       </select>

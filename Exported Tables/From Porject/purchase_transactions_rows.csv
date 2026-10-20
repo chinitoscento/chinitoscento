@@ -1,0 +1,6 @@
+id,ref_id,supplier_name,creditor_name,invoice_reference,transaction_date,payment_mode,credit_option,monthly_amortization,installment_count,first_due_date,total_purchase_amount,computed_interest,computed_rate,total_amount_due,balance_due,payment_status,created_at
+1,PUR-202607000001,Liiv-B (Shopee),,2606252P4CJS0T,2026-06-30,Cash,N/A,,,,1232.00,0.00,0.00,1232.00,0.00,PAID,2026-10-19 09:40:12.846829+08
+2,PUR-202606000002,CHEMWORLD - DAVAO,,,2026-06-30,Cash,N/A,,,,7465.34,0.00,0.00,7465.34,0.00,PAID,2026-10-20 08:25:08.35939+08
+3,PUR-202607000003,CHEMWORLD - DAVAO,,,2026-06-30,Cash,N/A,,,,2250.00,0.00,0.00,2250.00,0.00,PAID,2026-10-20 09:59:53.189385+08
+4,PUR-202607000004,DAVAO DTF PRINTS,,,2026-06-30,Cash,N/A,,,,441.36,0.00,0.00,441.36,0.00,PAID,2026-10-20 10:22:48.914368+08
+5,PUR-202607000005,BPdesign Digos Signagemaker,,,2026-06-30,Cash,N/A,,,,864.00,0.00,0.00,864.00,0.00,PAID,2026-10-20 12:22:42.257267+08

@@ -1,0 +1,2 @@
+date,ref_number,reference_number,item_description,classification,amount,creditor,terms_of_payment,credit_type,computed_interest,computed_rate,num_installments,monthly_amount,first_due_date,due_date,total_amount_due,status,amount_paid,balance_due,created_at,id
+2026-06-30,EXP-202606000001,,"[{""itemDescription"":""AMBER GLASS - 1L"",""classification"":""Macerating Equipment"",""amount"":2250}]",Macerating Equipment,2250.00,,Cash,,0.00,0.00,,0.00,,,2250.00,Paid,2250.00,0.00,2026-10-19 09:53:50.754306+08,1
