@@ -134,52 +134,42 @@ export default function NotesToFinancialStatements() {
     wip: 0,
     finishedGoods: 0,
   });
+  const [equipmentBalance, setEquipmentBalance] = useState(0);
 
   useEffect(() => {
-    fetchInventoryDetails();
+    fetchFinancialDetails();
   }, []);
 
-  const fetchInventoryDetails = async () => {
+  const fetchFinancialDetails = async () => {
     setLoading(true);
     try {
-      // Query journal_entry_lines joined with accounts (to get account_code) 
-      // and journal_entries (to check entry status and dates)
-      const { data, error } = await supabase
-        .from('journal_entry_lines')
-        .select(`
-          debit,
-          credit,
-          chart_of_accounts!inner (
-            account_code
-          ),
-          journal_entries!inner (
-            status,
-            date
-          )
-        `);
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error fetching inventory lines:', error);
-      }
+      // Querying journal entry lines to accurately extract balances by account codes
+      const { data, error } = await supabase.from('journal_entry_lines').select('*');
+      if (error && error.code !== 'PGRST116') console.error(error);
 
       let rm = 0;
       let wip = 0;
       let fg = 0;
+      let equip = 0;
 
       if (data) {
-        data.forEach(line => {
-          const entryStatus = line.journal_entries?.status;
-          if (entryStatus && entryStatus.toLowerCase() === 'cancelled') return;
+        data.forEach(entry => {
+          const code = entry.account_code || '';
+          const net = Number(entry.debit || 0) - Number(entry.credit || 0);
 
-          const code = String(line.chart_of_accounts?.account_code || '').trim();
-          const net = Number(line.debit || 0) - Number(line.credit || 0);
+          // Explicitly exclude account 1500 from inventories
+          if (code !== '1500' && !code.startsWith('15')) {
+            if (code === '1310' || code === '1410-RM' || code === '1320') rm += net;
+            else if (code === '1330' || code === '1410-WIP') wip += net;
+            else if (code === '1410' || code === '1410-FG') fg += net;
+            else if (code.startsWith('13') || code.startsWith('14')) {
+              rm += net; // General inventory bucket fallback
+            }
+          }
 
-          if (code === '1310' || code === '1300') {
-            rm += net;
-          } else if (code === '1330') {
-            wip += net;
-          } else if (code === '1320') {
-            fg += net;
+          // Capture Equipment & Vessels (Account 1500 series) for Note 4
+          if (code.startsWith('15')) {
+            equip += net;
           }
         });
       }
@@ -189,8 +179,9 @@ export default function NotesToFinancialStatements() {
         wip: Math.max(0, wip),
         finishedGoods: Math.max(0, fg),
       });
+      setEquipmentBalance(Math.max(0, equip));
     } catch (err) {
-      console.error('Error fetching inventory breakdown:', err);
+      console.error('Error fetching financial notes details:', err);
     } finally {
       setLoading(false);
     }
@@ -241,7 +232,7 @@ export default function NotesToFinancialStatements() {
             <p style={styles.subtitle}>Chinito Scento Perfumery Atelier — Comprehensive Schedule of Accounts</p>
           </div>
           <div style={styles.headerControls}>
-            <button onClick={fetchInventoryDetails} style={styles.secondaryBtn}>
+            <button onClick={fetchFinancialDetails} style={styles.secondaryBtn}>
               {loading ? '...' : 'Refresh'}
             </button>
             <button onClick={handlePrint} style={styles.actionBtn}>Print Notes</button>
@@ -268,7 +259,7 @@ export default function NotesToFinancialStatements() {
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 3 — Inventories Breakdown</div>
           <p style={styles.paragraph} className="paragraph">
-            As presented on the Balance Sheet under Current Assets, total inventories consist of the following operational manufacturing tiers:
+            As presented on the Balance Sheet under Current Assets, total inventories consist of the following operational manufacturing tiers (excluding fixed assets):
           </p>
 
           <table style={styles.table}>
@@ -281,17 +272,17 @@ export default function NotesToFinancialStatements() {
             </thead>
             <tbody>
               <tr>
-                <td style={styles.td}><strong>Raw Materials & Packaging (Acct 1300/1310)</strong></td>
+                <td style={styles.td}><strong>Raw Materials & Packaging</strong></td>
                 <td style={styles.td}>Unreacted essential oils, compounds, empty glass bottles, atomizers, caps, and exterior boxes.</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.rawMaterials.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
-                <td style={styles.td}><strong>Work-in-Process (WIP) (Acct 1330)</strong></td>
+                <td style={styles.td}><strong>Work-in-Process (WIP)</strong></td>
                 <td style={styles.td}>Perfume juices currently undergoing aging and maceration in blending vats.</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.wip.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
-                <td style={styles.td}><strong>Finished Goods (Acct 1320)</strong></td>
+                <td style={styles.td}><strong>Finished Goods</strong></td>
                 <td style={styles.td}>Bottled, labeled, and boxed luxury fragrances fully ready for client dispatch or wholesale.</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.finishedGoods.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
@@ -309,6 +300,27 @@ export default function NotesToFinancialStatements() {
           <p style={styles.paragraph} className="paragraph">
             Equipment and perfume vessels include laboratory scales, mixing equipment, stainless steel blending vats, and collapsible mobile perfume bars utilized for retail events and exhibitions. Depreciation is computed on a straight-line basis over the estimated useful lives of the assets.
           </p>
+
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Asset Classification</th>
+                <th style={styles.th}>Account Code & Description</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>Carrying Amount (PHP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={styles.td}><strong>Equipment & Perfume Vessels</strong></td>
+                <td style={styles.td}>Acct 1500 — Laboratory scales, blending vats, and mobile perfume cart fixtures.</td>
+                <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {equipmentBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td colSpan="2" style={styles.totalRowTD}><strong>Total Property, Plant & Equipment (Balance Sheet)</strong></td>
+                <td style={{ ...styles.totalRowTD, textAlign: 'right' }}><strong>₱ {equipmentBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
     </div>
