@@ -141,6 +141,7 @@ export default function IncomeStatement() {
   const [balances, setBalances] = useState({
     grossSales: 0,
     salesReturns: 0,
+    cogsDirect: 0,
     beginningInventory: 0,
     purchases: 0,
     endingInventory: 0,
@@ -181,6 +182,7 @@ export default function IncomeStatement() {
       let totals = {
         grossSales: 0,
         salesReturns: 0,
+        cogsDirect: 0,
         beginningInventory: 0,
         purchases: 0,
         endingInventory: 0,
@@ -206,8 +208,13 @@ export default function IncomeStatement() {
 
               if (code.startsWith('400')) totals.grossSales += netAmt;
               if (code.startsWith('401')) totals.salesReturns += debAmt;
+              
+              // Direct Perpetual COGS (Account 5000)
+              if (code === '5000' || code === '500') totals.cogsDirect += debAmt;
+
+              // Periodic Raw Purchases
+              if (code.startsWith('502') || code === '5100') totals.purchases += debAmt;
               if (code.startsWith('501')) totals.beginningInventory += debAmt;
-              if (code.startsWith('502')) totals.purchases += debAmt;
               if (code.startsWith('503')) totals.endingInventory += debAmt;
 
               if (code.startsWith('600')) totals.maceratingEquipment += debAmt;
@@ -233,7 +240,11 @@ export default function IncomeStatement() {
   };
 
   const netSales = balances.grossSales - balances.salesReturns;
-  const totalCOGS = (balances.beginningInventory + balances.purchases) - balances.endingInventory;
+  
+  // Total COGS evaluates direct Perpetual COGS or calculated Periodic COGS
+  const periodicCOGS = (balances.beginningInventory + balances.purchases) - balances.endingInventory;
+  const totalCOGS = balances.cogsDirect > 0 ? balances.cogsDirect : periodicCOGS;
+  
   const grossIncome = netSales - totalCOGS;
   const totalOpex = balances.maceratingEquipment + balances.rent + balances.payroll + balances.testerKits + balances.shipping + balances.marketing + balances.telecom + balances.transportation + balances.utilities + balances.otherOpex;
   const netIncome = grossIncome - totalOpex;
@@ -275,10 +286,7 @@ export default function IncomeStatement() {
       ['Revenues', 'Gross Sales', balances.grossSales],
       ['Revenues', 'Sales Returns & Allowances', balances.salesReturns],
       ['Net Sales', '', netSales],
-      ['COGS', 'Beginning Inventory', balances.beginningInventory],
-      ['COGS', 'Add: Purchases', balances.purchases],
-      ['COGS', 'Less: Ending Inventory', balances.endingInventory],
-      ['Total COGS', '', totalCOGS],
+      ['COGS', 'Cost of Goods Sold (Account 5000)', totalCOGS],
       ['Gross Income', '', grossIncome],
       ['Operating Expenses', 'Macerating Equipment', balances.maceratingEquipment],
       ['Operating Expenses', 'Rent', balances.rent],
@@ -339,17 +347,10 @@ export default function IncomeStatement() {
             <span>₱ {netSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
+          {/* PERPETUAL INVENTORY COGS DISPLAY */}
           <div style={styles.subRow} className="sub-row">
-            <span>Beginning Inventory</span>
-            <span style={styles.amount} className="amount">₱ {balances.beginningInventory.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Add: Purchases</span>
-            <span style={styles.amount} className="amount">₱ {balances.purchases.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Less: Ending Inventory</span>
-            <span style={styles.amount} className="amount">₱ {balances.endingInventory.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+            <span>Cost of Goods Sold (Account 5000)</span>
+            <span style={styles.amount} className="amount">₱ {totalCOGS.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
           <div style={styles.subTotalRow} className="sub-total-row">

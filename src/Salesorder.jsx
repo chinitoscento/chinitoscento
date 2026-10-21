@@ -31,6 +31,8 @@ export default function Salesorder() {
   const [formulations, setFormulations] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [settings, setSettings] = useState({});
+  const [rawMaterials, setRawMaterials] = useState([]);
+  const [purchaseLineItems, setPurchaseLineItems] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -70,7 +72,9 @@ export default function Salesorder() {
         { data: colData, error: colError },
         { data: formDa, error: formError },
         { data: purDa, error: purError },
-        { data: setDa, error: setError }
+        { data: setDa, error: setError },
+        { data: catDa, error: catError },
+        { data: pliDa, error: pliError }
       ] = await Promise.all([
         supabase.from('sales_orders').select('*').order('created_at', { ascending: false }),
         supabase.from('sales_order_items').select('*'),
@@ -78,8 +82,10 @@ export default function Salesorder() {
         supabase.from('finished_goods').select('*'),
         supabase.from('collections').select('*'),
         supabase.from('formulations').select('*'),
-        supabase.from('purchases').select('*'),
-        supabase.from('settings').select('*')
+        supabase.from('purchase_transactions').select(`*, purchase_line_items (*)`).order('transaction_date', { ascending: true }),
+        supabase.from('settings').select('*'),
+        supabase.from('raw_materials_catalogue').select('*'),
+        supabase.from('purchase_line_items').select('*')
       ]);
 
       if (soError) throw soError;
@@ -158,6 +164,8 @@ export default function Salesorder() {
       setFormulations(formDa || []);
       setPurchases(purDa || []);
       setSettings(settingsObj);
+      setRawMaterials(catDa || []);
+      setPurchaseLineItems(pliDa || []);
       setSoNumber(generateNextSoNumber(formattedSOs, orderDate));
     } catch (err) {
       console.error('Error loading sales orders from Supabase:', err.message);
@@ -301,6 +309,179 @@ export default function Salesorder() {
     }
   };
 
+  // --- EXACT IDENTICAL FIFO LAYER-BASED COSTING ENGINE FROM Costing.jsx ---
+  const parseVolumeInMl = (volumeStr) => {
+    if (!volumeStr) return 1;
+    const str = String(volumeStr).toLowerCase().trim();
+    const num = parseFloat(str) || 1;
+    if (str.includes('l') && !str.includes('ml')) {
+      return num * 1000;
+    }
+    return num;
+  };
+
+  const calculatePreciseUnitCostForFormulation = (formulation) => {
+    if (!formulation) return 0;
+
+    // 1. Build Chronological FIFO Lot Map from purchases & line items
+    const lotMap = {};
+    purchases.forEach(pur => {
+      const purDate = pur.transaction_date || pur.date || pur.purchaseDate || '2026-01-01';
+      const items = pur.purchase_line_items || [];
+      
+      items.forEach(it => {
+        if (it.type && it.type !== 'RM') return;
+        const code = String(it.code || it.item_code || '').trim().toUpperCase();
+        const name = String(it.name || it.raw_material_name || '').trim().toLowerCase();
+        const containerVolStr = it.container_volume || it.containerVolume || '1';
+        const containerMl = parseVolumeInMl(containerVolStr);
+        const qty = Number(it.quantity || 0);
+        const totalLotUnitsOrMl = qty * containerMl;
+        const totalCost = Number(it.total || (Number(it.unit_cost || 0) * qty));
+        const unitCostPerMlOrUnit = totalLotUnitsOrMl > 0 ? totalCost / totalLotUnitsOrMl : Number(it.unit_cost || 0);
+
+        const lotObj = {
+          date: purDate,
+          originalQty: totalLotUnitsOrMl,
+          unitCost: unitCostPerMlOrUnit
+        };
+
+        if (code) {
+          if (!lotMap[code]) lotMap[code] = [];
+          lotMap[code].push(lotObj);
+        }
+        if (name) {
+          if (!lotMap[name]) lotMap[name] = [];
+          lotMap[name].push(lotObj);
+        }
+      });
+    });
+
+    // 2. Calculate consumed quantities from maceration deductions
+    const consumedMap = {};
+    purchaseLineItems.forEach(l => {
+      if (l.type === 'MACERATION_DEDUCTION') {
+        const code = String(l.code || '').trim().toUpperCase();
+        const name = String(l.name || '').trim().toLowerCase();
+        const qtyConsumed = Math.abs(Number(l.quantity || 0));
+
+        if (code) consumedMap[code] = (consumedMap[code] || 0) + qtyConsumed;
+        if (name) consumedMap[name] = (consumedMap[name] || 0) + qtyConsumed;
+      }
+    });
+
+    // 3. FIFO Unit Cost Function matching Costing.jsx exactly
+    const getFifoUnitCost = (matCode, matName, requiredQty) => {
+      const codeKey = String(matCode || '').trim().toUpperCase();
+      const nameKey = String(matName || '').trim().toLowerCase();
+
+      let lots = (codeKey && lotMap[codeKey]) || (nameKey && lotMap[nameKey]) || [];
+      let consumed = (codeKey && consumedMap[codeKey]) || (nameKey && consumedMap[nameKey]) || 0;
+
+      if (lots.length === 0) return null;
+
+      let remainingToSkip = consumed;
+      let availableLots = [];
+      for (const lot of lots) {
+        if (remainingToSkip >= lot.originalQty) {
+          remainingToSkip -= lot.originalQty;
+        } else {
+          const availInLot = lot.originalQty - remainingToSkip;
+          remainingToSkip = 0;
+          availableLots.push({ ...lot, available: availInLot });
+        }
+      }
+
+      if (availableLots.length === 0) {
+        return lots[lots.length - 1].unitCost;
+      }
+
+      let needed = requiredQty;
+      let totalCostAccum = 0;
+      let totalTaken = 0;
+
+      for (const lot of availableLots) {
+        if (needed <= 0) break;
+        const take = Math.min(needed, lot.available);
+        totalCostAccum += take * lot.unitCost;
+        totalTaken += take;
+        needed -= take;
+      }
+
+      if (needed > 0 && availableLots.length > 0) {
+        const lastCost = availableLots[availableLots.length - 1].unitCost;
+        totalCostAccum += needed * lastCost;
+        totalTaken += needed;
+      }
+
+      return totalTaken > 0 ? totalCostAccum / totalTaken : null;
+    };
+
+    const findCatalogItem = (idOrCode) => {
+      if (!idOrCode) return null;
+      const target = String(idOrCode).trim().toLowerCase();
+      return rawMaterials.find(c => 
+        String(c.id || '').trim().toLowerCase() === target ||
+        String(c.code || '').trim().toLowerCase() === target ||
+        String(c.raw_material || c.rawMaterial || c.name || '').trim().toLowerCase() === target
+      );
+    };
+
+    const getResolvedUnitCost = (matId, matName, fallbackCost, isLiquid, requiredVolumeMl) => {
+      const key = String(matId || '').trim().toUpperCase();
+      const lowerName = String(matName || '').trim().toLowerCase();
+      
+      let unitCost = null;
+      if (key && getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1) !== null) {
+        unitCost = getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1);
+      } else {
+        unitCost = getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1);
+      }
+
+      if (unitCost === null || isNaN(unitCost)) {
+        unitCost = fallbackCost / (isLiquid ? (parseVolumeInMl(requiredVolumeMl) || 1) : 1);
+      }
+
+      return isLiquid ? unitCost * requiredVolumeMl : unitCost;
+    };
+
+    const idOil = formulation.oil_id || formulation.oilId || formulation.oil || '';
+    const idSolvent = formulation.solvent_id || formulation.solventId || formulation.solvent || '';
+    const idBottle = formulation.bottle_id || formulation.bottleId || formulation.bottle || '';
+    const idBottleSticker = formulation.bottle_sticker_id || formulation.bottleStickerId || formulation.bottleSticker || '';
+    const idBox = formulation.box_id || formulation.boxId || formulation.box || '';
+    const idBoxSticker = formulation.box_sticker_id || formulation.boxStickerId || formulation.boxSticker || '';
+    const idShrinkWrap = formulation.wrapping_id || formulation.shrinkWrap || formulation.shrinkingWrap || formulation.wrappingId || '';
+
+    const catOil = findCatalogItem(idOil);
+    const catSolvent = findCatalogItem(idSolvent);
+    const catBottle = findCatalogItem(idBottle);
+    const catBottleSticker = findCatalogItem(idBottleSticker);
+    const catBox = findCatalogItem(idBox);
+    const catBoxSticker = findCatalogItem(idBoxSticker);
+    const catShrinkWrap = findCatalogItem(idShrinkWrap);
+
+    const rawSize = String(formulation.size_value || formulation.sizeValue || formulation.size || '50').replace(/[^0-9]/g, '');
+    const volumeMl = Number(rawSize) || 50;
+
+    const oilPercent = Number(formulation.oil_percentage || formulation.oilPercentage || formulation.oilRatio || 20);
+    const solventPercent = Number(formulation.solvent_percentage || formulation.solventPercentage || formulation.solventRatio || 80);
+
+    const oilMl = volumeMl * (oilPercent / 100);
+    const solventMl = volumeMl * (solventPercent / 100);
+
+    const savedSettings = settings || {};
+    const unitCostOil = getResolvedUnitCost(idOil, catOil?.raw_material || catOil?.rawMaterial, Number(savedSettings.default_oil_cost ?? 4.5), true, oilMl);
+    const unitCostSolvent = getResolvedUnitCost(idSolvent, catSolvent?.raw_material || catSolvent?.rawMaterial, Number(savedSettings.default_solvent_cost ?? 0.38), true, solventMl);
+    const unitCostBottle = getResolvedUnitCost(idBottle, catBottle?.raw_material || catBottle?.rawMaterial, Number(savedSettings.default_bottle_cost ?? 25), false, 1);
+    const unitCostBottleSticker = getResolvedUnitCost(idBottleSticker, catBottleSticker?.raw_material || catBottleSticker?.rawMaterial, Number(savedSettings.default_bottle_sticker ?? 3), false, 1);
+    const unitCostBox = getResolvedUnitCost(idBox, catBox?.raw_material || catBox?.rawMaterial, Number(savedSettings.default_box_cost ?? 12), false, 1);
+    const unitCostBoxSticker = getResolvedUnitCost(idBoxSticker, catBoxSticker?.raw_material || catBoxSticker?.rawMaterial, Number(savedSettings.default_box_sticker ?? 3), false, 1);
+    const unitCostShrinkWrap = getResolvedUnitCost(idShrinkWrap, catShrinkWrap?.raw_material || catShrinkWrap?.rawMaterial, Number(savedSettings.default_shrink_wrap ?? 2), false, 1);
+
+    return unitCostOil + unitCostSolvent + unitCostBottle + unitCostBottleSticker + unitCostBox + unitCostBoxSticker + unitCostShrinkWrap;
+  };
+
   const postJournalEntriesForSale = async (soRecord) => {
     try {
       const totalAmount = Number(soRecord.totalDue || 0);
@@ -324,78 +505,29 @@ export default function Salesorder() {
       
       let totalCogs = 0;
 
+      // Strictly map each item by product_code/scent to formulations to extract Costing.jsx exact cost
       soRecord.items.forEach(item => {
         const itemCodeClean = String(item.productCode || '').trim().toLowerCase();
         const itemNameClean = String(item.productName || '').trim().toLowerCase();
+        const itemQty = Number(item.qty || 0);
 
         const formulation = formulations.find(f => {
-          const fCode = String(f.product_code || f.productCode || '').trim().toLowerCase();
-          const fScent = String(f.scent_name || f.scentName || '').trim().toLowerCase();
-          return fCode === itemCodeClean || fScent === itemNameClean || fCode === itemNameClean;
-        });
-
-        const matchedFg = finishedGoods.find(fg => {
-          const fgCode = String(fg.productCode || '').trim().toLowerCase();
-          const fgName = String(fg.name || '').trim().toLowerCase();
-          return fgCode === itemCodeClean || fgName === itemNameClean;
+          const fCode = String(f.product_code || f.productCode || f.code || '').trim().toLowerCase();
+          const fScent = String(f.scent_name || f.scentName || f.name || '').trim().toLowerCase();
+          return (fCode && fCode === itemCodeClean) || (fScent && fScent === itemNameClean) || (fCode && fCode === itemNameClean);
         });
 
         let unitCost = 0;
-
         if (formulation) {
-          const getMaterialCost = (materialId, defaultCostKey) => {
-            if (!materialId) return 0;
-            let latestPrice = null;
-            for (const purchase of purchases) {
-              const foundItem = (purchase.items || []).find(
-                pi => String(pi.code || '').trim().toLowerCase() === String(materialId).trim().toLowerCase() || 
-                      String(pi.raw_material || '').trim().toLowerCase() === String(materialId).trim().toLowerCase()
-              );
-              if (foundItem && foundItem.unit_price) {
-                latestPrice = Number(foundItem.unit_price);
-                break;
-              }
-            }
-            if (latestPrice !== null) return latestPrice;
-            return Number(settings?.[defaultCostKey] || 0);
-          };
-
-          const sizeMl = parseFloat(formulation.size_value || formulation.sizeValue) || 50;
-          const oilPct = (parseFloat(formulation.oil_percentage || formulation.oilPercentage) || 20) / 100;
-          const solventPct = (parseFloat(formulation.solvent_percentage || formulation.solventPercentage) || 80) / 100;
-
-          const oilUnitCost = getMaterialCost(formulation.oil_id || formulation.oilId, 'default_oil_cost');
-          const solventUnitCost = getMaterialCost(formulation.solvent_id || formulation.solventId, 'default_solvent_cost');
-          const bottleCost = getMaterialCost(formulation.bottle_id || formulation.bottleId, 'default_bottle_cost');
-          const bottleStickerCost = getMaterialCost(formulation.bottle_sticker_id || formulation.bottleStickerId, 'default_bottle_sticker');
-          const boxCost = getMaterialCost(formulation.box_id || formulation.boxId, 'default_box_cost');
-          const boxStickerCost = getMaterialCost(formulation.box_sticker_id || formulation.boxStickerId, 'default_box_sticker');
-          const wrappingCost = getMaterialCost(formulation.wrapping_id || formulation.wrappingId, 'default_shrink_wrap');
-
-          const calculatedOilCost = (sizeMl * oilPct) * oilUnitCost;
-          const calculatedSolventCost = (sizeMl * solventPct) * solventUnitCost;
-
-          unitCost = (
-            calculatedOilCost +
-            calculatedSolventCost +
-            bottleCost +
-            bottleStickerCost +
-            boxCost +
-            boxStickerCost +
-            wrappingCost
-          );
-        } else if (matchedFg && Number(matchedFg.cost || 0) > 0) {
-          unitCost = Number(matchedFg.cost);
+          unitCost = calculatePreciseUnitCostForFormulation(formulation);
         } else {
-          unitCost = Number(item.price || 0) * 0.4;
+          // Fallback if formulation is missing entirely from master table
+          const matchedFg = finishedGoods.find(fg => String(fg.productCode).trim().toLowerCase() === itemCodeClean);
+          unitCost = matchedFg ? Number(matchedFg.cost || 0) : 0;
         }
 
-        totalCogs += Number(item.qty || 0) * Number(unitCost);
+        totalCogs += itemQty * unitCost;
       });
-
-      if (totalCogs <= 0) {
-        totalCogs = totalAmount * 0.4; 
-      }
 
       const linesPayload = [
         {

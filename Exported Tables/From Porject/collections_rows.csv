@@ -1,0 +1,2 @@
+id,code,date,customer_name,invoice_no,amount_due,amount_paid,balance_after,remarks,created_at,so_number,customer_id,transaction_type,reference,debit,credit,payment_mode,reference_no
+1,COL-202610000001,2026-07-14,SHARIMAH RAMEL,SO-202607000001,600,600,0,FULLY PAID,2026-10-20 09:29:16.066671+08,,,,,0.00,0.00,CASH,N/A

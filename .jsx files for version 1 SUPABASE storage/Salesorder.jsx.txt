@@ -31,6 +31,8 @@ export default function Salesorder() {
   const [formulations, setFormulations] = useState([]);
   const [purchases, setPurchases] = useState([]);
   const [settings, setSettings] = useState({});
+  const [rawMaterials, setRawMaterials] = useState([]);
+  const [purchaseLineItems, setPurchaseLineItems] = useState([]);
 
   useEffect(() => {
     loadData();
@@ -70,7 +72,9 @@ export default function Salesorder() {
         { data: colData, error: colError },
         { data: formDa, error: formError },
         { data: purDa, error: purError },
-        { data: setDa, error: setError }
+        { data: setDa, error: setError },
+        { data: catDa, error: catError },
+        { data: pliDa, error: pliError }
       ] = await Promise.all([
         supabase.from('sales_orders').select('*').order('created_at', { ascending: false }),
         supabase.from('sales_order_items').select('*'),
@@ -78,8 +82,10 @@ export default function Salesorder() {
         supabase.from('finished_goods').select('*'),
         supabase.from('collections').select('*'),
         supabase.from('formulations').select('*'),
-        supabase.from('purchases').select('*'),
-        supabase.from('settings').select('*')
+        supabase.from('purchase_transactions').select('*, purchase_line_items (*)'),
+        supabase.from('settings').select('*'),
+        supabase.from('raw_materials_catalogue').select('*'),
+        supabase.from('purchase_line_items').select('*')
       ]);
 
       if (soError) throw soError;
@@ -147,7 +153,7 @@ export default function Salesorder() {
       const fgList = (fgData || []).map(item => ({
         productCode: String(item.product_code || item.code || ''),
         name: String(item.name || item.scent || ''),
-        stockQty: Number(item.stock || item.quantity || item.stock || 0),
+        stockQty: Number(item.stock || item.quantity || 0),
         price: Number(item.price || 0),
         cost: Number(item.cost || item.unit_cost || 0)
       }));
@@ -158,6 +164,8 @@ export default function Salesorder() {
       setFormulations(formDa || []);
       setPurchases(purDa || []);
       setSettings(settingsObj);
+      setRawMaterials(catDa || []);
+      setPurchaseLineItems(pliDa || []);
       setSoNumber(generateNextSoNumber(formattedSOs, orderDate));
     } catch (err) {
       console.error('Error loading sales orders from Supabase:', err.message);
@@ -301,9 +309,97 @@ export default function Salesorder() {
     }
   };
 
+  // --- EXACT COSTING ENGINE SHARED WITH Costing.jsx ---
+  const parseVolumeInMl = (volumeStr) => {
+    if (!volumeStr) return 1;
+    const str = String(volumeStr).toLowerCase().trim();
+    const num = parseFloat(str) || 1;
+    if (str.includes('l') && !str.includes('ml')) {
+      return num * 1000;
+    }
+    return num;
+  };
+
+  const computeUnitCostForFormulation = (formulation) => {
+    if (!formulation) return 50; // Fallback default unit cost
+
+    const findCatalogItem = (idOrCode) => {
+      if (!idOrCode) return null;
+      const target = String(idOrCode).trim().toLowerCase();
+      return rawMaterials.find(c => 
+        String(c.id || '').trim().toLowerCase() === target ||
+        String(c.code || '').trim().toLowerCase() === target ||
+        String(c.raw_material || c.rawMaterial || c.name || '').trim().toLowerCase() === target
+      );
+    };
+
+    const idOil = formulation.oil_id || formulation.oilId || formulation.oil || '';
+    const idSolvent = formulation.solvent_id || formulation.solventId || formulation.solvent || '';
+    const idBottle = formulation.bottle_id || formulation.bottleId || formulation.bottle || '';
+    const idBottleSticker = formulation.bottle_sticker_id || formulation.bottleStickerId || formulation.bottleSticker || '';
+    const idBox = formulation.box_id || formulation.boxId || formulation.box || '';
+    const idBoxSticker = formulation.box_sticker_id || formulation.boxStickerId || formulation.boxSticker || '';
+    const idShrinkWrap = formulation.wrapping_id || formulation.shrinkWrap || formulation.shrinkingWrap || formulation.wrappingId || '';
+
+    const catOil = findCatalogItem(idOil);
+    const catSolvent = findCatalogItem(idSolvent);
+    const catBottle = findCatalogItem(idBottle);
+    const catBottleSticker = findCatalogItem(idBottleSticker);
+    const catBox = findCatalogItem(idBox);
+    const catBoxSticker = findCatalogItem(idBoxSticker);
+    const catShrinkWrap = findCatalogItem(idShrinkWrap);
+
+    const rawSize = String(formulation.size_value || formulation.sizeValue || formulation.size || '50').replace(/[^0-9]/g, '');
+    const volumeMl = Number(rawSize) || 50;
+
+    const oilPercent = Number(formulation.oil_percentage || formulation.oilPercentage || formulation.oilRatio || 20);
+    const solventPercent = Number(formulation.solvent_percentage || formulation.solventPercentage || formulation.solventRatio || 80);
+
+    const oilMl = volumeMl * (oilPercent / 100);
+    const solventMl = volumeMl * (solventPercent / 100);
+
+    const getMaterialCostPrice = (matId, matName, defaultCostKey, isLiquid, reqVol) => {
+      const key = String(matId || '').trim().toUpperCase();
+      const lowerName = String(matName || '').trim().toLowerCase();
+      let unitCost = null;
+
+      for (const pur of purchases) {
+        const pItems = pur.purchase_line_items || pur.items || [];
+        const found = pItems.find(pi => {
+          const piCode = String(pi.code || pi.item_code || pi.raw_material || '').trim().toUpperCase();
+          const piName = String(pi.name || pi.raw_material_name || '').trim().toLowerCase();
+          return piCode === key || piName === lowerName;
+        });
+        if (found) {
+          const pVal = found.unit_price ?? found.unitPrice ?? found.price ?? found.cost;
+          if (pVal !== undefined && pVal !== null && !isNaN(Number(pVal))) {
+            unitCost = Number(pVal);
+            break;
+          }
+        }
+      }
+
+      if (unitCost === null) {
+        unitCost = Number(settings?.[defaultCostKey] || (isLiquid ? 0.38 : 25));
+      }
+
+      return isLiquid ? unitCost * reqVol : unitCost;
+    };
+
+    const unitCostOil = getMaterialCostPrice(idOil, catOil?.raw_material, 'default_oil_cost', true, oilMl);
+    const unitCostSolvent = getMaterialCostPrice(idSolvent, catSolvent?.raw_material, 'default_solvent_cost', true, solventMl);
+    const unitCostBottle = getMaterialCostPrice(idBottle, catBottle?.raw_material, 'default_bottle_cost', false, 1);
+    const unitCostBottleSticker = getMaterialCostPrice(idBottleSticker, catBottleSticker?.raw_material, 'default_bottle_sticker', false, 1);
+    const unitCostBox = getMaterialCostPrice(idBox, catBox?.raw_material, 'default_box_cost', false, 1);
+    const unitCostBoxSticker = getMaterialCostPrice(idBoxSticker, catBoxSticker?.raw_material, 'default_box_sticker', false, 1);
+    const unitCostShrinkWrap = getMaterialCostPrice(idShrinkWrap, catShrinkWrap?.raw_material, 'default_shrink_wrap', false, 1);
+
+    return unitCostOil + unitCostSolvent + unitCostBottle + unitCostBottleSticker + unitCostBox + unitCostBoxSticker + unitCostShrinkWrap;
+  };
+
   const postJournalEntriesForSale = async (soRecord) => {
     try {
-      const totalAmount = soRecord.totalDue || 0;
+      const totalAmount = Number(soRecord.totalDue || 0);
       const isCash = (soRecord.paymentMode || '').toUpperCase() === 'CASH';
       
       const jeNumber = await generateNextJournalNumber('JE-SO', soRecord.date);
@@ -324,59 +420,43 @@ export default function Salesorder() {
       
       let totalCogs = 0;
 
+      // Identify product code strictly and calculate authoritative unit cost matching Costing.jsx
       soRecord.items.forEach(item => {
-        const formulation = formulations.find(
-          f => f.product_code === item.productCode || f.scent_name === item.productName
-        );
+        const itemCodeClean = String(item.productCode || '').trim().toLowerCase();
+        const itemNameClean = String(item.productName || '').trim().toLowerCase();
+        const itemQty = Number(item.qty || 0);
+
+        const formulation = formulations.find(f => {
+          const fCode = String(f.product_code || f.productCode || f.code || '').trim().toLowerCase();
+          const fScent = String(f.scent_name || f.scentName || f.name || '').trim().toLowerCase();
+          return (fCode && fCode === itemCodeClean) || (fScent && fScent === itemNameClean) || (fCode && fCode === itemNameClean);
+        });
+
+        const matchedFg = finishedGoods.find(fg => {
+          const fgCode = String(fg.productCode || fg.code || '').trim().toLowerCase();
+          const fgName = String(fg.name || fg.scent || '').trim().toLowerCase();
+          return (fgCode && fgCode === itemCodeClean) || (fgName && fgName === itemNameClean);
+        });
 
         let unitCost = 0;
 
         if (formulation) {
-          const getMaterialCost = (materialId, defaultCostKey) => {
-            if (!materialId) return 0;
-            let latestPrice = null;
-            for (const purchase of purchases) {
-              const foundItem = (purchase.items || []).find(
-                pi => pi.code === materialId || pi.raw_material === materialId
-              );
-              if (foundItem && foundItem.unit_price) {
-                latestPrice = Number(foundItem.unit_price);
-                break;
-              }
-            }
-            if (latestPrice !== null) return latestPrice;
-            return Number(settings?.[defaultCostKey] || 0);
-          };
-
-          const sizeMl = parseFloat(formulation.size_value) || 50;
-          const oilPct = (parseFloat(formulation.oil_percentage) || 20) / 100;
-          const solventPct = (parseFloat(formulation.solvent_percentage) || 80) / 100;
-
-          const oilUnitCost = getMaterialCost(formulation.oil_id, 'default_oil_cost');
-          const solventUnitCost = getMaterialCost(formulation.solvent_id, 'default_solvent_cost');
-          const bottleCost = getMaterialCost(formulation.bottle_id, 'default_bottle_cost');
-          const bottleStickerCost = getMaterialCost(formulation.bottle_sticker_id, 'default_bottle_sticker');
-          const boxCost = getMaterialCost(formulation.box_id, 'default_box_cost');
-          const boxStickerCost = getMaterialCost(formulation.box_sticker_id, 'default_box_sticker');
-          const wrappingCost = getMaterialCost(formulation.wrapping_id, 'default_shrink_wrap');
-
-          const calculatedOilCost = (sizeMl * oilPct) * oilUnitCost;
-          const calculatedSolventCost = (sizeMl * solventPct) * solventUnitCost;
-
-          unitCost = (
-            calculatedOilCost +
-            calculatedSolventCost +
-            bottleCost +
-            bottleStickerCost +
-            boxCost +
-            boxStickerCost +
-            wrappingCost
-          );
+          unitCost = computeUnitCostForFormulation(formulation);
+        } else if (matchedFg && Number(matchedFg.cost || 0) > 0) {
+          unitCost = Number(matchedFg.cost);
         } else {
-          unitCost = Number(item.price || 0) * 0.4;
+          // Fallback calculation for standard 50ml bottle
+          const defOil = Number(settings?.default_oil_cost || 4.5);
+          const defSol = Number(settings?.default_solvent_cost || 0.38);
+          const defBot = Number(settings?.default_bottle_cost || 25);
+          const defStk = Number(settings?.default_bottle_sticker || 3);
+          const defBox = Number(settings?.default_box_cost || 12);
+          const defXStk = Number(settings?.default_box_sticker || 3);
+          const defWrp = Number(settings?.default_shrink_wrap || 2);
+          unitCost = ((50 * 0.20) * defOil) + ((50 * 0.80) * defSol) + defBot + defStk + defBox + defXStk + defWrp;
         }
 
-        totalCogs += Number(item.qty || 0) * Number(unitCost);
+        totalCogs += itemQty * unitCost;
       });
 
       const linesPayload = [
@@ -610,7 +690,6 @@ export default function Salesorder() {
             console.error(`Failed to record ledger entry for ${matchingFg.productCode}:`, ledgerError.message);
           }
 
-          // FIXED: Removed non-existent 'quantity' column, updating 'stock' only
           const { error: updateError } = await supabase
             .from('finished_goods')
             .update({ stock: newQty })
