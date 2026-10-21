@@ -247,6 +247,14 @@ export default function Salesorder() {
     }
 
     const selectedFg = finishedGoods.find(fg => fg.productCode === selectedProductCode || fg.name === selectedProductCode);
+    
+    // --- STOCK SUFFICIENCY CHECK ---
+    if (selectedFg && qtyNum > Number(selectedFg.stockQty || 0)) {
+      alert(`Insufficient stock! Available stock for ${selectedFg.name} is only ${selectedFg.stockQty} pcs.`);
+      return;
+    }
+    // -------------------------------
+
     const productName = selectedFg ? selectedFg.name : selectedProductCode;
     const productCode = selectedFg ? selectedFg.productCode : selectedProductCode;
     const priceNum = Number(itemPrice) || (selectedFg ? selectedFg.price : 0);
