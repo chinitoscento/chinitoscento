@@ -8,7 +8,7 @@ import {
   Package,
   ChevronDown,
   ChevronUp,
-  Layers
+  Award
 } from 'lucide-react';
 
 export default function SalesProductionReport() {
@@ -115,11 +115,23 @@ export default function SalesProductionReport() {
     }
   });
 
-  // Master product catalog list as requested
-  const catalogScents = [
-    "ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT", 
-    "BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"
-  ];
+  // Master product catalog list categorized by gender archetype
+  const menUnisexScents = ["ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT"];
+  const womenScents = ["BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"];
+  const catalogScents = [...menUnisexScents, ...womenScents];
+
+  // Helper function to rank scents descending by quantity sold
+  const getRankedList = (scentArray) => {
+    return scentArray
+      .map(scentName => ({
+        name: scentName,
+        sold: scentMap[scentName] || 0
+      }))
+      .sort((a, b) => b.sold - a.sold);
+  };
+
+  const menUnisexRanking = getRankedList(menUnisexScents);
+  const womenRanking = getRankedList(womenScents);
 
   const customerBreakdown = Object.values(customerMap).map(cust => {
     const percentage = totalGrossSales > 0 ? (cust.totalSpent / totalGrossSales) * 100 : 0;
@@ -332,6 +344,50 @@ export default function SalesProductionReport() {
                   </div>
                 );
               })}
+            </div>
+          </div>
+
+          {/* RANKING OF PERFUME SCENT (TWO COLUMNS: MEN & UNISEX VS WOMEN) */}
+          <div style={styles.tableCard} className="print:bg-white print:border-gray-300">
+            <div style={styles.tableHeaderSection}>
+              <h2 style={styles.tableTitle}>
+                <Award size={18} color="#c5a059" /> Ranking of Perfume Scent
+              </h2>
+              <p style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>Performance rankings categorized by scent profile archetype.</p>
+            </div>
+            
+            <div style={styles.rankingColumnsGrid}>
+              {/* Left Column: Men & Unisex */}
+              <div style={styles.rankingColumn}>
+                <div style={styles.rankingColumnHeader}>Men & Unisex Collection</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {menUnisexRanking.map((item, idx) => (
+                    <div key={idx} style={styles.rankingRow} className="print:border-gray-200 print:bg-gray-50">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={styles.rankingBadge}>#{idx + 1}</span>
+                        <span style={styles.rankingScentName}>{item.name}</span>
+                      </div>
+                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>sold</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Right Column: Women */}
+              <div style={styles.rankingColumn}>
+                <div style={styles.rankingColumnHeader}>Women Collection</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {womenRanking.map((item, idx) => (
+                    <div key={idx} style={styles.rankingRow} className="print:border-gray-200 print:bg-gray-50">
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={styles.rankingBadge}>#{idx + 1}</span>
+                        <span style={styles.rankingScentName}>{item.name}</span>
+                      </div>
+                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>sold</span></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -678,6 +734,63 @@ const styles = {
     fontSize: '20px',
     fontWeight: '600',
     color: '#c5a059',
+    fontFamily: "'Cormorant Garamond', serif",
+  },
+  rankingColumnsGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+    gap: '20px',
+    padding: '20px 24px',
+    backgroundColor: '#0e0e0e',
+  },
+  rankingColumn: {
+    backgroundColor: '#141414',
+    border: '1px solid #222222',
+    borderRadius: '6px',
+    padding: '16px',
+  },
+  rankingColumnHeader: {
+    fontSize: '12px',
+    fontWeight: '700',
+    color: '#c5a059',
+    fontFamily: "'Cinzel', serif",
+    letterSpacing: '1px',
+    marginBottom: '14px',
+    paddingBottom: '8px',
+    borderBottom: '1px solid #222',
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  rankingRow: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#111111',
+    border: '1px solid #1c1c1c',
+    borderRadius: '4px',
+    padding: '10px 14px',
+  },
+  rankingBadge: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#c5a059',
+    backgroundColor: '#1a1a1a',
+    border: '1px solid #282828',
+    borderRadius: '4px',
+    padding: '2px 6px',
+    fontFamily: "'Cinzel', serif",
+  },
+  rankingScentName: {
+    fontSize: '13px',
+    fontWeight: '600',
+    color: '#dddddd',
+    fontFamily: "'Cinzel', serif",
+    letterSpacing: '0.5px',
+  },
+  rankingScentCount: {
+    fontSize: '14px',
+    fontWeight: '600',
+    color: '#ffffff',
     fontFamily: "'Cormorant Garamond', serif",
   },
   table: {

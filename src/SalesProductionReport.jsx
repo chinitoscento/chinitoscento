@@ -38,6 +38,7 @@ export default function SalesProductionReport() {
   const fetchSalesData = async () => {
     setLoading(true);
     try {
+      // Query sales orders including order status to filter out unapproved/declined transactions
       const { data, error } = await supabase
         .from('sales_orders')
         .select(`
@@ -45,7 +46,9 @@ export default function SalesProductionReport() {
           customer_name,
           date,
           total_amount,
+          status,
           sales_order_items (
+            product_code,
             product_name,
             quantity,
             unit_price,
@@ -62,9 +65,16 @@ export default function SalesProductionReport() {
     }
   };
 
-  // Filter data based on selected report mode
+  // Filter data based on selected report mode AND order status
   const filteredData = salesData.filter(order => {
     if (!order.date) return false;
+
+    // Exclude unapproved, declined, or cancelled orders
+    const orderStatus = String(order.status || '').toLowerCase().trim();
+    if (orderStatus === 'declined' || orderStatus === 'cancelled') {
+      return false;
+    }
+
     const orderDate = order.date.slice(0, 10);
 
     if (reportMode === 'custom') {
@@ -86,6 +96,24 @@ export default function SalesProductionReport() {
   const customerMap = {};
   let totalBottlesSold = 0;
 
+  // Master product catalog list categorized by gender archetype
+  const menUnisexScents = ["ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT"];
+  const womenScents = ["BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"];
+  const catalogScents = [...menUnisexScents, ...womenScents];
+
+  // Helper function to map messy product names/codes to standardized catalog names
+  const normalizeScentName = (rawName, rawCode) => {
+    const cleanName = String(rawName || '').toUpperCase().trim();
+    const cleanCode = String(rawCode || '').toUpperCase().trim();
+
+    for (const catScent of catalogScents) {
+      if (cleanName.includes(catScent) || cleanCode.includes(catScent)) {
+        return catScent;
+      }
+    }
+    return cleanName || 'GENERAL SCENT';
+  };
+
   filteredData.forEach(order => {
     const customer = order.customer_name || 'Walk-in / Guest';
     if (!customerMap[customer]) {
@@ -101,7 +129,7 @@ export default function SalesProductionReport() {
     if (order.sales_order_items) {
       order.sales_order_items.forEach(item => {
         if (item.transaction !== 'RETURN') {
-          const scent = (item.product_name || 'General Scent').toUpperCase().trim();
+          const scent = normalizeScentName(item.product_name, item.product_code);
           const qty = Number(item.quantity) || 0;
 
           // Overall scent accumulation & total bottles
@@ -114,11 +142,6 @@ export default function SalesProductionReport() {
       });
     }
   });
-
-  // Master product catalog list categorized by gender archetype
-  const menUnisexScents = ["ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT"];
-  const womenScents = ["BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"];
-  const catalogScents = [...menUnisexScents, ...womenScents];
 
   // Helper function to rank scents descending by quantity sold
   const getRankedList = (scentArray) => {
@@ -391,7 +414,7 @@ export default function SalesProductionReport() {
             </div>
           </div>
 
-          {/* TABLE: CUSTOMER SALES & PERCENTAGE SHARE BREAKDOWN (WITH CLICKABLE ACCORDION) */}
+          {/* TABLE: CUSTOMER SALES & PERCENTAGE SHARE BREAKDOWN */}
           <div style={styles.tableCard} className="print:bg-white print:border-gray-300">
             <div style={styles.tableHeaderSection}>
               <h2 style={styles.tableTitle}>
@@ -422,7 +445,6 @@ export default function SalesProductionReport() {
                       const isExpanded = expandedCustomer === cust.customerName;
                       return (
                         <React.Fragment key={idx}>
-                          {/* Main Customer Row */}
                           <tr 
                             style={{ 
                               ...styles.trBody, 
@@ -449,7 +471,6 @@ export default function SalesProductionReport() {
                             </td>
                           </tr>
 
-                          {/* Expanded Accordion Row for Bottles Sold Per Scent */}
                           {isExpanded && (
                             <tr style={{ backgroundColor: '#0e0e0e' }}>
                               <td colSpan="4" style={{ padding: '16px 30px' }}>
