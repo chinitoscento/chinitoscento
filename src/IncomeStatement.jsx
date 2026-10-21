@@ -154,6 +154,7 @@ export default function IncomeStatement() {
     telecom: 0,
     transportation: 0,
     utilities: 0,
+    interestExpense: 0,
     otherOpex: 0,
   });
 
@@ -195,6 +196,7 @@ export default function IncomeStatement() {
         telecom: 0,
         transportation: 0,
         utilities: 0,
+        interestExpense: 0,
         otherOpex: 0,
       };
 
@@ -226,7 +228,10 @@ export default function IncomeStatement() {
               if (code.startsWith('606')) totals.telecom += debAmt;
               if (code.startsWith('607')) totals.transportation += debAmt;
               if (code.startsWith('608')) totals.utilities += debAmt;
-              if (code.startsWith('609')) totals.otherOpex += debAmt;
+              
+              // Account 6090 for Interest Expense specifically
+              if (code === '6090' || code.startsWith('6090')) totals.interestExpense += debAmt;
+              else if (code.startsWith('609')) totals.otherOpex += debAmt;
             });
           }
         });
@@ -246,7 +251,7 @@ export default function IncomeStatement() {
   const totalCOGS = balances.cogsDirect > 0 ? balances.cogsDirect : periodicCOGS;
   
   const grossIncome = netSales - totalCOGS;
-  const totalOpex = balances.maceratingEquipment + balances.rent + balances.payroll + balances.testerKits + balances.shipping + balances.marketing + balances.telecom + balances.transportation + balances.utilities + balances.otherOpex;
+  const totalOpex = balances.maceratingEquipment + balances.rent + balances.payroll + balances.testerKits + balances.shipping + balances.marketing + balances.telecom + balances.transportation + balances.utilities + balances.interestExpense + balances.otherOpex;
   const netIncome = grossIncome - totalOpex;
 
   const handlePrint = () => {
@@ -297,6 +302,7 @@ export default function IncomeStatement() {
       ['Operating Expenses', 'Telecom & Internet', balances.telecom],
       ['Operating Expenses', 'Transportation', balances.transportation],
       ['Operating Expenses', 'Utilities', balances.utilities],
+      ['Operating Expenses', 'Interest Expense (Account 6090)', balances.interestExpense],
       ['Operating Expenses', 'Other Operating Expenses', balances.otherOpex],
       ['Total Operating Expenses', '', totalOpex],
       ['Net Income / (Loss)', '', netIncome]
@@ -398,6 +404,10 @@ export default function IncomeStatement() {
           <div style={styles.subRow} className="sub-row">
             <span>Utilities</span>
             <span style={styles.amount} className="amount">₱ {balances.utilities.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div style={styles.subRow} className="sub-row">
+            <span>Interest Expense</span>
+            <span style={styles.amount} className="amount">₱ {balances.interestExpense.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
           <div style={styles.subTotalRow} className="sub-total-row">
