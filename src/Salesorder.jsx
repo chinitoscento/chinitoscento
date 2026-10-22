@@ -10,8 +10,8 @@ export default function Salesorder() {
   const [notification, setNotification] = useState(null);
   const [userRole, setUserRole] = useState('admin');
 
-  // Inline stock warning state inside the form
-  const [stockWarningMessage, setStockWarningMessage] = useState(null);
+  // Bespoke in-form stock warning dialog state
+  const [stockWarning, setStockWarning] = useState(null);
 
   const [soNumber, setSoNumber] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
@@ -236,31 +236,6 @@ export default function Salesorder() {
     if (selectedFg) {
       setItemPrice(selectedFg.price || '');
     }
-
-    // Re-check quantity validation whenever product changes
-    checkStockSufficiency(value, itemQty, selectedFg);
-  };
-
-  const handleQuantityChange = (e) => {
-    const val = e.target.value;
-    setItemQty(val);
-    const selectedFg = finishedGoods.find(fg => fg.productCode === selectedProductCode || fg.name === selectedProductCode);
-    checkStockSufficiency(selectedProductCode, val, selectedFg);
-  };
-
-  const checkStockSufficiency = (prodCode, qtyVal, fgObj) => {
-    if (!prodCode || !qtyVal) {
-      setStockWarningMessage(null);
-      return;
-    }
-    const selectedFg = fgObj || finishedGoods.find(fg => fg.productCode === prodCode || fg.name === prodCode);
-    const qtyNum = Number(qtyVal);
-
-    if (selectedFg && qtyNum > Number(selectedFg.stockQty || 0)) {
-      setStockWarningMessage(`INSUFFICIENT QUANTITY: AVAILABLE QTY FOR ${selectedFg.name.toUpperCase()} IS ONLY ${selectedFg.stockQty} PCS.`);
-    } else {
-      setStockWarningMessage(null);
-    }
   };
 
   const handleAddItemToOrder = () => {
@@ -276,11 +251,16 @@ export default function Salesorder() {
 
     const selectedFg = finishedGoods.find(fg => fg.productCode === selectedProductCode || fg.name === selectedProductCode);
     
-    // Prevent adding if quantity exceeds stock
+    // --- IN-FORM DIALOG STOCK SUFFICIENCY CHECK ---
     if (selectedFg && qtyNum > Number(selectedFg.stockQty || 0)) {
-      setStockWarningMessage(`INSUFFICIENT QUANTITY: AVAILABLE QTY FOR ${selectedFg.name.toUpperCase()} IS ONLY ${selectedFg.stockQty} PCS.`);
+      setStockWarning({
+        productName: selectedFg.name,
+        available: selectedFg.stockQty,
+        requested: qtyNum
+      });
       return;
     }
+    // ----------------------------------------------
 
     const productName = selectedFg ? selectedFg.name : selectedProductCode;
     const productCode = selectedFg ? selectedFg.productCode : selectedProductCode;
@@ -298,7 +278,6 @@ export default function Salesorder() {
     setSelectedProductCode('');
     setItemQty('');
     setItemPrice('');
-    setStockWarningMessage(null);
   };
 
   const handleRemoveItemRow = (index) => {
@@ -345,7 +324,6 @@ export default function Salesorder() {
     }
   };
 
-  // --- EXACT IDENTICAL FIFO LAYER-BASED COSTING ENGINE FROM Costing.jsx ---
   const parseVolumeInMl = (volumeStr) => {
     if (!volumeStr) return 1;
     const str = String(volumeStr).toLowerCase().trim();
@@ -687,7 +665,6 @@ export default function Salesorder() {
       setSelectedProductCode('');
       setItemQty('');
       setItemPrice('');
-      setStockWarningMessage(null);
       showInlineMessage('Sales Order created successfully.', 'success', 'OK', () => setNotification(null));
     } catch (err) {
       console.error('Error saving sales order to Supabase:', err.message);
@@ -1017,7 +994,7 @@ export default function Salesorder() {
                             min="1" 
                             style={styles.input} 
                             value={itemQty} 
-                            onChange={handleQuantityChange} 
+                            onChange={(e) => setItemQty(e.target.value)} 
                           />
                         </div>
 
@@ -1037,15 +1014,6 @@ export default function Salesorder() {
                           <button style={styles.secondaryBtn} onClick={handleAddItemToOrder}>+ Add</button>
                         </div>
                       </div>
-
-                      {/* --- IN-FORM WARNING BANNER DIRECTLY BELOW THE DROPDOWN AREA --- */}
-                      {stockWarningMessage && (
-                        <div style={styles.inlineStockWarningBox}>
-                          <span style={{ fontSize: '13px', fontWeight: '700', color: '#f87171' }}>
-                            ⚠️ {stockWarningMessage}
-                          </span>
-                        </div>
-                      )}
                     </div>
                   </div>
                 </div>
@@ -1107,6 +1075,25 @@ export default function Salesorder() {
             <div style={styles.modalActions}>
               <button style={styles.cancelBtn} onClick={() => setIsModalOpen(false)}>Cancel</button>
               <button style={styles.primaryBtn} onClick={handleSaveSO}>Save Sales Order</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {stockWarning && (
+        <div style={styles.overlay}>
+          <div style={styles.dialogCard}>
+            <div style={styles.dialogHeader}>
+              <span style={{ color: '#f87171', fontWeight: '700', fontSize: '15px' }}>⚠️ Insufficient Stock Warning</span>
+              <button style={styles.closeBtn} onClick={() => setStockWarning(null)}>✕</button>
+            </div>
+            <div style={styles.dialogBody}>
+              <p style={{ color: '#e4e4e7', fontSize: '14px', lineHeight: '1.5', margin: 0 }}>
+                You requested <strong style={{ color: '#ffffff' }}>{stockWarning.requested} pcs</strong> of <strong style={{ color: '#d4af37' }}>{stockWarning.productName}</strong>, but available stock is only <strong style={{ color: '#f87171' }}>{stockWarning.available} pcs</strong>.
+              </p>
+            </div>
+            <div style={styles.dialogFooter}>
+              <button style={styles.dialogOkBtn} onClick={() => setStockWarning(null)}>OK, Adjust Quantity</button>
             </div>
           </div>
         </div>
@@ -1243,7 +1230,7 @@ const styles = {
   trHead: { backgroundColor: '#18181b', borderBottom: '1px solid #27272a' },
   th: { padding: '14px 16px', color: '#d4af37', fontWeight: '700', fontSize: '11px', letterSpacing: '0.05em' },
   trBody: { borderBottom: '1px solid #1f1f23' },
-  td: { padding: '16px', color: '#e4e4e7', verticalAlign: 'middle' },
+  td: { padding: '16px', color: '#e4e4e7', verticalAlign: 'top' }, // <-- Updated to top-oriented alignment
   emptyCell: { textAlign: 'center', padding: '40px', color: '#71717a', fontStyle: 'italic' },
   badgeApproved: { backgroundColor: 'rgba(5, 150, 105, 0.15)', color: '#34d399', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(5, 150, 105, 0.3)' },
   badgeDeclined: { backgroundColor: 'rgba(220, 38, 38, 0.15)', color: '#f87171', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(220, 38, 38, 0.3)' },
@@ -1271,10 +1258,6 @@ const styles = {
   select: { backgroundColor: '#18181b', border: '1px solid #27272a', borderRadius: '6px', padding: '10px 12px', color: '#ffffff', fontSize: '13px', outline: 'none', width: '100%', boxSizing: 'border-box' },
   itemInputsContainer: { backgroundColor: '#18181b', padding: '16px', borderRadius: '8px', border: '1px solid #27272a' },
   itemRowCard: { display: 'flex', gap: '12px', alignItems: 'flex-end' },
-  
-  // Inline Stock Warning Banner Styling placed right below product inputs
-  inlineStockWarningBox: { marginTop: '12px', backgroundColor: 'rgba(220, 38, 38, 0.15)', border: '1px solid rgba(220, 38, 38, 0.4)', borderRadius: '6px', padding: '10px 12px', display: 'flex', alignItems: 'center' },
-
   summaryCard: { backgroundColor: '#18181b', borderRadius: '10px', border: '1px solid #27272a', padding: '20px', flex: 1, display: 'flex', flexDirection: 'column' },
   summaryMetaRow: { display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '8px' },
   divider: { height: '1px', backgroundColor: '#27272a', margin: '16px 0' },
@@ -1284,6 +1267,12 @@ const styles = {
   totalDueContainer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' },
   modalActions: { padding: '16px 24px', borderTop: '1px solid #27272a', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#18181b' },
   cancelBtn: { backgroundColor: 'transparent', border: '1px solid #3f3f46', color: '#d4d4d8', padding: '10px 18px', borderRadius: '6px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' },
+  
+  dialogCard: { backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid #3f3f46', width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.8)', overflow: 'hidden' },
+  dialogHeader: { padding: '16px 20px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#121215' },
+  dialogBody: { padding: '20px' },
+  dialogFooter: { padding: '12px 20px', borderTop: '1px solid #27272a', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#121215' },
+  dialogOkBtn: { backgroundColor: '#d4af37', color: '#09090b', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
 
   invoiceModal: { backgroundColor: '#ffffff', color: '#111827', borderRadius: '16px', width: '100%', maxWidth: '860px', maxHeight: '95vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)', overflow: 'hidden' },
   invoiceModalActions: { padding: '12px 20px', backgroundColor: '#f3f4f6', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: '12px' },
