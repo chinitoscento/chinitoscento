@@ -154,6 +154,7 @@ export default function IncomeStatement() {
     telecom: 0,
     transportation: 0,
     utilities: 0,
+    interest: 0,
     otherOpex: 0,
   });
 
@@ -195,6 +196,7 @@ export default function IncomeStatement() {
         telecom: 0,
         transportation: 0,
         utilities: 0,
+        interest: 0,
         otherOpex: 0,
       };
 
@@ -227,7 +229,8 @@ export default function IncomeStatement() {
               if (code.startsWith('606')) totals.telecom += debAmt;
               if (code.startsWith('607')) totals.transportation += debAmt;
               if (code.startsWith('608')) totals.utilities += debAmt;
-              if (code.startsWith('609')) totals.otherOpex += debAmt;
+              if (code.startsWith('609')) totals.interest += debAmt;
+              if (code.startsWith('610')) totals.otherOpex += debAmt;
             });
           }
         });
@@ -298,6 +301,7 @@ export default function IncomeStatement() {
       ['Operating Expenses', 'Telecom & Internet', balances.telecom],
       ['Operating Expenses', 'Transportation', balances.transportation],
       ['Operating Expenses', 'Utilities', balances.utilities],
+      ['Operating Expenses', 'Interest', balances.interest],
       ['Operating Expenses', 'Other Operating Expenses', balances.otherOpex],
       ['Total Operating Expenses', '', totalOpex],
       ['Net Income / (Loss)', '', netIncome]
@@ -399,6 +403,10 @@ export default function IncomeStatement() {
           <div style={styles.subRow} className="sub-row">
             <span>Utilities</span>
             <span style={styles.amount} className="amount">₱ {balances.utilities.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+          </div>
+          <div style={styles.subRow} className="sub-row">
+            <span>Interest</span>
+            <span style={styles.amount} className="amount">₱ {balances.interest.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
           <div style={styles.subTotalRow} className="sub-total-row">
