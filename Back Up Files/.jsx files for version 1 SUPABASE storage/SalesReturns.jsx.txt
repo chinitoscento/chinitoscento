@@ -457,23 +457,34 @@ export default function SalesReturns() {
     return acc + (returnQty * (selItem.unitPrice || 0));
   }, 0);
 
-  const generateNextReturnCode = (returnDateStr) => {
+  // --- ROBUST LIVE DATABASE-BACKED CODE GENERATOR ---
+  const generateNextReturnCodeAsync = async (returnDateStr) => {
     const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
     const year = dateObj.getFullYear();
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
     const prefix = `SR-${year}${month}`;
 
     let maxNum = 0;
-    salesReturns.forEach(sr => {
-      const code = sr.srCode || '';
-      if (code.startsWith(prefix)) {
-        const suffix = code.slice(prefix.length);
-        const num = parseInt(suffix, 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
-        }
+    try {
+      const { data, error } = await supabase
+        .from('sales_returns')
+        .select('sr_code');
+
+      if (!error && data) {
+        data.forEach(sr => {
+          const code = sr.sr_code || sr.srCode || '';
+          if (code.startsWith(prefix)) {
+            const suffix = code.slice(prefix.length);
+            const num = parseInt(suffix, 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
       }
-    });
+    } catch (err) {
+      console.error('Error fetching existing sales return codes:', err);
+    }
 
     const nextNum = maxNum + 1;
     return `${prefix}${String(nextNum).padStart(6, '0')}`;
@@ -536,7 +547,9 @@ export default function SalesReturns() {
 
     const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
     const returnDate = new Date().toISOString().split('T')[0];
-    const srCode = generateNextReturnCode(returnDate);
+    
+    // Fetch live next code directly from database to prevent any duplicate key conflicts
+    const srCode = await generateNextReturnCodeAsync(returnDate);
 
     const payloads = validItems.map(returnItem => {
       const originalSoItem = matchingSo?.items?.find(i => 
@@ -666,7 +679,6 @@ export default function SalesReturns() {
         }]);
       if (jeHeaderError) throw jeHeaderError;
 
-      // Calculate total COGS to reverse for restockable items (Swap / Wrong Item)
       let totalCogsReversal = 0;
       for (const returnItem of targetSr.items) {
         const reasonNormalized = String(returnItem.reason || '').trim().toLowerCase();
@@ -682,7 +694,7 @@ export default function SalesReturns() {
       const jeLines = [
         {
           je_number: jeNumber,
-          account_code: '4050', // UPDATED TO DEDICATED SALES RETURNS ACCOUNT
+          account_code: '4050',
           description: `Sales Return & Allowance for SR ${targetSr.srCode}`,
           debit: Number(targetSr.totalAmount || 0),
           credit: 0.00
@@ -696,7 +708,6 @@ export default function SalesReturns() {
         }
       ];
 
-      // If there are restockable items, reverse COGS (Debit Inventory 1320, Credit COGS 5000)
       if (totalCogsReversal > 0) {
         jeLines.push(
           {

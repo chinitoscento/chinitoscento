@@ -459,36 +459,37 @@ export default function SalesReturns() {
 
   // --- ROBUST LIVE DATABASE-BACKED CODE GENERATOR ---
   const generateNextReturnCodeAsync = async (returnDateStr) => {
-    const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
-    const year = dateObj.getFullYear();
-    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    const prefix = `SR-${year}${month}`;
+  const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const prefix = `SR-${year}${month}`;
 
-    let maxNum = 0;
-    try {
-      const { data, error } = await supabase
-        .from('sales_returns')
-        .select('sr_code');
+  let maxNum = 0;
+  try {
+    const { data, error } = await supabase
+      .from('sales_returns')
+      .select('sr_code');
 
-      if (!error && data) {
-        data.forEach(sr => {
-          const code = sr.sr_code || sr.srCode || '';
-          if (code.startsWith(prefix)) {
-            const suffix = code.slice(prefix.length);
-            const num = parseInt(suffix, 10);
-            if (!isNaN(num) && num > maxNum) {
-              maxNum = num;
-            }
+    if (!error && data && data.length > 0) {
+      data.forEach(sr => {
+        const code = sr.sr_code || sr.srCode || '';
+        if (code.startsWith(prefix)) {
+          // Extract digits after the prefix reliably
+          const digits = code.replace(prefix, '').replace(/\D/g, '');
+          const num = parseInt(digits, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
           }
-        });
-      }
-    } catch (err) {
-      console.error('Error fetching existing sales return codes:', err);
+        }
+      });
     }
+  } catch (err) {
+    console.error('Error fetching existing sales return codes:', err);
+  }
 
-    const nextNum = maxNum + 1;
-    return `${prefix}${String(nextNum).padStart(6, '0')}`;
-  };
+  const nextNum = maxNum + 1;
+  return `${prefix}${String(nextNum).padStart(6, '0')}`;
+};
 
   const generateNextJournalNumber = async () => {
     const dateObj = new Date();
