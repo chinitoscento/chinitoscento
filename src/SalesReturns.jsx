@@ -459,38 +459,42 @@ export default function SalesReturns() {
 
   // --- ROBUST LIVE DATABASE-BACKED CODE GENERATOR ---
   const generateNextReturnCodeAsync = async (returnDateStr) => {
-  const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
-  const year = dateObj.getFullYear();
-  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-  const prefix = `SR-${year}${month}`;
+    const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const prefix = `SR-${year}${month}`;
 
-  let maxNum = 0;
-  try {
-    const { data, error } = await supabase
-      .from('sales_returns')
-      .select('sr_code');
+    let maxNum = 0;
+    try {
+      // Query the single latest code directly from the database
+      const { data, error } = await supabase
+        .from('sales_returns')
+        .select('sr_code')
+        .order('created_at', { ascending: false })
+        .limit(1);
 
-    if (!error && data && data.length > 0) {
-      data.forEach(sr => {
-        const code = sr.sr_code || sr.srCode || '';
-        if (code.startsWith(prefix)) {
-          // Extract digits after the prefix reliably
-          const digits = code.replace(prefix, '').replace(/\D/g, '');
+      if (error) {
+        console.error('Supabase error fetching latest SR code:', error.message);
+      }
+
+      if (data && data.length > 0) {
+        const latestCode = data[0].sr_code || data[0].srCode || '';
+        if (latestCode.startsWith(prefix)) {
+          const digits = latestCode.replace(prefix, '').replace(/\D/g, '');
           const num = parseInt(digits, 10);
-          if (!isNaN(num) && num > maxNum) {
+          if (!isNaN(num)) {
             maxNum = num;
           }
         }
-      });
+      }
+    } catch (err) {
+      console.error('Error in generateNextReturnCodeAsync:', err);
     }
-  } catch (err) {
-    console.error('Error fetching existing sales return codes:', err);
-  }
 
-  const nextNum = maxNum + 1;
-  return `${prefix}${String(nextNum).padStart(6, '0')}`;
-};
-
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
+  };
+  
   const generateNextJournalNumber = async () => {
     const dateObj = new Date();
     const year = dateObj.getFullYear();
