@@ -247,27 +247,58 @@ export default function SalesReturns() {
     return acc + (returnQty * (selItem.unitPrice || 0));
   }, 0);
 
-  const generateSrCode = () => {
-    let highestSeq = 0;
+  const generateNextReturnCode = (returnDateStr) => {
+    const dateObj = returnDateStr ? new Date(returnDateStr) : new Date();
+    const year = dateObj.getFullYear();
+    const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+    const prefix = `SR-${year}${month}`;
 
-    if (salesReturns.length > 0) {
-      salesReturns.forEach(sr => {
-        if (sr.srCode) {
-          const cleanCode = sr.srCode.replace('SR-', '');
-          const seqStr = cleanCode.length > 6 ? cleanCode.slice(6) : cleanCode;
-          const seq = parseInt(seqStr.replace(/\D/g, '') || 0, 10);
-          if (seq > highestSeq) {
-            highestSeq = seq;
-          }
+    let maxNum = 0;
+    salesReturns.forEach(sr => {
+      const code = sr.srCode || '';
+      if (code.startsWith(prefix)) {
+        const suffix = code.slice(prefix.length);
+        const num = parseInt(suffix, 10);
+        if (!isNaN(num) && num > maxNum) {
+          maxNum = num;
         }
-      });
-    }
+      }
+    });
 
-    const nextSeq = highestSeq + 1;
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
+  };
+
+  const generateNextJournalNumber = async () => {
     const dateObj = new Date();
     const year = dateObj.getFullYear();
     const month = String(dateObj.getMonth() + 1).padStart(2, '0');
-    return `SR-${year}${month}${nextSeq.toString().padStart(6, '0')}`;
+    const prefix = `JE-SR-${year}${month}`;
+
+    let maxNum = 0;
+    try {
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select('je_number');
+
+      if (!error && data) {
+        data.forEach(entry => {
+          const jeNum = entry.je_number || '';
+          if (jeNum) {
+            const trailingDigits = jeNum.slice(-6);
+            const num = parseInt(trailingDigits, 10);
+            if (!isNaN(num) && num > maxNum) {
+              maxNum = num;
+            }
+          }
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching journal entries for numbering:', err);
+    }
+
+    const nextNum = maxNum + 1;
+    return `${prefix}${String(nextNum).padStart(6, '0')}`;
   };
 
   const handleSaveReturn = async () => {
@@ -294,8 +325,8 @@ export default function SalesReturns() {
     }
 
     const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
-    const srCode = generateSrCode();
     const returnDate = new Date().toISOString().split('T')[0];
+    const srCode = generateNextReturnCode(returnDate);
 
     const payloads = validItems.map(returnItem => {
       const originalSoItem = matchingSo?.items?.find(i => 
@@ -413,7 +444,7 @@ export default function SalesReturns() {
           remarks: `Sales Return Credit Ref: ${srCode}`
         }]);
 
-      const jeNumber = `JE-${targetSr.srCode}`;
+      const jeNumber = await generateNextJournalNumber();
       const { error: jeHeaderError } = await supabase
         .from('journal_entries')
         .insert([{
