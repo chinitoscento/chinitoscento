@@ -682,8 +682,8 @@ export default function SalesReturns() {
       const jeLines = [
         {
           je_number: jeNumber,
-          account_code: '4000',
-          description: `Sales Revenue reversal for SR ${targetSr.srCode}`,
+          account_code: '4050', // UPDATED TO DEDICATED SALES RETURNS ACCOUNT
+          description: `Sales Return & Allowance for SR ${targetSr.srCode}`,
           debit: Number(targetSr.totalAmount || 0),
           credit: 0.00
         },
