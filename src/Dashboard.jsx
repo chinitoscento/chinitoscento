@@ -5,7 +5,7 @@ export default function Dashboard({ onNavigate }) {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [totalFinishedGoods, setTotalFinishedGoods] = useState(0);
   const [productionSummary, setProductionSummary] = useState({ text: '—', count: 0 });
-  const [totalSalesFromBeginning, setTotalSalesFromBeginning] = useState(0);
+  const [totalNetSales, setTotalNetSales] = useState(0);
 
   useEffect(() => {
     loadDashboardData();
@@ -40,7 +40,7 @@ export default function Dashboard({ onNavigate }) {
         .select('*');
       if (lineError) console.error('Line Items Error:', lineError);
 
-      // 3. Fetch inventory thresholds safely (matching RawMaterialsInventory.jsx)
+      // 3. Fetch inventory thresholds safely
       let savedThresholds = {};
       try {
         const { data: threshData, error: threshError } = await supabase
@@ -52,15 +52,16 @@ export default function Dashboard({ onNavigate }) {
           });
         }
       } catch (e) {
-        // Safe fallback if thresholds table has issues
+        // Safe fallback
       }
 
-      // 4. Fetch finished goods, maceration, and sales orders safely
+      // 4. Fetch finished goods, maceration, sales orders, and sales returns
       const { data: fgData } = await supabase.from('finished_goods').select('*');
       const { data: macerationData } = await supabase.from('maceration').select('*');
       const { data: soData } = await supabase.from('sales_orders').select('*');
+      const { data: srData } = await supabase.from('sales_returns').select('*');
 
-      // 5. Aggregate Stock via Ledger matching RawMaterialsInventory.jsx
+      // 5. Aggregate Stock via Ledger
       const itemMap = new Map();
 
       (catalogueData || []).forEach(cat => {
@@ -140,7 +141,7 @@ export default function Dashboard({ onNavigate }) {
 
       const inventoryList = Array.from(uniqueItemsMap.values());
 
-      // 6. Exact counts logic from RawMaterialsInventory.jsx
+      // 6. Counts logic
       const counts = inventoryList.reduce((acc, item) => {
         const key = item.code || item.rawMaterial;
         const threshold = savedThresholds[key] !== undefined ? Number(savedThresholds[key]) : 10;
@@ -193,15 +194,24 @@ export default function Dashboard({ onNavigate }) {
         setProductionSummary({ text: '—', count: 0 });
       }
 
-      // 9. Total Sales Calculation from Beginning
+      // 9. Total Net Sales Calculation (Gross Sales minus Sales Returns)
       const allSales = soData || [];
-      const salesSum = allSales.reduce((sum, order) => {
+      const grossSalesSum = allSales.reduce((sum, order) => {
         const orderStatus = (order.status || order.order_status || '').toLowerCase();
         if (orderStatus === 'declined') return sum;
         const amount = parseFloat(order.total_amount || order.totalDue || order.amount || 0);
         return sum + amount;
       }, 0);
-      setTotalSalesFromBeginning(salesSum);
+
+      const allReturns = srData || [];
+      const totalReturnsSum = allReturns.reduce((sum, ret) => {
+        const retStatus = (ret.status || '').toLowerCase();
+        if (retStatus === 'declined') return sum;
+        const amount = parseFloat(ret.total_amount || ret.subtotal || 0);
+        return sum + amount;
+      }, 0);
+
+      setTotalNetSales(Math.max(0, grossSalesSum - totalReturnsSum));
 
     } catch (err) {
       console.error('Error loading dashboard data from Supabase:', err);
@@ -218,7 +228,7 @@ export default function Dashboard({ onNavigate }) {
 
       {/* Metric Cards Grid */}
       <div style={styles.metricsGrid}>
-        {/* TOTAL SALES CARD */}
+        {/* TOTAL NET SALES CARD */}
         <div 
           style={{ ...styles.card, ...styles.clickableCard }}
           onClick={() => {
@@ -230,11 +240,11 @@ export default function Dashboard({ onNavigate }) {
           }}
           title="Click to view Sales & Production Report"
         >
-          <span style={styles.cardLabel}>TOTAL SALES</span>
+          <span style={styles.cardLabel}>TOTAL NET SALES</span>
           <span style={styles.cardValue}>
-            ₱{totalSalesFromBeginning.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            ₱{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
           </span>
-          <span style={styles.cardSub}>Overall cumulative revenue</span>
+          <span style={styles.cardSub}>Gross sales less returns</span>
         </div>
         
         {/* NET INCOME CARD */}

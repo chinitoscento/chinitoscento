@@ -28,38 +28,39 @@ export default function Dashboard({ onNavigate }) {
 
   const loadDashboardData = async () => {
     try {
-      // Fetch data concurrently from Supabase tables matching RawMaterialsInventory logic
-      const [
-        { data: catalogueData, error: catError },
-        { data: lineItemsData, error: lineError },
-        { data: threshData, error: threshError },
-        { data: fgData, error: fgError },
-        { data: macerationData, error: macError },
-        { data: soData, error: soError }
-      ] = await Promise.all([
-        supabase.from('raw_materials_catalogue').select('*'),
-        supabase.from('purchase_line_items').select('*'),
-        supabase.from('inventory_thresholds').select('*'),
-        supabase.from('finished_goods').select('*'),
-        supabase.from('maceration').select('*'),
-        supabase.from('sales_orders').select('*')
-      ]);
+      // 1. Fetch raw materials catalogue
+      const { data: catalogueData, error: catError } = await supabase
+        .from('raw_materials_catalogue')
+        .select('*');
+      if (catError) console.error('Catalogue Error:', catError);
 
-      if (catError && catError.code !== 'PGRST116') console.error(catError);
-      if (lineError && lineError.code !== 'PGRST116') console.error(lineError);
-      if (fgError && fgError.code !== 'PGRST116') console.error(fgError);
-      if (macError && macError.code !== 'PGRST116') console.error(macError);
-      if (soError && soError.code !== 'PGRST116') console.error(soError);
+      // 2. Fetch purchase line items (Ledger) safely
+      const { data: lineItemsData, error: lineError } = await supabase
+        .from('purchase_line_items')
+        .select('*');
+      if (lineError) console.error('Line Items Error:', lineError);
 
-      // 1. Build Saved Thresholds Map (Matching RawMaterialsInventory)
-      const savedThresholds = {};
-      if (!threshError && threshData) {
-        threshData.forEach(t => {
-          savedThresholds[t.item_key || t.code] = t.threshold_value;
-        });
+      // 3. Fetch inventory thresholds safely (matching RawMaterialsInventory.jsx)
+      let savedThresholds = {};
+      try {
+        const { data: threshData, error: threshError } = await supabase
+          .from('inventory_thresholds')
+          .select('*');
+        if (!threshError && threshData) {
+          threshData.forEach(t => {
+            savedThresholds[t.item_key || t.code] = Number(t.threshold_value);
+          });
+        }
+      } catch (e) {
+        // Safe fallback if thresholds table has issues
       }
 
-      // 2. Aggregate Stock via Ledger matching RawMaterialsInventory
+      // 4. Fetch finished goods, maceration, and sales orders safely
+      const { data: fgData } = await supabase.from('finished_goods').select('*');
+      const { data: macerationData } = await supabase.from('maceration').select('*');
+      const { data: soData } = await supabase.from('sales_orders').select('*');
+
+      // 5. Aggregate Stock via Ledger matching RawMaterialsInventory.jsx
       const itemMap = new Map();
 
       (catalogueData || []).forEach(cat => {
@@ -78,7 +79,7 @@ export default function Dashboard({ onNavigate }) {
             category: category,
             volumeSize: cat.volumeSize || cat.volume_size || '1',
             baseUnit: cat.baseUnit || cat.base_unit || '',
-            stockQty: 0, 
+            stockQty: Number(cat.stock_qty || cat.stock || 0), 
           };
           if (code) itemMap.set(code.toLowerCase(), entry);
           if (name) itemMap.set(name.toLowerCase(), entry);
@@ -139,17 +140,22 @@ export default function Dashboard({ onNavigate }) {
 
       const inventoryList = Array.from(uniqueItemsMap.values());
 
-      // Count alert items using exact RawMaterialsInventory logic: totalStockValue < threshold
-      const alertCount = inventoryList.reduce((acc, item) => {
+      // 6. Exact counts logic from RawMaterialsInventory.jsx
+      const counts = inventoryList.reduce((acc, item) => {
         const key = item.code || item.rawMaterial;
         const threshold = savedThresholds[key] !== undefined ? Number(savedThresholds[key]) : 10;
         const totalStockValue = Number(item.stockQty);
-        return totalStockValue < threshold ? acc + 1 : acc;
-      }, 0);
+        const isAlert = totalStockValue < threshold;
 
-      setLowStockCount(alertCount);
+        acc.ALL += 1;
+        if (isAlert) acc.ALERT += 1;
+        else acc.NORMAL += 1;
+        return acc;
+      }, { ALL: 0, NORMAL: 0, ALERT: 0 });
 
-      // 3. Finished Goods Inventory Total Available Qty
+      setLowStockCount(counts.ALERT);
+
+      // 7. Finished Goods Inventory Total Available Qty
       const fgInventory = fgData || [];
       const totalFG = fgInventory.reduce((sum, item) => {
         const qty = parseFloat(
@@ -165,7 +171,7 @@ export default function Dashboard({ onNavigate }) {
       }, 0);
       setTotalFinishedGoods(totalFG);
 
-      // 4. Production Batches Status Check
+      // 8. Production Batches Status Check
       const macerationBatches = macerationData || [];
       let maceratingCount = 0;
       let readyCount = 0;
@@ -187,7 +193,7 @@ export default function Dashboard({ onNavigate }) {
         setProductionSummary({ text: '—', count: 0 });
       }
 
-      // 5. Total Sales Calculation from Beginning
+      // 9. Total Sales Calculation from Beginning
       const allSales = soData || [];
       const salesSum = allSales.reduce((sum, order) => {
         const orderStatus = (order.status || order.order_status || '').toLowerCase();
