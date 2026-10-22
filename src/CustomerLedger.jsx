@@ -75,6 +75,7 @@ export default function CustomerLedger() {
     });
 
     custSummary.collections.forEach(col => {
+      // Robust matching across all possible field names used by Collections & Sales Returns
       const targetRef = col.invoiceNo || col.invoice_no || col.soNumber || col.so_number;
       const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
       const txnType = col.transactionType || col.transaction_type;
@@ -84,14 +85,14 @@ export default function CustomerLedger() {
         ? `Sales Return (${refOrRemarks})` 
         : `Payment (${refOrRemarks})`;
 
-      if (invoiceMap[targetRef]) {
+      if (targetRef && invoiceMap[targetRef]) {
         invoiceMap[targetRef].credit += creditVal;
         invoiceMap[targetRef].payments.push({
           date: col.date,
           type: labelType,
           amount: creditVal
         });
-      } else {
+      } else if (targetRef) {
         invoiceMap[targetRef] = {
           ref: targetRef,
           date: col.date,
@@ -139,7 +140,12 @@ export default function CustomerLedger() {
       const savedCollections = collectionsData || [];
 
       const so = savedSOs.find(s => (s.soNumber || s.so_number || s.invoice_no) === invoiceRef);
-      const collections = savedCollections.filter(c => (c.invoiceNo || c.invoice_no || c.soNumber || c.so_number) === invoiceRef);
+      
+      // FIXED: Ensure Sales Returns (which store target order in `so_number`) match the subledger reference
+      const collections = savedCollections.filter(c => {
+        const refCandidate = c.invoiceNo || c.invoice_no || c.soNumber || c.so_number;
+        return String(refCandidate || '').trim() === String(invoiceRef || '').trim();
+      });
 
       const subledgerEntries = [];
 
@@ -167,7 +173,7 @@ export default function CustomerLedger() {
           date: col.date,
           soNumber: col.invoiceNo || col.invoice_no || col.soNumber || col.so_number,
           transaction: txnLabel,
-          debit: 0,
+          debit: Number(col.debit || 0),
           credit: creditVal
         });
       });

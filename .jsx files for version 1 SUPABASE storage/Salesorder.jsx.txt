@@ -10,6 +10,9 @@ export default function Salesorder() {
   const [notification, setNotification] = useState(null);
   const [userRole, setUserRole] = useState('admin');
 
+  // Bespoke in-form stock warning dialog state
+  const [stockWarning, setStockWarning] = useState(null);
+
   const [soNumber, setSoNumber] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -248,12 +251,16 @@ export default function Salesorder() {
 
     const selectedFg = finishedGoods.find(fg => fg.productCode === selectedProductCode || fg.name === selectedProductCode);
     
-    // --- STOCK SUFFICIENCY CHECK ---
+    // --- IN-FORM DIALOG STOCK SUFFICIENCY CHECK ---
     if (selectedFg && qtyNum > Number(selectedFg.stockQty || 0)) {
-      alert(`Insufficient stock! Available stock for ${selectedFg.name} is only ${selectedFg.stockQty} pcs.`);
+      setStockWarning({
+        productName: selectedFg.name,
+        available: selectedFg.stockQty,
+        requested: qtyNum
+      });
       return;
     }
-    // -------------------------------
+    // ----------------------------------------------
 
     const productName = selectedFg ? selectedFg.name : selectedProductCode;
     const productCode = selectedFg ? selectedFg.productCode : selectedProductCode;
@@ -331,7 +338,6 @@ export default function Salesorder() {
   const calculatePreciseUnitCostForFormulation = (formulation) => {
     if (!formulation) return 0;
 
-    // 1. Build Chronological FIFO Lot Map from purchases & line items
     const lotMap = {};
     purchases.forEach(pur => {
       const purDate = pur.transaction_date || pur.date || pur.purchaseDate || '2026-01-01';
@@ -365,7 +371,6 @@ export default function Salesorder() {
       });
     });
 
-    // 2. Calculate consumed quantities from maceration deductions
     const consumedMap = {};
     purchaseLineItems.forEach(l => {
       if (l.type === 'MACERATION_DEDUCTION') {
@@ -378,7 +383,6 @@ export default function Salesorder() {
       }
     });
 
-    // 3. FIFO Unit Cost Function matching Costing.jsx exactly
     const getFifoUnitCost = (matCode, matName, requiredQty) => {
       const codeKey = String(matCode || '').trim().toUpperCase();
       const nameKey = String(matName || '').trim().toLowerCase();
@@ -513,7 +517,6 @@ export default function Salesorder() {
       
       let totalCogs = 0;
 
-      // Strictly map each item by product_code/scent to formulations to extract Costing.jsx exact cost
       soRecord.items.forEach(item => {
         const itemCodeClean = String(item.productCode || '').trim().toLowerCase();
         const itemNameClean = String(item.productName || '').trim().toLowerCase();
@@ -529,7 +532,6 @@ export default function Salesorder() {
         if (formulation) {
           unitCost = calculatePreciseUnitCostForFormulation(formulation);
         } else {
-          // Fallback if formulation is missing entirely from master table
           const matchedFg = finishedGoods.find(fg => String(fg.productCode).trim().toLowerCase() === itemCodeClean);
           unitCost = matchedFg ? Number(matchedFg.cost || 0) : 0;
         }
@@ -1079,6 +1081,26 @@ export default function Salesorder() {
         </div>
       )}
 
+      {/* --- BESPOKE IN-FORM STOCK WARNING DIALOG MODAL --- */}
+      {stockWarning && (
+        <div style={styles.overlay}>
+          <div style={styles.dialogCard}>
+            <div style={styles.dialogHeader}>
+              <span style={{ color: '#f87171', fontWeight: '700', fontSize: '15px' }}>⚠️ Insufficient Stock Warning</span>
+              <button style={styles.closeBtn} onClick={() => setStockWarning(null)}>✕</button>
+            </div>
+            <div style={styles.dialogBody}>
+              <p style={{ color: '#e4e4e7', fontSize: '14px', lineHeight: '1.5', margin: 0 }}>
+                You requested <strong style={{ color: '#ffffff' }}>{stockWarning.requested} pcs</strong> of <strong style={{ color: '#d4af37' }}>{stockWarning.productName}</strong>, but available stock is only <strong style={{ color: '#f87171' }}>{stockWarning.available} pcs</strong>.
+              </p>
+            </div>
+            <div style={styles.dialogFooter}>
+              <button style={styles.dialogOkBtn} onClick={() => setStockWarning(null)}>OK, Adjust Quantity</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {previewInvoice && (
         <div style={styles.overlay}>
           <div style={styles.invoiceModal}>
@@ -1247,6 +1269,14 @@ const styles = {
   totalDueContainer: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'auto', paddingTop: '8px' },
   modalActions: { padding: '16px 24px', borderTop: '1px solid #27272a', display: 'flex', justifyContent: 'flex-end', gap: '12px', backgroundColor: '#18181b' },
   cancelBtn: { backgroundColor: 'transparent', border: '1px solid #3f3f46', color: '#d4d4d8', padding: '10px 18px', borderRadius: '6px', fontWeight: '600', fontSize: '14px', cursor: 'pointer' },
+  
+  // Dialog Card Styles for In-Form Warning
+  dialogCard: { backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid #3f3f46', width: '100%', maxWidth: '420px', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 40px rgba(0,0,0,0.8)', overflow: 'hidden' },
+  dialogHeader: { padding: '16px 20px', borderBottom: '1px solid #27272a', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#121215' },
+  dialogBody: { padding: '20px' },
+  dialogFooter: { padding: '12px 20px', borderTop: '1px solid #27272a', display: 'flex', justifyContent: 'flex-end', backgroundColor: '#121215' },
+  dialogOkBtn: { backgroundColor: '#d4af37', color: '#09090b', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
+
   invoiceModal: { backgroundColor: '#ffffff', color: '#111827', borderRadius: '16px', width: '100%', maxWidth: '860px', maxHeight: '95vh', display: 'flex', flexDirection: 'column', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.7)', overflow: 'hidden' },
   invoiceModalActions: { padding: '12px 20px', backgroundColor: '#f3f4f6', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: '12px' },
   printBtn: { backgroundColor: '#111827', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
@@ -1293,7 +1323,7 @@ const styles = {
   signatureName: { fontSize: '13px', fontWeight: '700', color: '#111827', letterSpacing: '0.05em' },
   invoiceFooterNote: { marginTop: '56px', textAlign: 'center', fontSize: '12px', color: '#6b7280', fontStyle: 'italic', borderTop: '1px solid #f3f4f6', paddingTop: '24px' },
   notificationSuccess: { backgroundColor: 'rgba(5, 150, 105, 0.2)', border: '1px solid #059669', color: '#34d399', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500' },
-  notificationError: { backgroundColor: 'rgba(220, 38, 38, 0.2)', border: '1px solid #dc2626', color: '#f87171', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500' },
+  notificationError: { backgroundColor: 'rgba(220, 38, 38, 0.2)', border: '1px solid #dc2626', color: '#f87171', padding: '12px 16px', borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500' },
   notificationActionBtn: { backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
   notificationCloseBtn: { backgroundColor: 'transparent', border: 'none', color: 'inherit', cursor: 'pointer', fontSize: '16px' }
 };
