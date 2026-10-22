@@ -228,7 +228,6 @@ export default function PayablesPayments() {
         date: o.date,
         entityName: o.creditor || 'Unknown Creditor',
         categoryTag: `OPEX (${o.classification})`,
-        itemDescription: o.description || o.classification || 'Expense Item',
         paymentMode: o.terms_of_payment,
         creditOption: o.credit_type || 'One Time Payment',
         installmentCount: o.num_installments || null,
@@ -239,14 +238,16 @@ export default function PayablesPayments() {
         status: o.status || 'Unpaid'
       }));
 
-      // Sort descending based on the trailing sequence digits in refCode
+      // Sort ascending based on the trailing sequence digits in refCode (e.g. last 6 digits)
       const combined = [...formattedPurchases, ...formattedOpex].sort((a, b) => {
         const getSeq = (ref) => {
           if (!ref) return 0;
-          const match = ref.match(/(\d+)$/);
-          return match ? parseInt(match[1], 10) : 0;
+          const cleanStr = String(ref).trim();
+          const trailingSix = cleanStr.slice(-6);
+          const seqNum = parseInt(trailingSix, 10);
+          return isNaN(seqNum) ? 0 : seqNum;
         };
-        return getSeq(b.refCode) - getSeq(a.refCode);
+        return getSeq(a.refCode) - getSeq(b.refCode);
       });
 
       setUnpaidPayables(combined);
@@ -417,14 +418,7 @@ export default function PayablesPayments() {
       }
 
       const jeNumber = await getNextJeNumber();
-      
-      // Differentiate memo description based on whether it's a purchase or an opex expense
-      let memoDescription = '';
-      if (isOpex) {
-        memoDescription = `Payment for credit incurred per ${selectedPayable.refCode} for ${selectedPayable.itemDescription} dated ${selectedPayable.date} creditor: ${selectedPayable.entityName}`;
-      } else {
-        memoDescription = `Payment for credit purchase made (${selectedPayable.date || paymentDate}). Creditor - ${selectedPayable.entityName} per reference ${selectedPayable.refCode}`;
-      }
+      const memoDescription = `Payment for credit purchase made (${paymentDate}). Creditor - ${selectedPayable.entityName} per reference ${selectedPayable.refCode}`;
 
       const { error: headerJeError } = await supabase
         .from('journal_entries')
