@@ -7,6 +7,11 @@ export default function SalesReturns() {
   const [customers, setCustomers] = useState([]);
   const [salesOrders, setSalesOrders] = useState([]);
   const [finishedGoods, setFinishedGoods] = useState([]);
+  const [formulations, setFormulations] = useState([]);
+  const [purchases, setPurchases] = useState([]);
+  const [rawMaterials, setRawMaterials] = useState([]);
+  const [purchaseLineItems, setPurchaseLineItems] = useState([]);
+  const [settings, setSettings] = useState({});
   const [userRole, setUserRole] = useState('non-owner');
   const [loadingData, setLoadingData] = useState(true);
 
@@ -41,31 +46,42 @@ export default function SalesReturns() {
   const loadAllData = async () => {
     setLoadingData(true);
     try {
-      const { data: srData, error: srError } = await supabase
-        .from('sales_returns')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [
+        { data: srData, error: srError },
+        { data: custData, error: custError },
+        { data: soData, error: soError },
+        { data: soItemsData, error: soItemsError },
+        { data: fgData, error: fgError },
+        { data: formDa, error: formError },
+        { data: purDa, error: purError },
+        { data: setDa, error: setError },
+        { data: catDa, error: catError },
+        { data: pliDa, error: pliError }
+      ] = await Promise.all([
+        supabase.from('sales_returns').select('*').order('created_at', { ascending: false }),
+        supabase.from('customers').select('*'),
+        supabase.from('sales_orders').select('*'),
+        supabase.from('sales_order_items').select('*'),
+        supabase.from('finished_goods').select('*'),
+        supabase.from('formulations').select('*'),
+        supabase.from('purchase_transactions').select(`*, purchase_line_items (*)`).order('transaction_date', { ascending: true }),
+        supabase.from('settings').select('*'),
+        supabase.from('raw_materials_catalogue').select('*'),
+        supabase.from('purchase_line_items').select('*')
+      ]);
+
       if (srError) throw srError;
-
-      const { data: custData, error: custError } = await supabase
-        .from('customers')
-        .select('*');
       if (custError) throw custError;
-
-      const { data: soData, error: soError } = await supabase
-        .from('sales_orders')
-        .select('*');
       if (soError) throw soError;
-
-      const { data: soItemsData, error: soItemsError } = await supabase
-        .from('sales_order_items')
-        .select('*');
       if (soItemsError) throw soItemsError;
-
-      const { data: fgData, error: fgError } = await supabase
-        .from('finished_goods')
-        .select('*');
       if (fgError) throw fgError;
+
+      let settingsObj = {};
+      if (Array.isArray(setDa)) {
+        setDa.forEach(s => { settingsObj[s.key || s.name] = s.value; });
+      } else if (setDa) {
+        settingsObj = setDa;
+      }
 
       const groupedReturnsMap = {};
       (srData || []).forEach(sr => {
@@ -139,18 +155,212 @@ export default function SalesReturns() {
         id: fg.id,
         code: String(fg.code || fg.product_code || ''),
         name: String(fg.name || fg.product_name || fg.scent || ''),
-        stockQty: Number(fg.stock_qty || fg.stockQty || fg.quantity || 0)
+        stockQty: Number(fg.stock_qty || fg.stockQty || fg.quantity || 0),
+        cost: Number(fg.cost || fg.unit_cost || 0)
       }));
 
       setSalesReturns(sortedReturns);
       setCustomers(custData || []);
       setSalesOrders(formattedSo);
       setFinishedGoods(formattedFg);
+      setFormulations(formDa || []);
+      setPurchases(purDa || []);
+      setSettings(settingsObj);
+      setRawMaterials(catDa || []);
+      setPurchaseLineItems(pliDa || []);
     } catch (err) {
       console.error('Error loading sales returns data from Supabase:', err.message);
     } finally {
       setLoadingData(false);
     }
+  };
+
+  // --- FIFO COSTING ENGINE FOR ACCURATE COGS REVERSAL ---
+  const parseVolumeInMl = (volumeStr) => {
+    if (!volumeStr) return 1;
+    const str = String(volumeStr).toLowerCase().trim();
+    const num = parseFloat(str) || 1;
+    if (str.includes('l') && !str.includes('ml')) {
+      return num * 1000;
+    }
+    return num;
+  };
+
+  const calculatePreciseUnitCostForFormulation = (formulation) => {
+    if (!formulation) return 0;
+
+    const lotMap = {};
+    purchases.forEach(pur => {
+      const purDate = pur.transaction_date || pur.date || pur.purchaseDate || '2026-01-01';
+      const items = pur.purchase_line_items || [];
+      
+      items.forEach(it => {
+        if (it.type && it.type !== 'RM') return;
+        const code = String(it.code || it.item_code || '').trim().toUpperCase();
+        const name = String(it.name || it.raw_material_name || '').trim().toLowerCase();
+        const containerVolStr = it.container_volume || it.containerVolume || '1';
+        const containerMl = parseVolumeInMl(containerVolStr);
+        const qty = Number(it.quantity || 0);
+        const totalLotUnitsOrMl = qty * containerMl;
+        const totalCost = Number(it.total || (Number(it.unit_cost || 0) * qty));
+        const unitCostPerMlOrUnit = totalLotUnitsOrMl > 0 ? totalCost / totalLotUnitsOrMl : Number(it.unit_cost || 0);
+
+        const lotObj = {
+          date: purDate,
+          originalQty: totalLotUnitsOrMl,
+          unitCost: unitCostPerMlOrUnit
+        };
+
+        if (code) {
+          if (!lotMap[code]) lotMap[code] = [];
+          lotMap[code].push(lotObj);
+        }
+        if (name) {
+          if (!lotMap[name]) lotMap[name] = [];
+          lotMap[name].push(lotObj);
+        }
+      });
+    });
+
+    const consumedMap = {};
+    purchaseLineItems.forEach(l => {
+      if (l.type === 'MACERATION_DEDUCTION') {
+        const code = String(l.code || '').trim().toUpperCase();
+        const name = String(l.name || '').trim().toLowerCase();
+        const qtyConsumed = Math.abs(Number(l.quantity || 0));
+
+        if (code) consumedMap[code] = (consumedMap[code] || 0) + qtyConsumed;
+        if (name) consumedMap[name] = (consumedMap[name] || 0) + qtyConsumed;
+      }
+    });
+
+    const getFifoUnitCost = (matCode, matName, requiredQty) => {
+      const codeKey = String(matCode || '').trim().toUpperCase();
+      const nameKey = String(matName || '').trim().toLowerCase();
+
+      let lots = (codeKey && lotMap[codeKey]) || (nameKey && lotMap[nameKey]) || [];
+      let consumed = (codeKey && consumedMap[codeKey]) || (nameKey && consumedMap[nameKey]) || 0;
+
+      if (lots.length === 0) return null;
+
+      let remainingToSkip = consumed;
+      let availableLots = [];
+      for (const lot of lots) {
+        if (remainingToSkip >= lot.originalQty) {
+          remainingToSkip -= lot.originalQty;
+        } else {
+          const availInLot = lot.originalQty - remainingToSkip;
+          remainingToSkip = 0;
+          availableLots.push({ ...lot, available: availInLot });
+        }
+      }
+
+      if (availableLots.length === 0) {
+        return lots[lots.length - 1].unitCost;
+      }
+
+      let needed = requiredQty;
+      let totalCostAccum = 0;
+      let totalTaken = 0;
+
+      for (const lot of availableLots) {
+        if (needed <= 0) break;
+        const take = Math.min(needed, lot.available);
+        totalCostAccum += take * lot.unitCost;
+        totalTaken += take;
+        needed -= take;
+      }
+
+      if (needed > 0 && availableLots.length > 0) {
+        const lastCost = availableLots[availableLots.length - 1].unitCost;
+        totalCostAccum += needed * lastCost;
+        totalTaken += needed;
+      }
+
+      return totalTaken > 0 ? totalCostAccum / totalTaken : null;
+    };
+
+    const findCatalogItem = (idOrCode) => {
+      if (!idOrCode) return null;
+      const target = String(idOrCode).trim().toLowerCase();
+      return rawMaterials.find(c => 
+        String(c.id || '').trim().toLowerCase() === target ||
+        String(c.code || '').trim().toLowerCase() === target ||
+        String(c.raw_material || c.rawMaterial || c.name || '').trim().toLowerCase() === target
+      );
+    };
+
+    const getResolvedUnitCost = (matId, matName, fallbackCost, isLiquid, requiredVolumeMl) => {
+      const key = String(matId || '').trim().toUpperCase();
+      const lowerName = String(matName || '').trim().toLowerCase();
+      
+      let unitCost = null;
+      if (key && getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1) !== null) {
+        unitCost = getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1);
+      } else {
+        unitCost = getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1);
+      }
+
+      if (unitCost === null || isNaN(unitCost)) {
+        unitCost = fallbackCost / (isLiquid ? (parseVolumeInMl(requiredVolumeMl) || 1) : 1);
+      }
+
+      return isLiquid ? unitCost * requiredVolumeMl : unitCost;
+    };
+
+    const idOil = formulation.oil_id || formulation.oilId || formulation.oil || '';
+    const idSolvent = formulation.solvent_id || formulation.solventId || formulation.solvent || '';
+    const idBottle = formulation.bottle_id || formulation.bottleId || formulation.bottle || '';
+    const idBottleSticker = formulation.bottle_sticker_id || formulation.bottleStickerId || formulation.bottleSticker || '';
+    const idBox = formulation.box_id || formulation.boxId || formulation.box || '';
+    const idBoxSticker = formulation.box_sticker_id || formulation.boxStickerId || formulation.boxSticker || '';
+    const idShrinkWrap = formulation.wrapping_id || formulation.shrinkWrap || formulation.shrinkingWrap || formulation.wrappingId || '';
+
+    const catOil = findCatalogItem(idOil);
+    const catSolvent = findCatalogItem(idSolvent);
+    const catBottle = findCatalogItem(idBottle);
+    const catBottleSticker = findCatalogItem(idBottleSticker);
+    const catBox = findCatalogItem(idBox);
+    const catBoxSticker = findCatalogItem(idBoxSticker);
+    const catShrinkWrap = findCatalogItem(idShrinkWrap);
+
+    const rawSize = String(formulation.size_value || formulation.sizeValue || formulation.size || '50').replace(/[^0-9]/g, '');
+    const volumeMl = Number(rawSize) || 50;
+
+    const oilPercent = Number(formulation.oil_percentage || formulation.oilPercentage || formulation.oilRatio || 20);
+    const solventPercent = Number(formulation.solvent_percentage || formulation.solventPercentage || formulation.solventRatio || 80);
+
+    const oilMl = volumeMl * (oilPercent / 100);
+    const solventMl = volumeMl * (solventPercent / 100);
+
+    const savedSettings = settings || {};
+    const unitCostOil = getResolvedUnitCost(idOil, catOil?.raw_material || catOil?.rawMaterial, Number(savedSettings.default_oil_cost ?? 4.5), true, oilMl);
+    const unitCostSolvent = getResolvedUnitCost(idSolvent, catSolvent?.raw_material || catSolvent?.rawMaterial, Number(savedSettings.default_solvent_cost ?? 0.38), true, solventMl);
+    const unitCostBottle = getResolvedUnitCost(idBottle, catBottle?.raw_material || catBottle?.rawMaterial, Number(savedSettings.default_bottle_cost ?? 25), false, 1);
+    const unitCostBottleSticker = getResolvedUnitCost(idBottleSticker, catBottleSticker?.raw_material || catBottleSticker?.rawMaterial, Number(savedSettings.default_bottle_sticker ?? 3), false, 1);
+    const unitCostBox = getResolvedUnitCost(idBox, catBox?.raw_material || catBox?.rawMaterial, Number(savedSettings.default_box_cost ?? 12), false, 1);
+    const unitCostBoxSticker = getResolvedUnitCost(idBoxSticker, catBoxSticker?.raw_material || catBoxSticker?.rawMaterial, Number(savedSettings.default_box_sticker ?? 3), false, 1);
+    const unitCostShrinkWrap = getResolvedUnitCost(idShrinkWrap, catShrinkWrap?.raw_material || catShrinkWrap?.rawMaterial, Number(savedSettings.default_shrink_wrap ?? 2), false, 1);
+
+    return unitCostOil + unitCostSolvent + unitCostBottle + unitCostBottleSticker + unitCostBox + unitCostBoxSticker + unitCostShrinkWrap;
+  };
+
+  const getProductUnitCost = (productCode, productName) => {
+    const itemCodeClean = String(productCode || '').trim().toLowerCase();
+    const itemNameClean = String(productName || '').trim().toLowerCase();
+
+    const formulation = formulations.find(f => {
+      const fCode = String(f.product_code || f.productCode || f.code || '').trim().toLowerCase();
+      const fScent = String(f.scent_name || f.scentName || f.name || '').trim().toLowerCase();
+      return (fCode && fCode === itemCodeClean) || (fScent && fScent === itemNameClean) || (fCode && fCode === itemNameClean);
+    });
+
+    if (formulation) {
+      return calculatePreciseUnitCostForFormulation(formulation);
+    }
+
+    const matchedFg = finishedGoods.find(fg => String(fg.code).trim().toLowerCase() === itemCodeClean);
+    return matchedFg ? Number(matchedFg.cost || 0) : 0;
   };
 
   const filteredSoList = salesOrders.filter(so => {
@@ -456,6 +666,19 @@ export default function SalesReturns() {
         }]);
       if (jeHeaderError) throw jeHeaderError;
 
+      // Calculate total COGS to reverse for restockable items (Swap / Wrong Item)
+      let totalCogsReversal = 0;
+      for (const returnItem of targetSr.items) {
+        const reasonNormalized = String(returnItem.reason || '').trim().toLowerCase();
+        const isDamaged = reasonNormalized === 'damaged';
+        const qty = Number(returnItem.returnQty || 0);
+
+        if (!isDamaged && qty > 0) {
+          const unitCost = getProductUnitCost(returnItem.productId, returnItem.productName);
+          totalCogsReversal += qty * unitCost;
+        }
+      }
+
       const jeLines = [
         {
           je_number: jeNumber,
@@ -472,6 +695,26 @@ export default function SalesReturns() {
           credit: Number(targetSr.totalAmount || 0)
         }
       ];
+
+      // If there are restockable items, reverse COGS (Debit Inventory 1320, Credit COGS 5000)
+      if (totalCogsReversal > 0) {
+        jeLines.push(
+          {
+            je_number: jeNumber,
+            account_code: '1320',
+            description: `Inventory restored for SR ${targetSr.srCode}`,
+            debit: totalCogsReversal,
+            credit: 0.00
+          },
+          {
+            je_number: jeNumber,
+            account_code: '5000',
+            description: `COGS reversal for SR ${targetSr.srCode}`,
+            debit: 0.00,
+            credit: totalCogsReversal
+          }
+        );
+      }
 
       const { error: jeLinesError } = await supabase
         .from('journal_entry_lines')

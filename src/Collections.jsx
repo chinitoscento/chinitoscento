@@ -6,6 +6,7 @@ export default function Collections() {
   const [unpaidInvoices, setUnpaidInvoices] = useState([]);
   const [collectionsHistory, setCollectionsHistory] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
   
   // Form fields
   const [collectionCode, setCollectionCode] = useState('');
@@ -139,7 +140,7 @@ export default function Collections() {
           const diffTime = today - dueDateObj;
           const diffDays = isNaN(diffTime) ? 0 : Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
 
-          const customerNameVal = so.customer_name || so.customerName;
+          const customerNameVal = so.customer_name || so.customerName || 'N/A';
           activeUnpaid.push({
             ...so,
             soNumber: soNum,
@@ -154,7 +155,18 @@ export default function Collections() {
         }
       });
 
-      setUnpaidInvoices(activeUnpaid);
+      // --- SORT BY CUSTOMER NAME ALPHABETICALLY (A-Z) ---
+      const sortedUnpaid = activeUnpaid.sort((a, b) => {
+        const nameA = String(a.customerName || '').toLowerCase();
+        const nameB = String(b.customerName || '').toLowerCase();
+        if (nameA < nameB) return -1;
+        if (nameA > nameB) return 1;
+        
+        // Secondary sort by SO number if customer names are identical
+        return String(a.soNumber || '').localeCompare(String(b.soNumber || ''));
+      });
+
+      setUnpaidInvoices(sortedUnpaid);
     } catch (err) {
       console.error('Error loading collections data from Supabase:', err);
     }
@@ -245,7 +257,6 @@ export default function Collections() {
 
       if (jeError) throw jeError;
 
-      // Use valid account code '1000' (Cash on Hand / Bank) and '1200' (Accounts Receivable) from chart of accounts
       const cashAccountCode = '1000';
 
       const lineEntries = [
@@ -297,6 +308,14 @@ export default function Collections() {
     }
   };
 
+  const filteredUnpaidInvoices = unpaidInvoices.filter(inv => {
+    const q = searchQuery.toLowerCase();
+    return (
+      (inv.customerName && inv.customerName.toLowerCase().includes(q)) ||
+      (inv.soNumber && inv.soNumber.toLowerCase().includes(q))
+    );
+  });
+
   return (
     <div style={styles.container}>
       <style>{`
@@ -327,13 +346,35 @@ export default function Collections() {
 
       {/* Summary of Unpaid Invoices */}
       <div style={styles.sectionCard}>
-        <h3 style={styles.sectionTitle}>Summary of Unpaid Invoices</h3>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '15px'}}>
+          <h3 style={{...styles.sectionTitle, margin: 0}}>Summary of Unpaid Invoices</h3>
+          
+          {/* Quick Search Box */}
+          <div style={{position: 'relative', minWidth: '260px'}}>
+            <input 
+              type="text"
+              placeholder="🔍 Search customer or SO..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              style={styles.searchInput}
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                style={styles.clearSearchBtn}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
         <div style={{overflowX: 'auto'}}>
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
                 <th style={styles.th}>SO / INVOICE #</th>
-                <th style={styles.th}>Customer Name</th>
+                <th style={styles.th}>Customer Name ▲</th>
                 <th style={styles.th}>Due Date</th>
                 <th style={styles.th}>Number of Days Past Due</th>
                 <th style={styles.th}>Amount Due</th>
@@ -341,17 +382,17 @@ export default function Collections() {
               </tr>
             </thead>
             <tbody>
-              {unpaidInvoices.length === 0 ? (
-                <tr><td colSpan="6" style={styles.empty}>No unpaid invoices found. All clear!</td></tr>
+              {filteredUnpaidInvoices.length === 0 ? (
+                <tr><td colSpan="6" style={styles.empty}>{searchQuery ? 'No matching unpaid invoices found.' : 'No unpaid invoices found. All clear!'}</td></tr>
               ) : (
-                unpaidInvoices.map(inv => (
+                filteredUnpaidInvoices.map(inv => (
                   <tr key={inv.soNumber} style={styles.trBody}>
                     <td style={styles.td}>
                       <button style={styles.linkButton} onClick={() => handleQuickPay(inv)}>
                         {inv.soNumber}
                       </button>
                     </td>
-                    <td style={styles.td}>{inv.customerName}</td>
+                    <td style={styles.td}><b>{inv.customerName}</b></td>
                     <td style={styles.td}>{inv.dueDate || inv.date}</td>
                     <td style={styles.td}>
                       <span style={inv.daysPastDue > 0 ? styles.badgeOverdue : styles.badgeNormal}>
@@ -609,6 +650,8 @@ const styles = {
   sub: { fontSize: '14px', color: '#666', marginTop: '5px', marginBottom: '25px' },
   sectionCard: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', marginBottom: '25px', textAlign: 'left' },
   sectionTitle: { fontSize: '18px', fontWeight: '600', color: '#111827', marginBottom: '15px', textAlign: 'left' },
+  searchInput: { padding: '8px 12px', borderRadius: '6px', border: '1px solid #d1d5db', fontSize: '13px', width: '100%', outline: 'none' },
+  clearSearchBtn: { position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: '12px' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' },
   trHead: { backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' },
   th: { padding: '10px 12px', textAlign: 'left', color: '#333', fontWeight: '600' },
