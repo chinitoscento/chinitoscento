@@ -466,7 +466,6 @@ export default function SalesReturns() {
 
     let maxNum = 0;
     try {
-      // Query the single latest code directly from the database
       const { data, error } = await supabase
         .from('sales_returns')
         .select('sr_code')
@@ -553,7 +552,6 @@ export default function SalesReturns() {
     const matchingSo = salesOrders.find(so => so.soNumber === newReturn.soNumber);
     const returnDate = new Date().toISOString().split('T')[0];
     
-    // Fetch live next code directly from database to prevent any duplicate key conflicts
     const srCode = await generateNextReturnCodeAsync(returnDate);
 
     const payloads = validItems.map(returnItem => {
@@ -1143,9 +1141,9 @@ const styles = {
   cardTitle: { fontSize: '18px', fontWeight: '700', padding: '16px 20px', margin: 0, borderBottom: '1px solid #27272a', color: '#fff' },
   table: { width: '100%', borderCollapse: 'collapse', textAlign: 'left' },
   trHead: { backgroundColor: '#202024', borderBottom: '1px solid #27272a' },
-  th: { padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: '#a1a1aa', letterSpacing: '0.05em' },
+  th: { padding: '12px 16px', fontSize: '12px', fontWeight: '600', color: '#a1a1aa', letterSpacing: '0.05em', verticalAlign: 'top' },
   trBody: { borderBottom: '1px solid #27272a' },
-  td: { padding: '14px 16px', fontSize: '14px', color: '#f4f4f5' },
+  td: { padding: '14px 16px', fontSize: '14px', color: '#f4f4f5', verticalAlign: 'top' },
   emptyCell: { padding: '30px', textAlign: 'center', color: '#71717a', fontStyle: 'italic' },
   code: { fontFamily: 'monospace', color: '#fbbf24', fontSize: '13px' },
   badgeComplete: { backgroundColor: '#064e3b', color: '#34d399', padding: '4px 8px', borderRadius: '4px', fontSize: '12px', fontWeight: '600' },
