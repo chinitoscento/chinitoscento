@@ -106,7 +106,10 @@ export default function Collections() {
       setCollectionsHistory(savedCollections);
       setCollectionCode(generateCollectionCode(savedCollections));
 
-      const activeSOs = savedSOs.filter(so => (so.status || so.order_status) !== 'Declined');
+      const activeSOs = savedSOs.filter(so => {
+        const st = String(so.status || so.order_status || '').trim().toUpperCase();
+        return st !== 'DECLINED';
+      });
 
       const activeUnpaid = [];
       activeSOs.forEach(so => {
@@ -155,14 +158,11 @@ export default function Collections() {
         }
       });
 
-      // --- SORT BY CUSTOMER NAME ALPHABETICALLY (A-Z) ---
       const sortedUnpaid = activeUnpaid.sort((a, b) => {
         const nameA = String(a.customerName || '').toLowerCase();
         const nameB = String(b.customerName || '').toLowerCase();
         if (nameA < nameB) return -1;
         if (nameA > nameB) return 1;
-        
-        // Secondary sort by SO number if customer names are identical
         return String(a.soNumber || '').localeCompare(String(b.soNumber || ''));
       });
 
@@ -238,11 +238,9 @@ export default function Collections() {
     };
 
     try {
-      // 1. Insert Collection Record
       const { error } = await supabase.from('collections').insert([newRecord]);
       if (error) throw error;
 
-      // 2. Generate and Insert Journal Entry for Ledger Tracking
       const freshJeNumber = await generateNextJournalNumber('JE-COL');
       
       const { error: jeError } = await supabase
@@ -262,14 +260,14 @@ export default function Collections() {
       const lineEntries = [
         {
           je_number: freshJeNumber,
-          account_code: cashAccountCode, // Debit Cash on Hand / Bank (1000)
+          account_code: cashAccountCode,
           debit: paidNum,
           credit: 0,
           description: `Payment received via ${paymentMode} - ${collectionCode}`
         },
         {
           je_number: freshJeNumber,
-          account_code: '1200', // Credit Accounts Receivable (1200)
+          account_code: '1200',
           debit: 0,
           credit: paidNum,
           description: `Applied to AR invoice ${selectedInvoiceNo} (${selectedCustomer})`
@@ -349,7 +347,6 @@ export default function Collections() {
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', marginBottom: '15px'}}>
           <h3 style={{...styles.sectionTitle, margin: 0}}>Summary of Unpaid Invoices</h3>
           
-          {/* Quick Search Box */}
           <div style={{position: 'relative', minWidth: '260px'}}>
             <input 
               type="text"
