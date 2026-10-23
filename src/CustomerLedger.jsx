@@ -11,6 +11,12 @@ export default function CustomerLedger() {
     loadLedgerData();
   }, []);
 
+  const getSoTrailingNumber = (soStr) => {
+    if (!soStr) return 0;
+    const match = String(soStr).match(/(\d{6})$/) || String(soStr).match(/(\d+)$/);
+    return match ? parseInt(match[1], 10) : 0;
+  };
+
   const loadLedgerData = async () => {
     try {
       const [
@@ -18,7 +24,7 @@ export default function CustomerLedger() {
         { data: soData, error: soError },
         { data: collectionsData, error: colError }
       ] = await Promise.all([
-        supabase.from('customers').select('*'),
+        supabase.from('customers').select('*').order('name', { ascending: true }),
         supabase.from('sales_orders').select('*'),
         supabase.from('collections').select('*')
       ]);
@@ -37,7 +43,7 @@ export default function CustomerLedger() {
       const matchesCustomer = (nameA, nameB) => {
         const a = String(nameA || '').trim().toLowerCase();
         const b = String(nameB || '').trim().toLowerCase();
-        return a === b || a.startsWith(b) || b.startsWith(a);
+        return a === b;
       };
 
       const summary = savedCustomers.map((cust, idx) => {
@@ -82,6 +88,9 @@ export default function CustomerLedger() {
           collections: savedCollections.filter(c => matchesCustomer(c.customerName || c.customer_name, custName))
         };
       });
+
+      // Sort summary A-Z by Customer Name
+      summary.sort((a, b) => a.name.localeCompare(b.name));
 
       setLedgerSummary(summary);
     } catch (err) {
@@ -131,7 +140,9 @@ export default function CustomerLedger() {
     });
 
     const uniqueEntries = Object.values(invoiceMap);
-    uniqueEntries.sort((a, b) => new Date(a.date || '2026-01-01') - new Date(b.date || '2026-01-01'));
+    
+    // Sort chronologically descending by trailing SO number
+    uniqueEntries.sort((a, b) => getSoTrailingNumber(b.ref) - getSoTrailingNumber(a.ref));
 
     let runningBalance = 0;
     const consolidatedEntries = uniqueEntries.map(entry => {
@@ -235,12 +246,11 @@ export default function CustomerLedger() {
     return `₱${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // Triggers print with auto-generated filename: <customer_name>_<customer_id>_<date>
   const handlePrintLedger = () => {
     const originalTitle = document.title;
     const todayStr = new Date().toISOString().split('T')[0];
-    const cleanCustName = String(selectedCustomerLedger?.name || 'Customer').trim().replace(/[^a-zA-Z0-9]/g, '_');
-    const cleanCustId = String(selectedCustomerLedger?.code || 'CUST').trim().replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustName = String(selectedCustomerLedger?.name || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustId = String(selectedCustomerLedger?.code || 'CUST').replace(/[^a-zA-Z0-9]/g, '_');
     
     document.title = `${cleanCustName}_${cleanCustId}_${todayStr}`;
     window.print();
@@ -253,8 +263,8 @@ export default function CustomerLedger() {
   const handlePrintSubledger = () => {
     const originalTitle = document.title;
     const todayStr = new Date().toISOString().split('T')[0];
-    const cleanCustName = String(selectedSubledgerInvoice?.customerName || 'Customer').trim().replace(/[^a-zA-Z0-9]/g, '_');
-    const cleanInvoiceNo = String(selectedSubledgerInvoice?.invoiceNo || 'SO').trim().replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustName = String(selectedSubledgerInvoice?.customerName || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanInvoiceNo = String(selectedSubledgerInvoice?.invoiceNo || 'SO').replace(/[^a-zA-Z0-9]/g, '_');
     
     document.title = `${cleanCustName}_${cleanInvoiceNo}_${todayStr}`;
     window.print();
@@ -269,60 +279,50 @@ export default function CustomerLedger() {
       <style>{`
         @media print {
           @page {
-            size: A4 portrait;
-            margin: 10mm;
+            size: auto;
+            margin: 15mm 15mm 15mm 15mm;
           }
-          html, body {
-            background: #fff !important;
+          body, html {
+            background-color: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
-            width: 100% !important;
+            overflow: visible !important;
             height: auto !important;
-            overflow: visible !important;
           }
-          aside, header, .no-print, nav {
-            display: none !important;
+          body * {
+            visibility: hidden;
           }
-          main {
-            padding: 0 !important;
-            margin: 0 !important;
-            width: 100% !important;
-            background: #fff !important;
-            overflow: visible !important;
+          .printable-ledger, .printable-ledger * {
+            visibility: visible;
           }
           .printable-ledger {
-            display: block !important;
+            position: absolute;
+            left: 0;
+            top: 0;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            box-sizing: border-box !important;
-          }
-          .card {
-            border: none !important;
-            padding: 0 !important;
-            box-shadow: none !important;
-          }
-          table {
-            width: 100% !important;
-            table-layout: fixed !important;
+            background: #fff !important;
+            box-sizing: border-box;
+            overflow: visible !important;
+            height: auto !important;
           }
           tr {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }
-          thead {
-            display: table-header-group !important;
-          }
           .signature-section-print {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            margin-top: 30px !important;
+          }
+          .no-print {
+            display: none !important;
           }
         }
       `}</style>
 
-      <h2 style={styles.pageTitle} className="no-print">Customer Ledger</h2>
-      <p style={styles.sub} className="no-print">Monitor customer credit standings, transaction histories, and running balances.</p>
+      <h2 style={styles.pageTitle}>Customer Ledger</h2>
+      <p style={styles.sub}>Monitor customer credit standings, transaction histories, and running balances.</p>
 
       {/* VIEW 1: Customer Summary List */}
       {!selectedCustomerLedger ? (
