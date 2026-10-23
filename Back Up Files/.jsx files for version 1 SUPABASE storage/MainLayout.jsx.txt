@@ -21,7 +21,7 @@ import Payments from './PayablesPayments.jsx';
 import SystemSettings from './SystemSettings.jsx';
 import AnalyticsReports from './AnalyticsReports.jsx';
 import SalesProductionReport from './SalesProductionReport.jsx';
-// ✦ Newly Integrated Financial Reporting Pages
+// ✦ Financial Reporting Pages
 import JournalEntries from './JournalEntries.jsx';
 import BalanceSheet from './BalanceSheet.jsx';
 import IncomeStatement from './IncomeStatement.jsx';
@@ -190,7 +190,6 @@ export default function MainLayout({ onLogout }) {
     return isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace';
   });
   
-  // Sidebar section toggle state - All collapsed by default
   const [openSections, setOpenSections] = useState({
     Management: false,
     Manufacturing: false,
@@ -342,7 +341,6 @@ export default function MainLayout({ onLogout }) {
         return <Payments />;
       case 'System Settings':
         return <SystemSettings />;      
-      // ✦ Accounting Module Routes
       case 'Journal Entries':
         return <JournalEntries />;
       case 'Balance Sheet':
@@ -367,7 +365,27 @@ export default function MainLayout({ onLogout }) {
 
   return (
     <div style={styles.appContainer}>
-      <aside style={styles.sidebar}>
+      <style>{`
+        @media print {
+          @page {
+            size: auto;
+            margin: 10mm;
+          }
+          /* ✦ Remove position fixed & overflow hidden from parent container when printing */
+          html, body, #root, div, main, section {
+            overflow: visible !important;
+            height: auto !important;
+            max-height: none !important;
+            position: static !important;
+            float: none !important;
+          }
+          aside, header, .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
+      <aside style={styles.sidebar} className="no-print">
         <div style={styles.sidebarHeader}>
           <img src={logo} alt="Logo" style={styles.sidebarLogo} />
           <div style={styles.sidebarBrandText}>
@@ -413,13 +431,12 @@ export default function MainLayout({ onLogout }) {
 
           {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
 
-          {/* ✦ Accounting Section */}
           {!isManager && renderSection('Accounting', ['Journal Entries', 'Balance Sheet', 'Income Statement', 'Equity', 'Notes to Financial Statements'])}
         </div>
       </aside>
 
       <div style={styles.mainWrapper}>
-        <header style={styles.topHeader}>
+        <header style={styles.topHeader} className="no-print">
           <div style={styles.welcomeBanner}>
             Hello, <span style={styles.userNameHighlight}>{userName}</span>! Welcome Back!
           </div>
