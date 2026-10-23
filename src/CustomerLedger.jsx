@@ -29,12 +29,11 @@ export default function CustomerLedger() {
 
       const savedCustomers = customersData || [];
       const savedSOs = (soData || []).filter(so => {
-        const st = String(so.status || so.order_status || '').trim().toUpperCase();
-        return st !== 'DECLINED';
+        const status = String(so.status || so.order_status || '').trim().toUpperCase();
+        return status !== 'DECLINED';
       });
       const savedCollections = collectionsData || [];
 
-      // Helper function for flexible customer name matching
       const matchesCustomer = (nameA, nameB) => {
         const a = String(nameA || '').trim().toLowerCase();
         const b = String(nameB || '').trim().toLowerCase();
@@ -43,40 +42,44 @@ export default function CustomerLedger() {
 
       const summary = savedCustomers.map((cust, idx) => {
         const custName = cust.name || cust.customer_name || '';
-        
-        // Find all non-declined SOs for this customer
         const custSOs = savedSOs.filter(so => matchesCustomer(so.customerName || so.customer_name, custName));
         
-        let customerTotalTrans = 0;
-        let customerTotalPaid = 0;
+        let totalTrans = 0;
+        let totalPaid = 0;
 
         custSOs.forEach(so => {
           const soNum = so.so_number || so.soNumber || so.invoice_no;
           const totalDue = Number(so.total_amount || so.totalDue || 0);
-          const isCash = String(so.payment_mode || so.paymentMode || '').toUpperCase() === 'CASH';
+          const payMode = String(so.payment_mode || so.paymentMode || '').toUpperCase();
+          const payStatus = String(so.payment_status || so.paymentStatus || '').toUpperCase();
+          const isCash = payMode === 'CASH' || payStatus === 'PAID';
 
-          // Find all collections/returns linked to this specific SO
-          const paidSoCollections = savedCollections.filter(c => {
-            const ref = c.invoice_no || c.invoiceNo || c.so_number || c.soNumber;
-            return String(ref || '').trim() === String(soNum || '').trim();
-          });
+          // If CASH / Paid sale, it is 100% paid at point of sale
+          if (isCash) {
+            totalTrans += totalDue;
+            totalPaid += totalDue;
+          } else {
+            // For CREDIT sales, fetch actual collections / returns
+            const paidSoCollections = savedCollections.filter(c => {
+              const ref = c.invoice_no || c.invoiceNo || c.so_number || c.soNumber;
+              return String(ref || '').trim() === String(soNum || '').trim();
+            });
 
-          const totalPaidForSO = isCash 
-            ? totalDue 
-            : paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
-
-          customerTotalTrans += totalDue;
-          customerTotalPaid += Math.min(totalDue, totalPaidForSO);
+            const colPaid = paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
+            
+            totalTrans += totalDue;
+            totalPaid += Math.min(totalDue, colPaid);
+          }
         });
 
-        const totalDue = Math.max(0, customerTotalTrans - customerTotalPaid);
+        const totalDue = Math.max(0, totalTrans - totalPaid);
 
         return {
           code: cust.code || `CUST-00${idx + 1}`,
           name: custName,
-          totalTrans: customerTotalTrans,
-          totalPaid: customerTotalPaid,
-          totalDue: totalDue,
+          totalTrans,
+          totalPaid,
+          totalDue,
           transactions: custSOs,
           collections: savedCollections.filter(c => matchesCustomer(c.customerName || c.customer_name, custName))
         };
@@ -95,13 +98,17 @@ export default function CustomerLedger() {
       const soNum = so.soNumber || so.so_number || so.invoice_no;
       const soDate = so.date || so.order_date;
       const totalDue = Number(so.totalDue || so.total_due || so.total_amount || 0);
+      const payMode = String(so.payment_mode || so.paymentMode || '').toUpperCase();
+      const payStatus = String(so.payment_status || so.paymentStatus || '').toUpperCase();
+      const isCash = payMode === 'CASH' || payStatus === 'PAID';
 
       invoiceMap[soNum] = {
         ref: soNum,
         date: soDate,
         debit: totalDue,
-        credit: 0,
-        payments: []
+        credit: isCash ? totalDue : 0, // Automatically credit CASH sales
+        isCash: isCash,
+        payments: isCash ? [{ date: soDate, type: 'Point of Sale Cash Payment', amount: totalDue }] : []
       };
     });
 
@@ -115,7 +122,7 @@ export default function CustomerLedger() {
         ? `Sales Return (${refOrRemarks})` 
         : `Payment (${refOrRemarks})`;
 
-      if (targetRef && invoiceMap[targetRef]) {
+      if (targetRef && invoiceMap[targetRef] && !invoiceMap[targetRef].isCash) {
         invoiceMap[targetRef].credit += creditVal;
         invoiceMap[targetRef].payments.push({
           date: col.date,
@@ -167,13 +174,28 @@ export default function CustomerLedger() {
       const subledgerEntries = [];
 
       if (so) {
+        const totalDue = Number(so.totalDue || so.total_due || so.total_amount || 0);
+        const payMode = String(so.payment_mode || so.paymentMode || '').toUpperCase();
+        const payStatus = String(so.payment_status || so.paymentStatus || '').toUpperCase();
+        const isCash = payMode === 'CASH' || payStatus === 'PAID';
+
         subledgerEntries.push({
           date: so.date || so.order_date,
           soNumber: so.soNumber || so.so_number || so.invoice_no,
           transaction: `Sales Order / Original SO (${so.soNumber || so.so_number || so.invoice_no})`,
-          debit: Number(so.totalDue || so.total_due || so.total_amount || 0),
+          debit: totalDue,
           credit: 0
         });
+
+        if (isCash) {
+          subledgerEntries.push({
+            date: so.date || so.order_date,
+            soNumber: so.soNumber || so.so_number || so.invoice_no,
+            transaction: `Point of Sale Cash Payment (${so.soNumber || so.so_number || so.invoice_no})`,
+            debit: 0,
+            credit: totalDue
+          });
+        }
       }
 
       collections.forEach(col => {
@@ -211,21 +233,26 @@ export default function CustomerLedger() {
     }
   };
 
+  const formatCurrency = (amount) => {
+    return `₱${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   return (
     <div style={styles.container}>
       <h2 style={styles.pageTitle}>Customer Ledger</h2>
       <p style={styles.sub}>Monitor customer credit standings, transaction histories, and running balances.</p>
 
+      {/* VIEW 1: Customer Summary List */}
       {!selectedCustomerLedger ? (
         <div style={styles.card}>
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>CUSTOMER CODE</th>
-                <th style={styles.th}>CUSTOMER NAME</th>
-                <th style={styles.th}>TOTAL AMOUNT OF TRANSACTION</th>
-                <th style={styles.th}>TOTAL AMOUNT PAID / CREDITED</th>
-                <th style={styles.th}>TOTAL AMOUNT DUE FOR COLLECTION</th>
+                <th style={{ ...styles.th, width: '12%', textAlign: 'left' }}>CUSTOMER CODE</th>
+                <th style={{ ...styles.th, width: '28%', textAlign: 'left' }}>CUSTOMER NAME</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>TOTAL AMOUNT OF TRANSACTION</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>TOTAL AMOUNT PAID / CREDITED</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>TOTAL AMOUNT DUE FOR COLLECTION</th>
               </tr>
             </thead>
             <tbody>
@@ -234,15 +261,19 @@ export default function CustomerLedger() {
               ) : (
                 ledgerSummary.map((item, idx) => (
                   <tr key={idx} style={styles.trBody}>
-                    <td style={styles.td}>{item.code}</td>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>{item.code}</td>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>
                       <button style={styles.linkButton} onClick={() => openLedgerDetails(item)}>
                         {item.name}
                       </button>
                     </td>
-                    <td style={styles.td}>₱{Number(item.totalTrans).toFixed(2)}</td>
-                    <td style={styles.td}>₱{Number(item.totalPaid).toFixed(2)}</td>
-                    <td style={styles.td}><b>₱{Number(item.totalDue).toFixed(2)}</b></td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{formatCurrency(item.totalTrans)}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{formatCurrency(item.totalPaid)}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>
+                      <b style={{ color: item.totalDue > 0 ? '#111827' : '#059669' }}>
+                        {formatCurrency(item.totalDue)}
+                      </b>
+                    </td>
                   </tr>
                 ))
               )}
@@ -250,6 +281,7 @@ export default function CustomerLedger() {
           </table>
         </div>
       ) : !selectedSubledgerInvoice ? (
+        /* VIEW 2: Consolidated Customer Ledger */
         <div style={styles.card}>
           <div style={styles.ledgerHeaderRow}>
             <div>
@@ -262,11 +294,11 @@ export default function CustomerLedger() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>DATE</th>
-                <th style={styles.th}>REF / INVOICE #</th>
-                <th style={styles.th}>DEBIT (DUE)</th>
-                <th style={styles.th}>CREDIT (PAYMENT/RETURN)</th>
-                <th style={styles.th}>RUNNING BALANCE</th>
+                <th style={{ ...styles.th, width: '15%', textAlign: 'left' }}>DATE</th>
+                <th style={{ ...styles.th, width: '25%', textAlign: 'left' }}>REF / INVOICE #</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>DEBIT (DUE)</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>CREDIT (PAYMENT/RETURN)</th>
+                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>RUNNING BALANCE</th>
               </tr>
             </thead>
             <tbody>
@@ -275,15 +307,15 @@ export default function CustomerLedger() {
               ) : (
                 selectedCustomerLedger.entries.map((entry, idx) => (
                   <tr key={idx} style={styles.trBody}>
-                    <td style={styles.td}>{entry.date}</td>
-                    <td style={styles.td}>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>{entry.date}</td>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>
                       <button style={styles.linkButton} onClick={() => openSubledger(selectedCustomerLedger.name, entry.ref)}>
                         {entry.ref} 🔍
                       </button>
                     </td>
-                    <td style={styles.td}>{entry.debit > 0 ? `₱${entry.debit.toFixed(2)}` : '-'}</td>
-                    <td style={styles.td}>{entry.credit > 0 ? `₱${entry.credit.toFixed(2)}` : '-'}</td>
-                    <td style={styles.td}><b>₱{entry.runningBalance.toFixed(2)}</b></td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{entry.debit > 0 ? formatCurrency(entry.debit) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{entry.credit > 0 ? formatCurrency(entry.credit) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}><b>{formatCurrency(entry.runningBalance)}</b></td>
                   </tr>
                 ))
               )}
@@ -291,6 +323,7 @@ export default function CustomerLedger() {
           </table>
         </div>
       ) : (
+        /* VIEW 3: Specific Invoice Subledger Audit Trail */
         <div style={styles.card}>
           <div style={styles.ledgerHeaderRow}>
             <div>
@@ -323,23 +356,23 @@ export default function CustomerLedger() {
             <table style={styles.table}>
               <thead>
                 <tr style={styles.trHead}>
-                  <th style={styles.th}>REF NUMBER</th>
-                  <th style={styles.th}>DATE OF TRANSACTION</th>
-                  <th style={styles.th}>TRANSACTION</th>
-                  <th style={styles.th}>DEBIT (DUE)</th>
-                  <th style={styles.th}>CREDIT (PAYMENT/RETURN)</th>
-                  <th style={styles.th}>RUNNING BALANCE</th>
+                  <th style={{ ...styles.th, width: '18%', textAlign: 'left' }}>REF NUMBER</th>
+                  <th style={{ ...styles.th, width: '14%', textAlign: 'left' }}>DATE</th>
+                  <th style={{ ...styles.th, width: '32%', textAlign: 'left' }}>TRANSACTION DESCRIPTION</th>
+                  <th style={{ ...styles.th, width: '12%', textAlign: 'right' }}>DEBIT (DUE)</th>
+                  <th style={{ ...styles.th, width: '12%', textAlign: 'right' }}>CREDIT</th>
+                  <th style={{ ...styles.th, width: '12%', textAlign: 'right' }}>BALANCE</th>
                 </tr>
               </thead>
               <tbody>
                 {selectedSubledgerInvoice.entries.map((item, idx) => (
                   <tr key={idx} style={styles.trBody}>
-                    <td style={styles.td}><b>{item.soNumber}</b></td>
-                    <td style={styles.td}>{item.date}</td>
-                    <td style={styles.td}>{item.transaction}</td>
-                    <td style={styles.td}>{item.debit > 0 ? `₱${item.debit.toFixed(2)}` : '-'}</td>
-                    <td style={styles.td}>{item.credit > 0 ? `₱${item.credit.toFixed(2)}` : '-'}</td>
-                    <td style={styles.td}><b>₱{item.runningBalance.toFixed(2)}</b></td>
+                    <td style={{ ...styles.td, textAlign: 'left' }}><b>{item.soNumber}</b></td>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>{item.date}</td>
+                    <td style={{ ...styles.td, textAlign: 'left' }}>{item.transaction}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{item.debit > 0 ? formatCurrency(item.debit) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}>{item.credit > 0 ? formatCurrency(item.credit) : '-'}</td>
+                    <td style={{ ...styles.td, textAlign: 'right' }}><b>{formatCurrency(item.runningBalance)}</b></td>
                   </tr>
                 ))}
               </tbody>
@@ -373,10 +406,10 @@ const styles = {
   card: { backgroundColor: '#fff', padding: '25px', borderRadius: '8px', border: '1px solid #eee', textAlign: 'left' },
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', textAlign: 'left' },
   trHead: { backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' },
-  th: { padding: '10px 12px', textAlign: 'left', color: '#333', fontWeight: '600' },
+  th: { padding: '12px 14px', color: '#333', fontWeight: '600', verticalAlign: 'middle' },
   trBody: { borderBottom: '1px solid #eee' },
-  td: { padding: '12px', color: '#333', verticalAlign: 'middle', textAlign: 'left' },
-  empty: { padding: '20px', color: '#777', fontStyle: 'italic', textAlign: 'left' },
+  td: { padding: '12px 14px', color: '#333', verticalAlign: 'middle' },
+  empty: { padding: '20px', color: '#777', fontStyle: 'italic', textAlign: 'center' },
   linkButton: { background: 'none', border: 'none', color: '#2563eb', fontWeight: 'bold', cursor: 'pointer', padding: 0, textDecoration: 'underline' },
   ledgerHeaderRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' },
   sectionTitle: { fontSize: '18px', fontWeight: '600', color: '#111827', margin: 0 },
