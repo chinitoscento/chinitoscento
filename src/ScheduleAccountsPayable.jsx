@@ -1,27 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 
-const calculateAging = (dueDateStr) => {
-  if (!dueDateStr) return 'Current';
+const getAgingCategory = (dueDateStr) => {
+  if (!dueDateStr) return '0 Days';
   const due = new Date(dueDateStr);
   const today = new Date();
   const diffTime = today - due;
   const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
   
-  if (diffDays <= 0) return 'Current (Not Due)';
-  if (diffDays <= 30) return '1 - 30 Days Overdue';
-  if (diffDays <= 60) return '31 - 60 Days Overdue';
-  if (diffDays <= 90) return '61 - 90 Days Overdue';
-  return '90+ Days Overdue';
+  if (diffDays <= 0) return '0 Days';
+  if (diffDays <= 30) return '1-30 Days';
+  if (diffDays <= 60) return '31-60 Days';
+  if (diffDays <= 90) return '61-90 Days';
+  return '91+ Days';
 };
 
 export default function ScheduleAccountsPayable() {
   const [payables, setPayables] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Date of Coverage filters
+  // Filters
   const [startDate, setStartDate] = useState('2026-06-01');
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [agingFilter, setAgingFilter] = useState('ALL');
 
   useEffect(() => {
     fetchAP();
@@ -47,7 +48,7 @@ export default function ScheduleAccountsPayable() {
           reference: p.ref_id || 'PUR',
           due_date: dueDate,
           total_amount: Number(p.balance_due ?? p.total_amount_due ?? 0),
-          aging: calculateAging(dueDate)
+          aging: getAgingCategory(dueDate)
         };
       }).filter(item => item !== null);
 
@@ -63,7 +64,7 @@ export default function ScheduleAccountsPayable() {
           reference: o.ref_number || o.ref_id || 'EXP',
           due_date: dueDate,
           total_amount: Number(o.balance_due ?? o.total_amount_due ?? 0),
-          aging: calculateAging(dueDate)
+          aging: getAgingCategory(dueDate)
         };
       }).filter(item => item !== null);
 
@@ -75,16 +76,20 @@ export default function ScheduleAccountsPayable() {
     }
   };
 
+  const filteredPayables = payables.filter(item => {
+    if (agingFilter === 'ALL') return true;
+    return item.aging === agingFilter;
+  });
+
   return (
     <div style={{ padding: '30px', backgroundColor: '#121212', color: '#e0e0e0', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
       <h2 style={{ fontSize: '26px', fontWeight: '700', color: '#c5a059', margin: '0 0 6px 0' }}>Schedule of Accounts Payable</h2>
       <p style={{ fontSize: '15px', color: '#a0a0a0', marginBottom: '20px' }}>Detailed breakdown of creditor obligations, purchase references, due dates, and aging.</p>
 
-      {/* Coverage Period Filter Bar */}
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'center', backgroundColor: '#1a1a1a', padding: '15px 20px', borderRadius: '8px', border: '1px solid #2a2a2a', marginBottom: '25px' }}>
-        <span style={{ fontSize: '14px', fontWeight: '600', color: '#c5a059', textTransform: 'uppercase' }}>Period of Coverage:</span>
+      {/* Filter Bar */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', alignItems: 'center', backgroundColor: '#1a1a1a', padding: '15px 20px', borderRadius: '8px', border: '1px solid #2a2a2a', marginBottom: '20px' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '13px', color: '#aaa' }}>Start Date:</label>
+          <span style={{ fontSize: '13px', fontWeight: '600', color: '#c5a059', textTransform: 'uppercase' }}>From:</span>
           <input 
             type="date" 
             value={startDate} 
@@ -93,7 +98,7 @@ export default function ScheduleAccountsPayable() {
           />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <label style={{ fontSize: '13px', color: '#aaa' }}>End Date:</label>
+          <span style={{ fontSize: '13px', fontWeight: '600', color: '#c5a059', textTransform: 'uppercase' }}>To:</span>
           <input 
             type="date" 
             value={endDate} 
@@ -103,10 +108,36 @@ export default function ScheduleAccountsPayable() {
         </div>
       </div>
 
+      {/* Aging Toggler Buttons */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginBottom: '25px' }}>
+        {['ALL', '0 Days', '1-30 Days', '31-60 Days', '61-90 Days', '91+ Days'].map((cat) => {
+          const isActive = agingFilter === cat;
+          return (
+            <button
+              key={cat}
+              onClick={() => setAgingFilter(cat)}
+              style={{
+                backgroundColor: isActive ? '#c5a059' : '#1a1a1a',
+                color: isActive ? '#121212' : '#ccc',
+                border: isActive ? '1px solid #c5a059' : '1px solid #333',
+                padding: '8px 16px',
+                borderRadius: '6px',
+                fontWeight: '600',
+                fontSize: '13.5px',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+            >
+              {cat === 'ALL' ? 'All Aging' : cat}
+            </button>
+          );
+        })}
+      </div>
+
       {loading ? (
         <p style={{ fontStyle: 'italic', color: '#888' }}>Loading accounts payable...</p>
-      ) : payables.length === 0 ? (
-        <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>No creditor obligations found for this period!</p>
+      ) : filteredPayables.length === 0 ? (
+        <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>No creditor obligations found matching the selected filters.</p>
       ) : (
         <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a', overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14.5px' }}>
@@ -117,11 +148,11 @@ export default function ScheduleAccountsPayable() {
                 <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Pur / Exp Reference</th>
                 <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Due Date</th>
                 <th style={{ padding: '14px 16px', textAlign: 'right', color: '#c5a059' }}>Total Amount Due</th>
-                <th style={{ padding: '14px 16px', textAlign: 'center', color: '#c5a059' }}>Aging</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', color: '#c5a059' }}>Aging Category</th>
               </tr>
             </thead>
             <tbody>
-              {payables.map((item, idx) => (
+              {filteredPayables.map((item, idx) => (
                 <tr key={idx} style={{ borderBottom: '1px solid #222' }}>
                   <td style={{ padding: '14px 16px' }}>{item.date}</td>
                   <td style={{ padding: '14px 16px', fontWeight: '600' }}>{item.creditor_name}</td>
@@ -129,7 +160,7 @@ export default function ScheduleAccountsPayable() {
                   <td style={{ padding: '14px 16px', color: '#eab308' }}>{item.due_date}</td>
                   <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 'bold', color: '#f87171' }}>₱{item.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
                   <td style={{ padding: '14px 16px', textAlign: 'center' }}>
-                    <span style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', backgroundColor: item.aging.includes('Overdue') ? 'rgba(217, 83, 79, 0.2)' : 'rgba(92, 184, 92, 0.2)', color: item.aging.includes('Overdue') ? '#d9534f' : '#5cb85c' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', backgroundColor: item.aging !== '0 Days' ? 'rgba(217, 83, 79, 0.2)' : 'rgba(92, 184, 92, 0.2)', color: item.aging !== '0 Days' ? '#d9534f' : '#5cb85c' }}>
                       {item.aging}
                     </span>
                   </td>
