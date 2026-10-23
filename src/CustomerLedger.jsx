@@ -235,7 +235,7 @@ export default function CustomerLedger() {
     return `₱${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // ✦ Triggers print with auto-generated filename: <customer_name>_<customer_id>_<date>
+  // Triggers print with auto-generated filename: <customer_name>_<customer_id>_<date>
   const handlePrintLedger = () => {
     const originalTitle = document.title;
     const todayStr = new Date().toISOString().split('T')[0];
@@ -270,35 +270,41 @@ export default function CustomerLedger() {
         @media print {
           @page {
             size: A4 portrait;
-            margin: 12mm;
+            margin: 10mm;
           }
-          html, body, #root {
+          html, body {
             background: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
+            width: 100% !important;
             height: auto !important;
-            min-height: auto !important;
             overflow: visible !important;
-            position: static !important;
           }
-          body * {
-            visibility: hidden !important;
+          aside, header, .no-print, nav {
+            display: none !important;
           }
-          .printable-ledger, .printable-ledger * {
-            visibility: visible !important;
+          main {
+            padding: 0 !important;
+            margin: 0 !important;
+            width: 100% !important;
+            background: #fff !important;
+            overflow: visible !important;
           }
           .printable-ledger {
-            position: relative !important;
-            left: 0 !important;
-            top: 0 !important;
+            display: block !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
-            background: #fff !important;
             box-sizing: border-box !important;
-            overflow: visible !important;
-            height: auto !important;
-            display: block !important;
+          }
+          .card {
+            border: none !important;
+            padding: 0 !important;
+            box-shadow: none !important;
+          }
+          table {
+            width: 100% !important;
+            table-layout: fixed !important;
           }
           tr {
             page-break-inside: avoid !important;
@@ -310,16 +316,13 @@ export default function CustomerLedger() {
           .signature-section-print {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
-            margin-top: 40px !important;
-          }
-          .no-print {
-            display: none !important;
+            margin-top: 30px !important;
           }
         }
       `}</style>
 
-      <h2 style={styles.pageTitle}>Customer Ledger</h2>
-      <p style={styles.sub}>Monitor customer credit standings, transaction histories, and running balances.</p>
+      <h2 style={styles.pageTitle} className="no-print">Customer Ledger</h2>
+      <p style={styles.sub} className="no-print">Monitor customer credit standings, transaction histories, and running balances.</p>
 
       {/* VIEW 1: Customer Summary List */}
       {!selectedCustomerLedger ? (
