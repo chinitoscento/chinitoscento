@@ -239,6 +239,35 @@ export default function CustomerLedger() {
 
   return (
     <div style={styles.container}>
+      <style>{`
+        @media print {
+          body, html {
+            background-color: #fff !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .printable-ledger, .printable-ledger * {
+            visibility: visible;
+          }
+          .printable-ledger {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 20px !important;
+            background: #fff !important;
+            box-sizing: border-box;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
+
       <h2 style={styles.pageTitle}>Customer Ledger</h2>
       <p style={styles.sub}>Monitor customer credit standings, transaction histories, and running balances.</p>
 
@@ -283,60 +312,96 @@ export default function CustomerLedger() {
       ) : !selectedSubledgerInvoice ? (
         /* VIEW 2: Consolidated Customer Ledger */
         <div style={styles.card}>
-          <div style={styles.ledgerHeaderRow}>
+          <div style={styles.ledgerHeaderRow} className="no-print">
             <div>
               <h3 style={styles.sectionTitle}>Ledger for: {selectedCustomerLedger.name} ({selectedCustomerLedger.code})</h3>
               <p style={styles.sub}>Unique invoice breakdown. Click any invoice reference to view its detailed subledger trail.</p>
             </div>
-            <button style={styles.backBtn} onClick={() => setSelectedCustomerLedger(null)}>← Back to Summary</button>
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button style={styles.actionBtn} onClick={() => window.print()}>🖨️ Print Ledger Statement</button>
+              <button style={styles.backBtn} onClick={() => setSelectedCustomerLedger(null)}>← Back to Summary</button>
+            </div>
           </div>
 
-          <table style={styles.table}>
-            <thead>
-              <tr style={styles.trHead}>
-                <th style={{ ...styles.th, width: '15%', textAlign: 'left' }}>DATE</th>
-                <th style={{ ...styles.th, width: '25%', textAlign: 'left' }}>REF / INVOICE #</th>
-                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>DEBIT (DUE)</th>
-                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>CREDIT (PAYMENT/RETURN)</th>
-                <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>RUNNING BALANCE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {selectedCustomerLedger.entries.length === 0 ? (
-                <tr><td colSpan="5" style={styles.empty}>No activity recorded for this customer.</td></tr>
-              ) : (
-                selectedCustomerLedger.entries.map((entry, idx) => (
-                  <tr key={idx} style={styles.trBody}>
-                    <td style={{ ...styles.td, textAlign: 'left' }}>{entry.date}</td>
-                    <td style={{ ...styles.td, textAlign: 'left' }}>
-                      <button style={styles.linkButton} onClick={() => openSubledger(selectedCustomerLedger.name, entry.ref)}>
-                        {entry.ref} 🔍
-                      </button>
-                    </td>
-                    <td style={{ ...styles.td, textAlign: 'right' }}>{entry.debit > 0 ? formatCurrency(entry.debit) : '-'}</td>
-                    <td style={{ ...styles.td, textAlign: 'right' }}>{entry.credit > 0 ? formatCurrency(entry.credit) : '-'}</td>
-                    <td style={{ ...styles.td, textAlign: 'right' }}><b>{formatCurrency(entry.runningBalance)}</b></td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+          <div className="printable-ledger" style={styles.printableArea}>
+            <div style={styles.printHeaderCenter}>
+              <img src={logoImage} alt="Chinito Scento Logo" style={styles.printLogo} />
+              <h2 style={styles.printBrandName}>CHINITO SCENTO</h2>
+              <p style={styles.printDocTitle}>CUSTOMER LEDGER STATEMENT</p>
+            </div>
+
+            <div style={styles.printMetaRow}>
+              <span><b>CUSTOMER CODE:</b> {selectedCustomerLedger.code}</span>
+              <span><b>DATE GENERATED:</b> {new Date().toISOString().split('T')[0]}</span>
+            </div>
+
+            <div style={styles.printCustomerBox}>
+              <p style={{ margin: '0 0 4px 0', fontSize: '13px' }}>Customer Name: <b>{selectedCustomerLedger.name}</b></p>
+              <p style={{ margin: 0, fontSize: '13px' }}>Current Net Outstanding Balance: <b>{formatCurrency(selectedCustomerLedger.totalDue)}</b></p>
+            </div>
+
+            <table style={styles.table}>
+              <thead>
+                <tr style={styles.trHead}>
+                  <th style={{ ...styles.th, width: '15%', textAlign: 'left' }}>DATE</th>
+                  <th style={{ ...styles.th, width: '25%', textAlign: 'left' }}>REF / INVOICE #</th>
+                  <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>DEBIT (DUE)</th>
+                  <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>CREDIT (PAYMENT/RETURN)</th>
+                  <th style={{ ...styles.th, width: '20%', textAlign: 'right' }}>RUNNING BALANCE</th>
+                </tr>
+              </thead>
+              <tbody>
+                {selectedCustomerLedger.entries.length === 0 ? (
+                  <tr><td colSpan="5" style={styles.empty}>No activity recorded for this customer.</td></tr>
+                ) : (
+                  selectedCustomerLedger.entries.map((entry, idx) => (
+                    <tr key={idx} style={styles.trBody}>
+                      <td style={{ ...styles.td, textAlign: 'left' }}>{entry.date}</td>
+                      <td style={{ ...styles.td, textAlign: 'left' }}>
+                        <button style={styles.linkButton} onClick={() => openSubledger(selectedCustomerLedger.name, entry.ref)}>
+                          {entry.ref} <span className="no-print">🔍</span>
+                        </button>
+                      </td>
+                      <td style={{ ...styles.td, textAlign: 'right' }}>{entry.debit > 0 ? formatCurrency(entry.debit) : '-'}</td>
+                      <td style={{ ...styles.td, textAlign: 'right' }}>{entry.credit > 0 ? formatCurrency(entry.credit) : '-'}</td>
+                      <td style={{ ...styles.td, textAlign: 'right' }}><b>{formatCurrency(entry.runningBalance)}</b></td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+
+            <div style={styles.signatureSection}>
+              <div style={styles.sigBox}>
+                <div style={styles.sigLine}></div>
+                <p style={styles.sigLabel}>Authorized Representative</p>
+              </div>
+              <div style={styles.sigBox}>
+                <div style={styles.sigLine}></div>
+                <p style={styles.sigLabel}>Customer Signature</p>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: '20px', textAlign: 'right' }} className="no-print">
+            <button style={styles.backBtn} onClick={() => setSelectedCustomerLedger(null)}>← Back to Summary</button>
+          </div>
         </div>
       ) : (
         /* VIEW 3: Specific Invoice Subledger Audit Trail */
         <div style={styles.card}>
-          <div style={styles.ledgerHeaderRow}>
+          <div style={styles.ledgerHeaderRow} className="no-print">
             <div>
               <h3 style={styles.sectionTitle}>Subledger Audit Trail: {selectedSubledgerInvoice.invoiceNo}</h3>
               <p style={styles.sub}>Customer: {selectedSubledgerInvoice.customerName}</p>
             </div>
-            <div style={{display: 'flex', gap: '10px'}}>
+            <div style={{ display: 'flex', gap: '10px' }}>
               <button style={styles.actionBtn} onClick={() => window.print()}>🖨️ Print Subledger</button>
               <button style={styles.backBtn} onClick={() => setSelectedSubledgerInvoice(null)}>← Back to Ledger</button>
             </div>
           </div>
 
-          <div className="printable-subledger" style={styles.printableArea}>
+          <div className="printable-ledger" style={styles.printableArea}>
             <div style={styles.printHeaderCenter}>
               <img src={logoImage} alt="Chinito Scento Logo" style={styles.printLogo} />
               <h2 style={styles.printBrandName}>CHINITO SCENTO</h2>
@@ -349,8 +414,8 @@ export default function CustomerLedger() {
             </div>
 
             <div style={styles.printCustomerBox}>
-              <p style={{margin: '0 0 4px 0', fontSize: '13px'}}>Customer: <b>{selectedSubledgerInvoice.customerName}</b></p>
-              <p style={{margin: 0, fontSize: '13px'}}>Original SO / Ref: <b>{selectedSubledgerInvoice.invoiceNo}</b></p>
+              <p style={{ margin: '0 0 4px 0', fontSize: '13px' }}>Customer: <b>{selectedSubledgerInvoice.customerName}</b></p>
+              <p style={{ margin: 0, fontSize: '13px' }}>Original SO / Ref: <b>{selectedSubledgerInvoice.invoiceNo}</b></p>
             </div>
 
             <table style={styles.table}>
@@ -390,7 +455,7 @@ export default function CustomerLedger() {
             </div>
           </div>
 
-          <div style={{marginTop: '20px', textAlign: 'right'}} className="no-print">
+          <div style={{ marginTop: '20px', textAlign: 'right' }} className="no-print">
             <button style={styles.backBtn} onClick={() => setSelectedSubledgerInvoice(null)}>← Back to Customer Ledger</button>
           </div>
         </div>
