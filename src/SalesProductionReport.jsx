@@ -14,6 +14,7 @@ import {
 export default function SalesProductionReport() {
   const [loading, setLoading] = useState(true);
   const [salesData, setSalesData] = useState([]);
+  const [returnsData, setReturnsData] = useState([]);
   
   // Report mode: 'custom', 'monthly', or 'yearly'
   const [reportMode, setReportMode] = useState('custom');
@@ -32,49 +33,46 @@ export default function SalesProductionReport() {
   const [selectedYear, setSelectedYear] = useState(today.getFullYear().toString()); // YYYY
 
   useEffect(() => {
-    fetchSalesData();
+    fetchReportData();
   }, []);
 
-  const fetchSalesData = async () => {
+  const fetchReportData = async () => {
     setLoading(true);
     try {
-      // Query sales orders including order status to filter out unapproved/declined transactions
-      const { data, error } = await supabase
-        .from('sales_orders')
-        .select(`
+      const [
+        { data: soData, error: soError },
+        { data: srData, error: srError }
+      ] = await Promise.all([
+        supabase.from('sales_orders').select(`
           so_number,
           customer_name,
           date,
           total_amount,
-          status,
           sales_order_items (
-            product_code,
             product_name,
             quantity,
             unit_price,
             transaction
           )
-        `);
+        `),
+        supabase.from('sales_returns').select('*')
+      ]);
 
-      if (error) throw error;
-      setSalesData(data || []);
+      if (soError) throw soError;
+      if (srError) throw srError;
+
+      setSalesData(soData || []);
+      setReturnsData(srData || []);
     } catch (err) {
-      console.error('Error fetching sales data:', err);
+      console.error('Error fetching sales & returns report data:', err);
     } finally {
       setLoading(false);
     }
   };
 
-  // Filter data based on selected report mode AND order status
-  const filteredData = salesData.filter(order => {
+  // Filter sales data based on selected report mode
+  const filteredSales = salesData.filter(order => {
     if (!order.date) return false;
-
-    // Exclude unapproved, declined, or cancelled orders
-    const orderStatus = String(order.status || '').toLowerCase().trim();
-    if (orderStatus === 'declined' || orderStatus === 'cancelled') {
-      return false;
-    }
-
     const orderDate = order.date.slice(0, 10);
 
     if (reportMode === 'custom') {
@@ -89,33 +87,43 @@ export default function SalesProductionReport() {
     return true;
   });
 
-  // Calculate Summary Metrics & Aggregations
-  const totalGrossSales = filteredData.reduce((sum, order) => sum + Number(order.total_amount || 0), 0);
-  
+  // Map non-declined returns by SO number and product
+  const returnsMap = {};
+  returnsData.forEach(ret => {
+    const status = (ret.status || '').toLowerCase();
+    if (status === 'declined') return;
+
+    const soNum = ret.so_number || ret.soNumber;
+    const prodName = (ret.product_name || '').toUpperCase().trim();
+    const qty = Number(ret.qty_returned || 0);
+    const amount = Number(ret.total_amount || 0);
+
+    if (!returnsMap[soNum]) {
+      returnsMap[soNum] = { totalAmount: 0, products: {} };
+    }
+    returnsMap[soNum].totalAmount += amount;
+    returnsMap[soNum].products[prodName] = (returnsMap[soNum].products[prodName] || 0) + qty;
+  });
+
+  // Calculate Summary Metrics & Aggregations (Net Sales & Net Bottles)
+  let totalGrossSales = 0;
+  let totalReturnsAmount = 0;
+  let totalBottlesSold = 0;
+  let totalBottlesReturned = 0;
+
   const scentMap = {};
   const customerMap = {};
-  let totalBottlesSold = 0;
 
-  // Master product catalog list categorized by gender archetype
-  const menUnisexScents = ["ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT"];
-  const womenScents = ["BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"];
-  const catalogScents = [...menUnisexScents, ...womenScents];
-
-  // Helper function to map messy product names/codes to standardized catalog names
-  const normalizeScentName = (rawName, rawCode) => {
-    const cleanName = String(rawName || '').toUpperCase().trim();
-    const cleanCode = String(rawCode || '').toUpperCase().trim();
-
-    for (const catScent of catalogScents) {
-      if (cleanName.includes(catScent) || cleanCode.includes(catScent)) {
-        return catScent;
-      }
-    }
-    return cleanName || 'GENERAL SCENT';
-  };
-
-  filteredData.forEach(order => {
+  filteredSales.forEach(order => {
+    const soNum = order.so_number;
     const customer = order.customer_name || 'Walk-in / Guest';
+    const orderGross = Number(order.total_amount || 0);
+    const orderReturnsAmount = returnsMap[soNum]?.totalAmount || 0;
+    const orderNet = Math.max(0, orderGross - orderReturnsAmount);
+
+    totalGrossSales += orderGross;
+    totalReturnsAmount += orderReturnsAmount;
+
     if (!customerMap[customer]) {
       customerMap[customer] = {
         customerName: customer,
@@ -124,26 +132,38 @@ export default function SalesProductionReport() {
       };
     }
     
-    customerMap[customer].totalSpent += Number(order.total_amount || 0);
+    customerMap[customer].totalSpent += orderNet;
 
     if (order.sales_order_items) {
       order.sales_order_items.forEach(item => {
         if (item.transaction !== 'RETURN') {
-          const scent = normalizeScentName(item.product_name, item.product_code);
+          const scent = (item.product_name || 'General Scent').toUpperCase().trim();
           const qty = Number(item.quantity) || 0;
+          const returnedQty = returnsMap[soNum]?.products[scent] || 0;
+          const netQty = Math.max(0, qty - returnedQty);
 
-          // Overall scent accumulation & total bottles
-          scentMap[scent] = (scentMap[scent] || 0) + qty;
           totalBottlesSold += qty;
+          totalBottlesReturned += returnedQty;
+
+          // Overall scent accumulation
+          scentMap[scent] = (scentMap[scent] || 0) + netQty;
 
           // Customer-specific scent tracking
-          customerMap[customer].scentsBought[scent] = (customerMap[customer].scentsBought[scent] || 0) + qty;
+          customerMap[customer].scentsBought[scent] = (customerMap[customer].scentsBought[scent] || 0) + netQty;
         }
       });
     }
   });
 
-  // Helper function to rank scents descending by quantity sold
+  const totalNetSales = Math.max(0, totalGrossSales - totalReturnsAmount);
+  const totalNetBottles = Math.max(0, totalBottlesSold - totalBottlesReturned);
+
+  // Master product catalog list categorized by gender archetype
+  const menUnisexScents = ["ANTONITO", "AURELIUS", "DWIGHT", "GAB", "REINE DE NUIT"];
+  const womenScents = ["BLANCHE", "CUCAMELLA", "EMILY", "KITTY", "VELOURA"];
+  const catalogScents = [...menUnisexScents, ...womenScents];
+
+  // Helper function to rank scents descending by net quantity sold
   const getRankedList = (scentArray) => {
     return scentArray
       .map(scentName => ({
@@ -157,11 +177,12 @@ export default function SalesProductionReport() {
   const womenRanking = getRankedList(womenScents);
 
   const customerBreakdown = Object.values(customerMap).map(cust => {
-    const percentage = totalGrossSales > 0 ? (cust.totalSpent / totalGrossSales) * 100 : 0;
+    const percentage = totalNetSales > 0 ? (cust.totalSpent / totalNetSales) * 100 : 0;
     
     // Convert scentsBought object into a sorted array for easy display when expanded
     const sortedScents = Object.entries(cust.scentsBought)
       .map(([scentName, quantity]) => ({ scentName, quantity }))
+      .filter(item => item.quantity > 0)
       .sort((a, b) => b.quantity - a.quantity);
 
     const topScent = sortedScents[0]?.scentName || 'N/A';
@@ -172,7 +193,7 @@ export default function SalesProductionReport() {
       topScent,
       sortedScents
     };
-  }).sort((a, b) => b.totalSpent - a.totalSpent);
+  }).filter(cust => cust.totalSpent > 0).sort((a, b) => b.totalSpent - a.totalSpent);
 
   const handlePrint = () => {
     window.print();
@@ -309,22 +330,32 @@ export default function SalesProductionReport() {
           <div style={styles.metricsGrid}>
             <div style={styles.metricCard} className="print:bg-white print:border-gray-300">
               <div style={styles.metricCardHeader}>
-                <span style={styles.metricLabel}>TOTAL GROSS SALES</span>
+                <span style={styles.metricLabel}>TOTAL NET SALES</span>
                 <DollarSign size={18} color="#c5a059" />
               </div>
               <div style={styles.metricValue}>
-                ₱{totalGrossSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                ₱{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </div>
+              {totalReturnsAmount > 0 && (
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
+                  Gross: ₱{totalGrossSales.toLocaleString()} | Returns: -₱{totalReturnsAmount.toLocaleString()}
+                </div>
+              )}
             </div>
 
             <div style={styles.metricCard} className="print:bg-white print:border-gray-300">
               <div style={styles.metricCardHeader}>
-                <span style={styles.metricLabel}>TOTAL BOTTLES SOLD</span>
+                <span style={styles.metricLabel}>TOTAL NET BOTTLES</span>
                 <Package size={18} color="#c5a059" />
               </div>
               <div style={styles.metricValue}>
-                {totalBottlesSold} <span style={{ fontSize: '14px', fontWeight: '400', color: '#888' }}>Bottles</span>
+                {totalNetBottles} <span style={{ fontSize: '14px', fontWeight: '400', color: '#888' }}>Bottles</span>
               </div>
+              {totalBottlesReturned > 0 && (
+                <div style={{ fontSize: '11px', color: '#888', marginTop: '6px' }}>
+                  Sold: {totalBottlesSold} | Returned: -{totalBottlesReturned}
+                </div>
+              )}
             </div>
 
             <div style={styles.metricCard} className="print:bg-white print:border-gray-300">
@@ -333,7 +364,7 @@ export default function SalesProductionReport() {
                 <TrendingUp size={18} color="#c5a059" />
               </div>
               <div style={styles.metricValue}>
-                {filteredData.length} <span style={{ fontSize: '14px', fontWeight: '400', color: '#888' }}>Orders</span>
+                {filteredSales.length} <span style={{ fontSize: '14px', fontWeight: '400', color: '#888' }}>Orders</span>
               </div>
             </div>
 
@@ -348,11 +379,11 @@ export default function SalesProductionReport() {
             </div>
           </div>
 
-          {/* BOXED PRODUCT DISPLAY: BOTTLES SOLD PER PERFUME SCENT (OVERALL) */}
+          {/* BOXED PRODUCT DISPLAY: BOTTLES SOLD PER PERFUME SCENT (NET) */}
           <div style={styles.tableCard} className="print:bg-white print:border-gray-300">
             <div style={styles.tableHeaderSection}>
               <h2 style={styles.tableTitle}>
-                <Package size={18} color="#c5a059" /> Bottles Sold Per Perfume Scent (Overall)
+                <Package size={18} color="#c5a059" /> Net Bottles Sold Per Perfume Scent (Gross Less Returns)
               </h2>
             </div>
             <div style={styles.productGridContainer}>
@@ -362,7 +393,7 @@ export default function SalesProductionReport() {
                   <div key={idx} style={styles.productBox} className="print:border-gray-300 print:bg-gray-50">
                     <div style={styles.productBoxName}>{scentName}</div>
                     <div style={styles.productBoxCount}>
-                      {soldQty} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>sold</span>
+                      {soldQty} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>net sold</span>
                     </div>
                   </div>
                 );
@@ -374,9 +405,9 @@ export default function SalesProductionReport() {
           <div style={styles.tableCard} className="print:bg-white print:border-gray-300">
             <div style={styles.tableHeaderSection}>
               <h2 style={styles.tableTitle}>
-                <Award size={18} color="#c5a059" /> Ranking of Perfume Scent
+                <Award size={18} color="#c5a059" /> Ranking of Perfume Scent (Net)
               </h2>
-              <p style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>Performance rankings categorized by scent profile archetype.</p>
+              <p style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>Performance rankings categorized by scent profile archetype based on net sales.</p>
             </div>
             
             <div style={styles.rankingColumnsGrid}>
@@ -390,7 +421,7 @@ export default function SalesProductionReport() {
                         <span style={styles.rankingBadge}>#{idx + 1}</span>
                         <span style={styles.rankingScentName}>{item.name}</span>
                       </div>
-                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>sold</span></span>
+                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>net sold</span></span>
                     </div>
                   ))}
                 </div>
@@ -406,7 +437,7 @@ export default function SalesProductionReport() {
                         <span style={styles.rankingBadge}>#{idx + 1}</span>
                         <span style={styles.rankingScentName}>{item.name}</span>
                       </div>
-                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>sold</span></span>
+                      <span style={styles.rankingScentCount}>{item.sold} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>net sold</span></span>
                     </div>
                   ))}
                 </div>
@@ -414,13 +445,13 @@ export default function SalesProductionReport() {
             </div>
           </div>
 
-          {/* TABLE: CUSTOMER SALES & PERCENTAGE SHARE BREAKDOWN */}
+          {/* TABLE: CUSTOMER NET SALES & PERCENTAGE SHARE BREAKDOWN */}
           <div style={styles.tableCard} className="print:bg-white print:border-gray-300">
             <div style={styles.tableHeaderSection}>
               <h2 style={styles.tableTitle}>
-                <Users size={18} color="#c5a059" /> Customer Sales & Percentage Share Breakdown
+                <Users size={18} color="#c5a059" /> Customer Net Sales & Percentage Share Breakdown
               </h2>
-              <p style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>Click any customer name below to view their specific scent purchase breakdown.</p>
+              <p style={{ fontSize: '11px', color: '#777', marginTop: '4px' }}>Click any customer name below to view their specific net scent purchase breakdown.</p>
             </div>
 
             <div style={{ overflowX: 'auto' }}>
@@ -429,7 +460,7 @@ export default function SalesProductionReport() {
                   <tr style={styles.trHead} className="print:bg-gray-100">
                     <th style={styles.th}>Customer Name</th>
                     <th style={styles.th}>Top Perfume Scent</th>
-                    <th style={{ ...styles.th, textAlign: 'right' }}>Gross Revenue (₱)</th>
+                    <th style={{ ...styles.th, textAlign: 'right' }}>Net Revenue (₱)</th>
                     <th style={{ ...styles.th, textAlign: 'right' }}>Percentage Share (%)</th>
                   </tr>
                 </thead>
@@ -445,6 +476,7 @@ export default function SalesProductionReport() {
                       const isExpanded = expandedCustomer === cust.customerName;
                       return (
                         <React.Fragment key={idx}>
+                          {/* Main Customer Row */}
                           <tr 
                             style={{ 
                               ...styles.trBody, 
@@ -452,7 +484,7 @@ export default function SalesProductionReport() {
                               cursor: 'pointer' 
                             }}
                             onClick={() => toggleCustomerExpand(cust.customerName)}
-                            title="Click to toggle bottle breakdown per scent"
+                            title="Click to toggle net bottle breakdown per scent"
                           >
                             <td style={{ ...styles.td, fontWeight: '600', color: '#ffffff' }} className="print:!text-black">
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -471,17 +503,18 @@ export default function SalesProductionReport() {
                             </td>
                           </tr>
 
+                          {/* Expanded Accordion Row for Net Bottles Sold Per Scent */}
                           {isExpanded && (
                             <tr style={{ backgroundColor: '#0e0e0e' }}>
                               <td colSpan="4" style={{ padding: '16px 30px' }}>
                                 <div style={styles.accordionContent}>
-                                  <p style={styles.accordionTitle}>Perfume Bottle Breakdown for {cust.customerName}:</p>
+                                  <p style={styles.accordionTitle}>Net Perfume Bottle Breakdown for {cust.customerName}:</p>
                                   <div style={styles.accordionTableWrapper}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                                       <thead>
                                         <tr style={{ borderBottom: '1px solid #222' }}>
                                           <th style={{ ...styles.th, padding: '8px 12px', fontSize: '10px' }}>Perfume Scent</th>
-                                          <th style={{ ...styles.th, padding: '8px 12px', fontSize: '10px', textAlign: 'right' }}>Bottles Bought</th>
+                                          <th style={{ ...styles.th, padding: '8px 12px', fontSize: '10px', textAlign: 'right' }}>Net Bottles Bought</th>
                                         </tr>
                                       </thead>
                                       <tbody>
@@ -489,7 +522,7 @@ export default function SalesProductionReport() {
                                           <tr key={sIdx} style={{ borderBottom: '1px solid #141414' }}>
                                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#ddd' }}>{scentItem.scentName}</td>
                                             <td style={{ padding: '8px 12px', fontSize: '13px', color: '#c5a059', textAlign: 'right', fontWeight: '600' }}>
-                                              {scentItem.quantity} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>bottles</span>
+                                              {scentItem.quantity} <span style={{ fontSize: '11px', fontWeight: '400', color: '#888' }}>net bottles</span>
                                             </td>
                                           </tr>
                                         ))}
