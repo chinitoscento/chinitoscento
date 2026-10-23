@@ -100,15 +100,15 @@ export default function MainLayout({ onLogout }) {
     return isOwnerOrAdmin ? 'Dashboard' : 'Atelier Workspace';
   });
   
-  // Sidebar section toggle state
+  // Sidebar section toggle state - All collapsed by default
   const [openSections, setOpenSections] = useState({
     Management: false,
     Manufacturing: false,
-    Selling: false,
     'Purchases & Expenses': false,
+    Selling: false,
     Finance: false,
-    Reports: true, 
-    Accounting: true, // Default open for quick access
+    Reports: false,
+    Accounting: false,
   });
 
   const [batches, setBatches] = useState([]);
@@ -135,10 +135,19 @@ export default function MainLayout({ onLogout }) {
   });
 
   const toggleSection = (sectionName) => {
-    setOpenSections(prev => ({
-      ...prev,
-      [sectionName]: !prev[sectionName]
-    }));
+    setOpenSections(prev => {
+      const isCurrentlyOpen = prev[sectionName];
+      return {
+        Management: false,
+        Manufacturing: false,
+        'Purchases & Expenses': false,
+        Selling: false,
+        Finance: false,
+        Reports: false,
+        Accounting: false,
+        [sectionName]: !isCurrentlyOpen
+      };
+    });
   };
 
   const handleNavClick = (pageName, sectionName) => {
@@ -146,7 +155,13 @@ export default function MainLayout({ onLogout }) {
     localStorage.setItem('chinito_active_page', pageName);
     if (sectionName) {
       setOpenSections(prev => ({
-        ...prev,
+        Management: false,
+        Manufacturing: false,
+        'Purchases & Expenses': false,
+        Selling: false,
+        Finance: false,
+        Reports: false,
+        Accounting: false,
         [sectionName]: true
       }));
     }
@@ -192,7 +207,7 @@ export default function MainLayout({ onLogout }) {
   const renderContent = () => {
     switch (activePage) {
       case 'Dashboard':
-        return isOwnerOrAdmin ? <Dashboard /> : <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
+        return isOwnerOrAdmin ? <Dashboard onNavigate={(page) => handleNavClick(page, 'Reports')} /> : <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
       case 'Atelier Workspace':
         return <AtelierWorkspace userName={userName} onNavigate={handleNavClick} />;
       case 'Customers':
@@ -247,7 +262,7 @@ export default function MainLayout({ onLogout }) {
       case 'Equity':
         return <StatementOfEquity />;
       case 'Notes to Financial Statements':
-        return <NotesToFinancialStatements />; // ✦ NEW
+        return <NotesToFinancialStatements />;
       default:
         return (
           <div style={{ padding: '30px' }}>
@@ -306,7 +321,7 @@ export default function MainLayout({ onLogout }) {
 
           {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
 
-          {/* ✦ Accounting Section linked to Balance Sheet, Income Statement, & Equity */}
+          {/* ✦ Accounting Section */}
           {!isManager && renderSection('Accounting', ['Journal Entries', 'Balance Sheet', 'Income Statement', 'Equity', 'Notes to Financial Statements'])}
         </div>
       </aside>
