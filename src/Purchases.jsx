@@ -23,8 +23,11 @@ const getOrdinalSuffix = (day) => {
   }
 };
 
-// Helper function to compute transaction status badge configuration based on balance_due and total_amount_due
-const getTransactionStatus = (balanceDue, totalDue) => {
+// Helper function to compute transaction status badge configuration
+const getTransactionStatus = (balanceDue, totalDue, paymentStatus) => {
+  if (paymentStatus === 'VOIDED') {
+    return { text: 'VOIDED', color: '#777777' }; // Gray
+  }
   const bal = Number(balanceDue) || 0;
   const tot = Number(totalDue) || 0;
 
@@ -87,6 +90,17 @@ const styles = {
     fontWeight: '600',
     borderRadius: '6px',
     cursor: 'pointer',
+  },
+  voidBtn: {
+    backgroundColor: 'transparent',
+    color: '#d9534f',
+    border: '1px solid #d9534f',
+    padding: '6px 10px',
+    fontSize: '14px',
+    fontWeight: '600',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    transition: 'all 0.2s',
   },
   listHeading: {
     fontSize: '24px',
@@ -331,6 +345,7 @@ export default function Purchases() {
       if (purchError) throw purchError;
 
       const formattedHistory = (purchData || []).map(p => ({
+        dbId: p.id,
         id: p.ref_id,
         supplier: p.supplier_name,
         invoiceReference: p.invoice_reference || '', 
@@ -345,6 +360,7 @@ export default function Purchases() {
         computedRate: p.computed_rate,
         totalAmountDue: p.total_amount_due,
         balanceDue: p.balance_due ?? (p.payment_mode === 'Cash' ? 0 : p.total_amount_due),
+        paymentStatus: p.payment_status || 'UNPAID',
         items: (p.purchase_line_items || []).map(li => ({
           id: li.id,
           type: li.type,
@@ -361,7 +377,7 @@ export default function Purchases() {
     } catch (err) {
       console.error('Error loading purchase data from Supabase:', err.message);
     } finally {
-      setLoadingData(false);
+      setLoading(false);
     }
   };
   
@@ -505,6 +521,174 @@ export default function Purchases() {
 
   const handleRemoveLineItem = (id) => {
     setLineItems(prev => prev.filter(item => item.id !== id));
+  };
+
+  // Automated Void / Reverse Purchase Transaction Handler
+  const handleVoidTransaction = async (purchase) => {
+    if (purchase.paymentStatus === 'VOIDED') {
+      alert('This transaction is already voided.');
+      return;
+    }
+
+    const confirmVoid = window.confirm(
+      `Are you sure you want to void purchase reference [${purchase.id}]?\n\nThis will:\n1. Automatically deduct stock quantities for raw materials involved.\n2. Post a Reversing Journal Entry to clear the financial records.\n3. Mark this transaction as VOIDED.`
+    );
+    if (!confirmVoid) return;
+
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // 1. Reverse Inventory Stock Levels for RM items
+      for (const line of (purchase.items || [])) {
+        if (line.type === 'RM') {
+          const catMeta = rawCatalogue.find(c => String(c.id) === String(line.code) || c.rawMaterial === line.name || c.raw_material === line.name);
+          const volumeStr = line.containerVolume || (catMeta ? (catMeta.volumeSize || catMeta.volume_size) : '1');
+          const multiplier = parseVolumeInMl(volumeStr);
+          const totalToDeduct = Number(line.quantity || 0) * multiplier;
+
+          let existingInv = null;
+          if (line.code) {
+            const { data } = await supabase
+              .from('inventory')
+              .select('*')
+              .eq('code', line.code)
+              .maybeSingle();
+            existingInv = data;
+          }
+          if (!existingInv && line.name) {
+            const { data } = await supabase
+              .from('inventory')
+              .select('*')
+              .eq('raw_material', line.name)
+              .maybeSingle();
+            existingInv = data;
+          }
+
+          if (existingInv) {
+            const currentStock = Number(existingInv.stockQty ?? existingInv.stock_qty ?? 0);
+            const updatedStock = Math.max(0, currentStock - totalToDeduct);
+            const updatePayload = {};
+            if ('stockQty' in existingInv) updatePayload.stockQty = updatedStock;
+            if ('stock_qty' in existingInv) updatePayload.stock_qty = updatedStock;
+
+            await supabase
+              .from('inventory')
+              .update(updatePayload)
+              .eq('id', existingInv.id);
+          }
+        }
+      }
+
+      // 2. Post Reversing Journal Entry
+      const jeNumber = await getNextJeNumber();
+      const reversalMemo = `Void / Reversal of purchase transaction ${purchase.id} (${purchase.supplier})`;
+
+      const { error: headerJeError } = await supabase
+        .from('journal_entries')
+        .insert([{
+          je_number: jeNumber,
+          date: todayStr,
+          reference_no: purchase.invoiceReference || purchase.id,
+          description: reversalMemo,
+          status: 'Posted'
+        }]);
+
+      if (headerJeError) throw headerJeError;
+
+      const totalInventoryAmount = (purchase.items || [])
+        .filter(i => i.type === 'RM')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const totalEquipmentAmount = (purchase.items || [])
+        .filter(i => i.type === 'EQP')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const totalSuppliesAmount = (purchase.items || [])
+        .filter(i => i.type === 'SUP')
+        .reduce((sum, i) => sum + i.total, 0);
+
+      const reversingLinesPayload = [];
+
+      // Credit Inventory / Assets / Expenses (opposite of purchase debit)
+      if (totalInventoryAmount > 0) {
+        reversingLinesPayload.push({
+          je_number: jeNumber,
+          account_code: '1310',
+          description: reversalMemo,
+          debit: 0,
+          credit: totalInventoryAmount
+        });
+      }
+      if (totalEquipmentAmount > 0) {
+        reversingLinesPayload.push({
+          je_number: jeNumber,
+          account_code: '1500',
+          description: reversalMemo,
+          debit: 0,
+          credit: totalEquipmentAmount
+        });
+      }
+      if (totalSuppliesAmount > 0) {
+        reversingLinesPayload.push({
+          je_number: jeNumber,
+          account_code: '6090',
+          description: reversalMemo,
+          debit: 0,
+          credit: totalSuppliesAmount
+        });
+      }
+
+      // Debit Cash or Accounts Payable (opposite of purchase credit)
+      if (purchase.paymentMode === 'Cash') {
+        reversingLinesPayload.push({
+          je_number: jeNumber,
+          account_code: '1000',
+          description: reversalMemo,
+          debit: Number(purchase.totalPurchaseAmount || 0),
+          credit: 0
+        });
+      } else {
+        if (Number(purchase.computedInterest || 0) > 0) {
+          reversingLinesPayload.push({
+            je_number: jeNumber,
+            account_code: '6090',
+            description: reversalMemo,
+            debit: 0,
+            credit: Number(purchase.computedInterest || 0)
+          });
+        }
+        reversingLinesPayload.push({
+          je_number: jeNumber,
+          account_code: '2000',
+          description: reversalMemo,
+          debit: Number(purchase.totalAmountDue || 0),
+          credit: 0
+        });
+      }
+
+      const { error: linesJeError } = await supabase
+        .from('journal_entry_lines')
+        .insert(reversingLinesPayload);
+
+      if (linesJeError) throw linesJeError;
+
+      // 3. Update purchase_transactions status to VOIDED
+      const { error: updatePurchError } = await supabase
+        .from('purchase_transactions')
+        .update({
+          payment_status: 'VOIDED',
+          balance_due: 0
+        })
+        .eq('id', purchase.dbId);
+
+      if (updatePurchError) throw updatePurchError;
+
+      alert(`Purchase transaction [${purchase.id}] has been successfully voided and reversed.`);
+      fetchInitialData();
+    } catch (err) {
+      console.error('Error voiding transaction:', err.message);
+      alert('Failed to void transaction: ' + err.message);
+    }
   };
 
   const totalPurchaseAmount = lineItems.reduce((acc, item) => acc + item.total, 0);
@@ -761,25 +945,7 @@ export default function Purchases() {
         }
       }
 
-      const transactionRecord = {
-        id: newRefId,
-        supplier: selectedSupplier,
-        invoiceReference: invoiceReference.trim(),
-        date: transactionDate,
-        paymentMode,
-        creditOption: paymentMode === 'Credit' ? creditOption : 'N/A',
-        creditorName: paymentMode === 'Credit' ? creditorName.trim() : '',
-        monthlyAmortization: paymentMode === 'Credit' && creditOption === 'Installment' ? monthlyAmortization : null,
-        installmentCount: paymentMode === 'Credit' && creditOption === 'Installment' ? installmentCount : null,
-        items: lineItems,
-        totalPurchaseAmount,
-        computedInterest,
-        computedRate,
-        totalAmountDue,
-        balanceDue: initialBalanceDue
-      };
-
-      setPurchaseHistory(prev => [transactionRecord, ...prev]);
+      fetchInitialData();
       setIsAddModalOpen(false);
 
       setLineItems([]);
@@ -816,13 +982,14 @@ export default function Purchases() {
         ) : (
           <table style={styles.historyTable}>
             <colgroup>
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '13%' }} />
-              <col style={{ width: '20%' }} />
               <col style={{ width: '12%' }} />
-              <col style={{ width: '13%' }} />
+              <col style={{ width: '16%' }} />
               <col style={{ width: '12%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '10%' }} />
             </colgroup>
             <thead>
               <tr style={styles.trHead}>
@@ -833,18 +1000,19 @@ export default function Purchases() {
                 <th style={styles.thLeft}>Total Purchase</th>
                 <th style={styles.thLeft}>Total Amount Due</th>
                 <th style={styles.thLeft}>Status</th>
+                <th style={styles.thLeft}>Action</th>
               </tr>
             </thead>
             <tbody>
               {purchaseHistory.length === 0 ? (
                 <tr>
-                  <td colSpan="7" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
+                  <td colSpan="8" style={styles.emptyTd}>No recorded purchase transactions found. Click &quot;Add Purchase Transaction&quot; to record one.</td>
                 </tr>
               ) : (
                 purchaseHistory.map(p => {
-                  const statusInfo = getTransactionStatus(p.balanceDue, p.totalAmountDue);
+                  const statusInfo = getTransactionStatus(p.balanceDue, p.totalAmountDue, p.paymentStatus);
                   return (
-                    <tr key={p.id} style={styles.trBody}>
+                    <tr key={p.dbId || p.id} style={styles.trBody}>
                       <td style={styles.td}>
                         <div style={{ fontWeight: 'bold' }}>{p.id}</div>
                         <div style={{ fontSize: '16px', color: '#888' }}>{p.date}</div>
@@ -896,6 +1064,19 @@ export default function Purchases() {
                         }}>
                           {statusInfo.text}
                         </span>
+                      </td>
+                      <td style={styles.td}>
+                        {p.paymentStatus !== 'VOIDED' && (
+                          <button 
+                            type="button" 
+                            onClick={() => handleVoidTransaction(p)} 
+                            style={styles.voidBtn}
+                            onMouseEnter={(e) => { e.target.style.backgroundColor = 'rgba(217, 83, 79, 0.2)'; }}
+                            onMouseLeave={(e) => { e.target.style.backgroundColor = 'transparent'; }}
+                          >
+                            Void / Reverse
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
