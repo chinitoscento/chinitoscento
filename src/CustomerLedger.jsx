@@ -28,26 +28,57 @@ export default function CustomerLedger() {
       if (colError && colError.code !== 'PGRST116') console.error(colError);
 
       const savedCustomers = customersData || [];
-      const savedSOs = (soData || []).filter(so => (so.status || so.order_status) !== 'Declined');
+      const savedSOs = (soData || []).filter(so => {
+        const st = String(so.status || so.order_status || '').trim().toUpperCase();
+        return st !== 'DECLINED';
+      });
       const savedCollections = collectionsData || [];
+
+      // Helper function for flexible customer name matching
+      const matchesCustomer = (nameA, nameB) => {
+        const a = String(nameA || '').trim().toLowerCase();
+        const b = String(nameB || '').trim().toLowerCase();
+        return a === b || a.startsWith(b) || b.startsWith(a);
+      };
 
       const summary = savedCustomers.map((cust, idx) => {
         const custName = cust.name || cust.customer_name || '';
-        const custSOs = savedSOs.filter(so => (so.customerName || so.customer_name) === custName);
-        const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.totalDue || so.total_due || so.total_amount || 0), 0);
         
-        const custCollections = savedCollections.filter(c => (c.customerName || c.customer_name) === custName);
-        const totalPaid = custCollections.reduce((sum, c) => sum + Number(c.amountPaid || c.amount_paid || c.credit || 0), 0);
-        const totalDue = Math.max(0, totalTrans - totalPaid);
+        // Find all non-declined SOs for this customer
+        const custSOs = savedSOs.filter(so => matchesCustomer(so.customerName || so.customer_name, custName));
+        
+        let customerTotalTrans = 0;
+        let customerTotalPaid = 0;
+
+        custSOs.forEach(so => {
+          const soNum = so.so_number || so.soNumber || so.invoice_no;
+          const totalDue = Number(so.total_amount || so.totalDue || 0);
+          const isCash = String(so.payment_mode || so.paymentMode || '').toUpperCase() === 'CASH';
+
+          // Find all collections/returns linked to this specific SO
+          const paidSoCollections = savedCollections.filter(c => {
+            const ref = c.invoice_no || c.invoiceNo || c.so_number || c.soNumber;
+            return String(ref || '').trim() === String(soNum || '').trim();
+          });
+
+          const totalPaidForSO = isCash 
+            ? totalDue 
+            : paidSoCollections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
+
+          customerTotalTrans += totalDue;
+          customerTotalPaid += Math.min(totalDue, totalPaidForSO);
+        });
+
+        const totalDue = Math.max(0, customerTotalTrans - customerTotalPaid);
 
         return {
           code: cust.code || `CUST-00${idx + 1}`,
           name: custName,
-          totalTrans,
-          totalPaid,
-          totalDue,
+          totalTrans: customerTotalTrans,
+          totalPaid: customerTotalPaid,
+          totalDue: totalDue,
           transactions: custSOs,
-          collections: custCollections
+          collections: savedCollections.filter(c => matchesCustomer(c.customerName || c.customer_name, custName))
         };
       });
 
@@ -75,7 +106,6 @@ export default function CustomerLedger() {
     });
 
     custSummary.collections.forEach(col => {
-      // Robust matching across all possible field names used by Collections & Sales Returns
       const targetRef = col.invoiceNo || col.invoice_no || col.soNumber || col.so_number;
       const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
       const txnType = col.transactionType || col.transaction_type;
@@ -92,18 +122,6 @@ export default function CustomerLedger() {
           type: labelType,
           amount: creditVal
         });
-      } else if (targetRef) {
-        invoiceMap[targetRef] = {
-          ref: targetRef,
-          date: col.date,
-          debit: 0,
-          credit: creditVal,
-          payments: [{
-            date: col.date,
-            type: labelType,
-            amount: creditVal
-          }]
-        };
       }
     });
 
@@ -113,7 +131,7 @@ export default function CustomerLedger() {
     let runningBalance = 0;
     const consolidatedEntries = uniqueEntries.map(entry => {
       runningBalance += (entry.debit - entry.credit);
-      return { ...entry, runningBalance };
+      return { ...entry, runningBalance: Math.max(0, runningBalance) };
     });
 
     setSelectedCustomerLedger({
@@ -141,7 +159,6 @@ export default function CustomerLedger() {
 
       const so = savedSOs.find(s => (s.soNumber || s.so_number || s.invoice_no) === invoiceRef);
       
-      // FIXED: Ensure Sales Returns (which store target order in `so_number`) match the subledger reference
       const collections = savedCollections.filter(c => {
         const refCandidate = c.invoiceNo || c.invoice_no || c.soNumber || c.so_number;
         return String(refCandidate || '').trim() === String(invoiceRef || '').trim();
@@ -149,7 +166,6 @@ export default function CustomerLedger() {
 
       const subledgerEntries = [];
 
-      // RULE APPLIED: First row displays the original Sales Order (SO) amount as the initial transaction row
       if (so) {
         subledgerEntries.push({
           date: so.date || so.order_date,
@@ -160,7 +176,6 @@ export default function CustomerLedger() {
         });
       }
 
-      // Subsequent rows follow as debits (swaps/additional charges) or credits (payments/returns)
       collections.forEach(col => {
         const creditVal = Number(col.amountPaid || col.amount_paid || col.credit || 0);
         const txnType = col.transactionType || col.transaction_type;
@@ -183,7 +198,7 @@ export default function CustomerLedger() {
       let runningBalance = 0;
       const entriesWithBalance = subledgerEntries.map(entry => {
         runningBalance += (entry.debit - entry.credit);
-        return { ...entry, runningBalance };
+        return { ...entry, runningBalance: Math.max(0, runningBalance) };
       });
 
       setSelectedSubledgerInvoice({
@@ -198,39 +213,9 @@ export default function CustomerLedger() {
 
   return (
     <div style={styles.container}>
-      <style>{`
-        @media print {
-          body, html {
-            background-color: #fff !important;
-            margin: 0 !important;
-            padding: 0 !important;
-          }
-          body * {
-            visibility: hidden;
-          }
-          .printable-subledger, .printable-subledger * {
-            visibility: visible;
-          }
-          .printable-subledger {
-            position: absolute;
-            left: 0;
-            top: 0;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 20px !important;
-            background: #fff !important;
-            box-sizing: border-box;
-          }
-          .no-print {
-            display: none !important;
-          }
-        }
-      `}</style>
-
       <h2 style={styles.pageTitle}>Customer Ledger</h2>
       <p style={styles.sub}>Monitor customer credit standings, transaction histories, and running balances.</p>
 
-      {/* VIEW 1: Customer Summary List */}
       {!selectedCustomerLedger ? (
         <div style={styles.card}>
           <table style={styles.table}>
@@ -265,7 +250,6 @@ export default function CustomerLedger() {
           </table>
         </div>
       ) : !selectedSubledgerInvoice ? (
-        /* VIEW 2: Consolidated Customer Ledger (Unique Invoices Only) */
         <div style={styles.card}>
           <div style={styles.ledgerHeaderRow}>
             <div>
@@ -307,9 +291,8 @@ export default function CustomerLedger() {
           </table>
         </div>
       ) : (
-        /* VIEW 3: Specific Invoice Subledger Audit Trail with Print Support Matching Sales Return */
         <div style={styles.card}>
-          <div style={styles.ledgerHeaderRow} className="no-print">
+          <div style={styles.ledgerHeaderRow}>
             <div>
               <h3 style={styles.sectionTitle}>Subledger Audit Trail: {selectedSubledgerInvoice.invoiceNo}</h3>
               <p style={styles.sub}>Customer: {selectedSubledgerInvoice.customerName}</p>
@@ -321,20 +304,17 @@ export default function CustomerLedger() {
           </div>
 
           <div className="printable-subledger" style={styles.printableArea}>
-            {/* Centered Sales Return Style Header */}
             <div style={styles.printHeaderCenter}>
               <img src={logoImage} alt="Chinito Scento Logo" style={styles.printLogo} />
               <h2 style={styles.printBrandName}>CHINITO SCENTO</h2>
               <p style={styles.printDocTitle}>SUBLEDGER REPORT</p>
             </div>
 
-            {/* Metadata Info Bar */}
             <div style={styles.printMetaRow}>
               <span><b>SUBLEDGER REF:</b> {selectedSubledgerInvoice.invoiceNo}</span>
               <span><b>DATE:</b> {new Date().toISOString().split('T')[0]}</span>
             </div>
 
-            {/* Customer Details info block */}
             <div style={styles.printCustomerBox}>
               <p style={{margin: '0 0 4px 0', fontSize: '13px'}}>Customer: <b>{selectedSubledgerInvoice.customerName}</b></p>
               <p style={{margin: 0, fontSize: '13px'}}>Original SO / Ref: <b>{selectedSubledgerInvoice.invoiceNo}</b></p>
@@ -365,7 +345,6 @@ export default function CustomerLedger() {
               </tbody>
             </table>
 
-            {/* Signatures Section matching Sales Return layout */}
             <div style={styles.signatureSection}>
               <div style={styles.sigBox}>
                 <div style={styles.sigLine}></div>
