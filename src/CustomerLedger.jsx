@@ -54,12 +54,10 @@ export default function CustomerLedger() {
           const payStatus = String(so.payment_status || so.paymentStatus || '').toUpperCase();
           const isCash = payMode === 'CASH' || payStatus === 'PAID';
 
-          // If CASH / Paid sale, it is 100% paid at point of sale
           if (isCash) {
             totalTrans += totalDue;
             totalPaid += totalDue;
           } else {
-            // For CREDIT sales, fetch actual collections / returns
             const paidSoCollections = savedCollections.filter(c => {
               const ref = c.invoice_no || c.invoiceNo || c.so_number || c.soNumber;
               return String(ref || '').trim() === String(soNum || '').trim();
@@ -106,7 +104,7 @@ export default function CustomerLedger() {
         ref: soNum,
         date: soDate,
         debit: totalDue,
-        credit: isCash ? totalDue : 0, // Automatically credit CASH sales
+        credit: isCash ? totalDue : 0,
         isCash: isCash,
         payments: isCash ? [{ date: soDate, type: 'Point of Sale Cash Payment', amount: totalDue }] : []
       };
@@ -237,14 +235,51 @@ export default function CustomerLedger() {
     return `₱${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
+  // ✦ Helper to trigger print with custom auto-generated PDF filename
+  const handlePrintLedger = () => {
+    const originalTitle = document.title;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cleanCustName = String(selectedCustomerLedger?.name || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustId = String(selectedCustomerLedger?.code || 'CUST').replace(/[^a-zA-Z0-9]/g, '_');
+    
+    // Sets browser document title -> Chrome "Save as PDF" uses this filename!
+    document.title = `${cleanCustName}_${cleanCustId}_${todayStr}`;
+    window.print();
+    
+    // Restore original title after print window closes
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+  };
+
+  const handlePrintSubledger = () => {
+    const originalTitle = document.title;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const cleanCustName = String(selectedSubledgerInvoice?.customerName || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanInvoiceNo = String(selectedSubledgerInvoice?.invoiceNo || 'SO').replace(/[^a-zA-Z0-9]/g, '_');
+    
+    document.title = `${cleanCustName}_${cleanInvoiceNo}_${todayStr}`;
+    window.print();
+
+    setTimeout(() => {
+      document.title = originalTitle;
+    }, 1000);
+  };
+
   return (
     <div style={styles.container}>
       <style>{`
         @media print {
+          @page {
+            size: auto;
+            margin: 15mm 15mm 15mm 15mm;
+          }
           body, html {
             background-color: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
+            overflow: visible !important;
+            height: auto !important;
           }
           body * {
             visibility: hidden;
@@ -258,9 +293,19 @@ export default function CustomerLedger() {
             top: 0;
             width: 100% !important;
             margin: 0 !important;
-            padding: 20px !important;
+            padding: 0 !important;
             background: #fff !important;
             box-sizing: border-box;
+            overflow: visible !important;
+            height: auto !important;
+          }
+          tr {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+          .signature-section-print {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
           .no-print {
             display: none !important;
@@ -318,7 +363,7 @@ export default function CustomerLedger() {
               <p style={styles.sub}>Unique invoice breakdown. Click any invoice reference to view its detailed subledger trail.</p>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button style={styles.actionBtn} onClick={() => window.print()}>🖨️ Print Ledger Statement</button>
+              <button style={styles.actionBtn} onClick={handlePrintLedger}>🖨️ Print Ledger Statement</button>
               <button style={styles.backBtn} onClick={() => setSelectedCustomerLedger(null)}>← Back to Summary</button>
             </div>
           </div>
@@ -371,7 +416,7 @@ export default function CustomerLedger() {
               </tbody>
             </table>
 
-            <div style={styles.signatureSection}>
+            <div style={styles.signatureSection} className="signature-section-print">
               <div style={styles.sigBox}>
                 <div style={styles.sigLine}></div>
                 <p style={styles.sigLabel}>Authorized Representative</p>
@@ -396,7 +441,7 @@ export default function CustomerLedger() {
               <p style={styles.sub}>Customer: {selectedSubledgerInvoice.customerName}</p>
             </div>
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button style={styles.actionBtn} onClick={() => window.print()}>🖨️ Print Subledger</button>
+              <button style={styles.actionBtn} onClick={handlePrintSubledger}>🖨️ Print Subledger</button>
               <button style={styles.backBtn} onClick={() => setSelectedSubledgerInvoice(null)}>← Back to Ledger</button>
             </div>
           </div>
@@ -443,7 +488,7 @@ export default function CustomerLedger() {
               </tbody>
             </table>
 
-            <div style={styles.signatureSection}>
+            <div style={styles.signatureSection} className="signature-section-print">
               <div style={styles.sigBox}>
                 <div style={styles.sigLine}></div>
                 <p style={styles.sigLabel}>Authorized Representative</p>
