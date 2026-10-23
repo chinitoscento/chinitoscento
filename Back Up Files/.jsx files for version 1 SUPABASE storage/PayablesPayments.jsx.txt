@@ -221,7 +221,6 @@ export default function PayablesPayments() {
         status: p.payment_status || 'UNPAID'
       }));
 
-      // Updated mapping: use o.ref_number for OPEX expense code reference
       const formattedOpex = (opex || []).map(o => ({
         sourceTable: 'opex_expenses',
         id: o.id,
@@ -239,14 +238,16 @@ export default function PayablesPayments() {
         status: o.status || 'Unpaid'
       }));
 
-      // Sort descending based on the trailing sequence digits in refCode (e.g. 000000)
+      // Sort ascending based on the trailing sequence digits in refCode (e.g. last 6 digits)
       const combined = [...formattedPurchases, ...formattedOpex].sort((a, b) => {
         const getSeq = (ref) => {
           if (!ref) return 0;
-          const match = ref.match(/(\d+)$/);
-          return match ? parseInt(match[1], 10) : 0;
+          const cleanStr = String(ref).trim();
+          const trailingSix = cleanStr.slice(-6);
+          const seqNum = parseInt(trailingSix, 10);
+          return isNaN(seqNum) ? 0 : seqNum;
         };
-        return getSeq(b.refCode) - getSeq(a.refCode);
+        return getSeq(a.refCode) - getSeq(b.refCode);
       });
 
       setUnpaidPayables(combined);
