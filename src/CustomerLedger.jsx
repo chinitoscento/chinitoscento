@@ -235,18 +235,16 @@ export default function CustomerLedger() {
     return `₱${Number(amount || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
-  // ✦ Helper to trigger print with custom auto-generated PDF filename
+  // ✦ Triggers print with auto-generated filename: <customer_name>_<customer_id>_<date>
   const handlePrintLedger = () => {
     const originalTitle = document.title;
     const todayStr = new Date().toISOString().split('T')[0];
-    const cleanCustName = String(selectedCustomerLedger?.name || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
-    const cleanCustId = String(selectedCustomerLedger?.code || 'CUST').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustName = String(selectedCustomerLedger?.name || 'Customer').trim().replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustId = String(selectedCustomerLedger?.code || 'CUST').trim().replace(/[^a-zA-Z0-9]/g, '_');
     
-    // Sets browser document title -> Chrome "Save as PDF" uses this filename!
     document.title = `${cleanCustName}_${cleanCustId}_${todayStr}`;
     window.print();
     
-    // Restore original title after print window closes
     setTimeout(() => {
       document.title = originalTitle;
     }, 1000);
@@ -255,8 +253,8 @@ export default function CustomerLedger() {
   const handlePrintSubledger = () => {
     const originalTitle = document.title;
     const todayStr = new Date().toISOString().split('T')[0];
-    const cleanCustName = String(selectedSubledgerInvoice?.customerName || 'Customer').replace(/[^a-zA-Z0-9]/g, '_');
-    const cleanInvoiceNo = String(selectedSubledgerInvoice?.invoiceNo || 'SO').replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanCustName = String(selectedSubledgerInvoice?.customerName || 'Customer').trim().replace(/[^a-zA-Z0-9]/g, '_');
+    const cleanInvoiceNo = String(selectedSubledgerInvoice?.invoiceNo || 'SO').trim().replace(/[^a-zA-Z0-9]/g, '_');
     
     document.title = `${cleanCustName}_${cleanInvoiceNo}_${todayStr}`;
     window.print();
@@ -271,41 +269,48 @@ export default function CustomerLedger() {
       <style>{`
         @media print {
           @page {
-            size: auto;
-            margin: 15mm 15mm 15mm 15mm;
+            size: A4 portrait;
+            margin: 12mm;
           }
-          body, html {
-            background-color: #fff !important;
+          html, body, #root {
+            background: #fff !important;
             margin: 0 !important;
             padding: 0 !important;
-            overflow: visible !important;
             height: auto !important;
+            min-height: auto !important;
+            overflow: visible !important;
+            position: static !important;
           }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           .printable-ledger, .printable-ledger * {
-            visibility: visible;
+            visibility: visible !important;
           }
           .printable-ledger {
-            position: absolute;
-            left: 0;
-            top: 0;
+            position: relative !important;
+            left: 0 !important;
+            top: 0 !important;
             width: 100% !important;
             margin: 0 !important;
             padding: 0 !important;
             background: #fff !important;
-            box-sizing: border-box;
+            box-sizing: border-box !important;
             overflow: visible !important;
             height: auto !important;
+            display: block !important;
           }
           tr {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
           }
+          thead {
+            display: table-header-group !important;
+          }
           .signature-section-print {
             page-break-inside: avoid !important;
             break-inside: avoid !important;
+            margin-top: 40px !important;
           }
           .no-print {
             display: none !important;
