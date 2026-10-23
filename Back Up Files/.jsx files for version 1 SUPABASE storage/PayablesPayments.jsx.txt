@@ -12,6 +12,23 @@ const getOrdinalSuffix = (day) => {
   }
 };
 
+// Helper function to format YYYY-MM-DD to readable date or add offset days
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A';
+  const dateObj = new Date(dateStr);
+  return isNaN(dateObj.getTime()) ? dateStr : dateObj.toISOString().split('T')[0];
+};
+
+const calculateDefaultDueDate = (txnDate, explicitDueDate) => {
+  if (explicitDueDate) return formatDate(explicitDueDate);
+  if (!txnDate) return 'N/A';
+  const dateObj = new Date(txnDate);
+  if (isNaN(dateObj.getTime())) return 'N/A';
+  // Default to 30-day credit term if no explicit due date is stored
+  dateObj.setDate(dateObj.getDate() + 30);
+  return dateObj.toISOString().split('T')[0];
+};
+
 const styles = {
   container: {
     padding: '30px',
@@ -204,41 +221,50 @@ export default function PayablesPayments() {
 
       if (opexError) throw opexError;
 
-      const formattedPurchases = (purchases || []).map(p => ({
-        sourceTable: 'purchase_transactions',
-        id: p.id,
-        refCode: p.ref_id,
-        date: p.transaction_date,
-        entityName: p.creditor_name || p.supplier_name,
-        categoryTag: 'Purchase Creditor',
-        paymentMode: p.payment_mode,
-        creditOption: p.credit_option || 'One Time Payment',
-        installmentCount: p.installment_count || null,
-        monthlyAmortization: p.monthly_amortization || 0,
-        firstDueDate: p.first_due_date || p.transaction_date,
-        totalAmountDue: Number(p.total_amount_due || 0),
-        balanceDue: Number(p.balance_due ?? p.total_amount_due),
-        status: p.payment_status || 'UNPAID'
-      }));
+      const formattedPurchases = (purchases || []).map(p => {
+        const txnDate = formatDate(p.transaction_date);
+        const dueDate = calculateDefaultDueDate(p.transaction_date, p.first_due_date || p.due_date);
+        return {
+          sourceTable: 'purchase_transactions',
+          id: p.id,
+          refCode: p.ref_id,
+          date: txnDate,
+          dueDate: dueDate,
+          entityName: p.creditor_name || p.supplier_name,
+          categoryTag: 'Purchase Creditor',
+          paymentMode: p.payment_mode,
+          creditOption: p.credit_option || 'One Time Payment',
+          installmentCount: p.installment_count || null,
+          monthlyAmortization: p.monthly_amortization || 0,
+          firstDueDate: dueDate,
+          totalAmountDue: Number(p.total_amount_due || 0),
+          balanceDue: Number(p.balance_due ?? p.total_amount_due),
+          status: p.payment_status || 'UNPAID'
+        };
+      });
 
-      const formattedOpex = (opex || []).map(o => ({
-        sourceTable: 'opex_expenses',
-        id: o.id,
-        refCode: o.ref_number || o.ref_id,
-        date: o.date,
-        entityName: o.creditor || 'Unknown Creditor',
-        categoryTag: `OPEX (${o.classification})`,
-        paymentMode: o.terms_of_payment,
-        creditOption: o.credit_type || 'One Time Payment',
-        installmentCount: o.num_installments || null,
-        monthlyAmortization: o.monthly_amount || 0,
-        firstDueDate: o.first_due_date || o.date,
-        totalAmountDue: Number(o.total_amount_due || 0),
-        balanceDue: Number(o.balance_due ?? o.total_amount_due),
-        status: o.status || 'Unpaid'
-      }));
+      const formattedOpex = (opex || []).map(o => {
+        const txnDate = formatDate(o.date);
+        const dueDate = calculateDefaultDueDate(o.date, o.first_due_date || o.due_date);
+        return {
+          sourceTable: 'opex_expenses',
+          id: o.id,
+          refCode: o.ref_number || o.ref_id,
+          date: txnDate,
+          dueDate: dueDate,
+          entityName: o.creditor || 'Unknown Creditor',
+          categoryTag: `OPEX (${o.classification})`,
+          paymentMode: o.terms_of_payment,
+          creditOption: o.credit_type || 'One Time Payment',
+          installmentCount: o.num_installments || null,
+          monthlyAmortization: o.monthly_amount || 0,
+          firstDueDate: dueDate,
+          totalAmountDue: Number(o.total_amount_due || 0),
+          balanceDue: Number(o.balance_due ?? o.total_amount_due),
+          status: o.status || 'Unpaid'
+        };
+      });
 
-      // Sort ascending based on the trailing sequence digits in refCode (e.g. last 6 digits)
       const combined = [...formattedPurchases, ...formattedOpex].sort((a, b) => {
         const getSeq = (ref) => {
           if (!ref) return 0;
@@ -505,11 +531,18 @@ export default function PayablesPayments() {
                       </span>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#fff' }}>Creditor: {item.entityName}</div>
-                    <div style={{ fontSize: '15px', color: '#aaa', marginTop: '2px' }}>
+                    
+                    <div style={{ fontSize: '14.5px', color: '#b0b0b0', marginTop: '4px', display: 'flex', gap: '15px' }}>
+                      <span><strong>Txn Date:</strong> {item.date}</span>
+                      <span><strong style={{ color: '#eab308' }}>Due Date:</strong> {item.dueDate}</span>
+                    </div>
+
+                    <div style={{ fontSize: '14px', color: '#aaa', marginTop: '4px' }}>
                       Terms: {item.paymentMode} ({item.creditOption})
                     </div>
+                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '17px' }}>
-                      <span>Due: ₱{item.totalAmountDue.toLocaleString()}</span>
+                      <span>Total: ₱{item.totalAmountDue.toLocaleString()}</span>
                       <span style={{ color: '#d9534f', fontWeight: 'bold' }}>Balance: ₱{item.balanceDue.toLocaleString()}</span>
                     </div>
                   </div>
@@ -536,6 +569,14 @@ export default function PayablesPayments() {
                 <div style={styles.infoRow}>
                   <span style={{ color: '#888' }}>Creditor Name:</span>
                   <strong style={{ color: '#fff' }}>{selectedPayable.entityName}</strong>
+                </div>
+                <div style={styles.infoRow}>
+                  <span style={{ color: '#888' }}>Date of Transaction:</span>
+                  <span style={{ color: '#fff' }}>{selectedPayable.date}</span>
+                </div>
+                <div style={styles.infoRow}>
+                  <span style={{ color: '#888' }}>Due Date:</span>
+                  <strong style={{ color: '#eab308' }}>{selectedPayable.dueDate}</strong>
                 </div>
                 <div style={styles.infoRow}>
                   <span style={{ color: '#888' }}>Category / Source:</span>

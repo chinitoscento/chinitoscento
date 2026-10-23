@@ -64,15 +64,40 @@ const styles = {
     fontSize: '22px',
     color: '#c5a059',
     marginTop: 0,
-    marginBottom: '20px',
+    marginBottom: '15px',
     borderBottom: '1px solid #2a2a2a',
     paddingBottom: '10px',
+  },
+  filterRow: {
+    display: 'flex',
+    gap: '10px',
+    marginBottom: '20px',
+  },
+  filterBtnActive: {
+    backgroundColor: '#c5a059',
+    color: '#121212',
+    border: 'none',
+    padding: '8px 14px',
+    borderRadius: '6px',
+    fontWeight: '700',
+    fontSize: '14px',
+    cursor: 'pointer',
+  },
+  filterBtnInactive: {
+    backgroundColor: '#222',
+    color: '#aaa',
+    border: '1px solid #333',
+    padding: '8px 14px',
+    borderRadius: '6px',
+    fontWeight: '600',
+    fontSize: '14px',
+    cursor: 'pointer',
   },
   codeList: {
     display: 'flex',
     flexDirection: 'column',
     gap: '12px',
-    maxHeight: '700px',
+    maxHeight: '640px',
     overflowY: 'auto',
   },
   codeCard: {
@@ -185,9 +210,10 @@ const styles = {
 };
 
 export default function PayablesPayments() {
-  const [unpaidPayables, setUnpaidPayables] = useState([]);
+  const [allPayables, setAllPayables] = useState([]);
   const [selectedPayable, setSelectedPayable] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showAll, setShowAll] = useState(false); // false = Unpaid/Partial only, true = Show All (Paid & Unpaid)
 
   // Payment Form Fields
   const [paymentDate, setPaymentDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -200,30 +226,29 @@ export default function PayablesPayments() {
   const [formMessage, setFormMessage] = useState(null);
 
   useEffect(() => {
-    fetchUnpaidPayables();
+    fetchAllPayables();
   }, []);
 
-  const fetchUnpaidPayables = async () => {
+  const fetchAllPayables = async () => {
     setLoading(true);
     try {
       const { data: purchases, error: purError } = await supabase
         .from('purchase_transactions')
-        .select('*')
-        .gt('balance_due', 0);
+        .select('*');
 
       if (purError) throw purError;
 
       const { data: opex, error: opexError } = await supabase
         .from('opex_expenses')
         .select('*')
-        .eq('terms_of_payment', 'Credit')
-        .gt('balance_due', 0);
+        .eq('terms_of_payment', 'Credit');
 
       if (opexError) throw opexError;
 
       const formattedPurchases = (purchases || []).map(p => {
         const txnDate = formatDate(p.transaction_date);
         const dueDate = calculateDefaultDueDate(p.transaction_date, p.first_due_date || p.due_date);
+        const bal = Number(p.balance_due ?? p.total_amount_due);
         return {
           sourceTable: 'purchase_transactions',
           id: p.id,
@@ -238,14 +263,15 @@ export default function PayablesPayments() {
           monthlyAmortization: p.monthly_amortization || 0,
           firstDueDate: dueDate,
           totalAmountDue: Number(p.total_amount_due || 0),
-          balanceDue: Number(p.balance_due ?? p.total_amount_due),
-          status: p.payment_status || 'UNPAID'
+          balanceDue: bal,
+          status: bal <= 0 ? 'PAID' : (p.payment_status || 'UNPAID')
         };
       });
 
       const formattedOpex = (opex || []).map(o => {
         const txnDate = formatDate(o.date);
         const dueDate = calculateDefaultDueDate(o.date, o.first_due_date || o.due_date);
+        const bal = Number(o.balance_due ?? o.total_amount_due);
         return {
           sourceTable: 'opex_expenses',
           id: o.id,
@@ -260,8 +286,8 @@ export default function PayablesPayments() {
           monthlyAmortization: o.monthly_amount || 0,
           firstDueDate: dueDate,
           totalAmountDue: Number(o.total_amount_due || 0),
-          balanceDue: Number(o.balance_due ?? o.total_amount_due),
-          status: o.status || 'Unpaid'
+          balanceDue: bal,
+          status: bal <= 0 ? 'PAID' : (o.status || 'Unpaid')
         };
       });
 
@@ -276,13 +302,18 @@ export default function PayablesPayments() {
         return getSeq(a.refCode) - getSeq(b.refCode);
       });
 
-      setUnpaidPayables(combined);
+      setAllPayables(combined);
     } catch (err) {
-      console.error('Error fetching unpaid payables:', err.message);
+      console.error('Error fetching payables:', err.message);
     } finally {
       setLoading(false);
     }
   };
+
+  const displayedPayables = allPayables.filter(item => {
+    if (showAll) return true;
+    return item.balanceDue > 0;
+  });
 
   const handleSelectPayable = (item) => {
     setSelectedPayable(item);
@@ -487,7 +518,7 @@ export default function PayablesPayments() {
         status: newStatus
       };
       setSelectedPayable(updatedSelection);
-      fetchUnpaidPayables();
+      fetchAllPayables();
 
       setPaymentReference('');
       setNotes('');
@@ -504,16 +535,32 @@ export default function PayablesPayments() {
 
       <div style={styles.layoutGrid}>
         <div style={styles.sectionBox}>
-          <h3 style={styles.sectionHeading}>Unpaid / Partially Paid Creditor Obligations</h3>
+          <h3 style={styles.sectionHeading}>Creditor Obligations</h3>
           
+          <div style={styles.filterRow}>
+            <button 
+              style={!showAll ? styles.filterBtnActive : styles.filterBtnInactive} 
+              onClick={() => setShowAll(false)}
+            >
+              Unpaid / Partial Only
+            </button>
+            <button 
+              style={showAll ? styles.filterBtnActive : styles.filterBtnInactive} 
+              onClick={() => setShowAll(true)}
+            >
+              Show All (Paid &amp; Unpaid)
+            </button>
+          </div>
+
           {loading ? (
-            <p style={{ color: '#888', fontStyle: 'italic' }}>Loading open payables...</p>
-          ) : unpaidPayables.length === 0 ? (
-            <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>All creditor and OPEX credit accounts are fully paid!</p>
+            <p style={{ color: '#888', fontStyle: 'italic' }}>Loading payables...</p>
+          ) : displayedPayables.length === 0 ? (
+            <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>No payables found matching filter.</p>
           ) : (
             <div style={styles.codeList}>
-              {unpaidPayables.map(item => {
+              {displayedPayables.map(item => {
                 const isSelected = selectedPayable && selectedPayable.id === item.id && selectedPayable.sourceTable === item.sourceTable;
+                const isPaid = item.balanceDue <= 0;
                 return (
                   <div 
                     key={`${item.sourceTable}-${item.id}`} 
@@ -522,13 +569,22 @@ export default function PayablesPayments() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                       <strong style={{ color: '#c5a059', fontSize: '19px' }}>{item.refCode}</strong>
-                      <span style={{ 
-                        ...styles.typeBadge, 
-                        backgroundColor: item.sourceTable === 'opex_expenses' ? 'rgba(197, 160, 89, 0.2)' : 'rgba(52, 211, 153, 0.2)',
-                        color: item.sourceTable === 'opex_expenses' ? '#c5a059' : '#34d399'
-                      }}>
-                        {item.categoryTag}
-                      </span>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <span style={{ 
+                          ...styles.typeBadge, 
+                          backgroundColor: isPaid ? 'rgba(92, 184, 92, 0.2)' : 'rgba(217, 83, 79, 0.2)',
+                          color: isPaid ? '#5cb85c' : '#d9534f'
+                        }}>
+                          {isPaid ? 'PAID' : item.status}
+                        </span>
+                        <span style={{ 
+                          ...styles.typeBadge, 
+                          backgroundColor: item.sourceTable === 'opex_expenses' ? 'rgba(197, 160, 89, 0.2)' : 'rgba(52, 211, 153, 0.2)',
+                          color: item.sourceTable === 'opex_expenses' ? '#c5a059' : '#34d399'
+                        }}>
+                          {item.categoryTag}
+                        </span>
+                      </div>
                     </div>
                     <div style={{ fontSize: '18px', fontWeight: '600', color: '#fff' }}>Creditor: {item.entityName}</div>
                     
@@ -543,7 +599,7 @@ export default function PayablesPayments() {
                     
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '10px', fontSize: '17px' }}>
                       <span>Total: ₱{item.totalAmountDue.toLocaleString()}</span>
-                      <span style={{ color: '#d9534f', fontWeight: 'bold' }}>Balance: ₱{item.balanceDue.toLocaleString()}</span>
+                      <span style={{ color: isPaid ? '#5cb85c' : '#d9534f', fontWeight: 'bold' }}>Balance: ₱{item.balanceDue.toLocaleString()}</span>
                     </div>
                   </div>
                 );
@@ -598,7 +654,7 @@ export default function PayablesPayments() {
                 </div>
                 <div style={{ ...styles.infoRow, borderBottom: 'none' }}>
                   <span style={{ color: '#888' }}>Outstanding Balance:</span>
-                  <strong style={{ color: '#d9534f' }}>₱{selectedPayable.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
+                  <strong style={{ color: selectedPayable.balanceDue <= 0 ? '#5cb85c' : '#d9534f' }}>₱{selectedPayable.balanceDue.toLocaleString(undefined, { minimumFractionDigits: 2 })}</strong>
                 </div>
               </div>
 
