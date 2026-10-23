@@ -26,10 +26,100 @@ import JournalEntries from './JournalEntries.jsx';
 import BalanceSheet from './BalanceSheet.jsx';
 import IncomeStatement from './IncomeStatement.jsx';
 import StatementOfEquity from './StatementOfEquity.jsx';
-import NotesToFinancialStatements from './NotesToFinancialStatements.jsx'; // ✦ NEW
+import NotesToFinancialStatements from './NotesToFinancialStatements.jsx';
 
 import logo from './logo.png';
 import { supabase } from './supabaseClient';
+
+// 🛡️ Automated Ledger & Balance Audit Tool Component
+function LedgerAuditTool() {
+  const [auditResults, setAuditResults] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    runAudit();
+  }, []);
+
+  const runAudit = async () => {
+    setLoading(true);
+    try {
+      const [{ data: customers }, { data: salesOrders }, { data: collections }] = await Promise.all([
+        supabase.from('customers').select('*'),
+        supabase.from('sales_orders').select('*'),
+        supabase.from('collections').select('*')
+      ]);
+
+      const activeSOs = (salesOrders || []).filter(so => String(so.status || '').toUpperCase() !== 'DECLINED');
+      const allCollections = collections || [];
+
+      const report = (customers || []).map(cust => {
+        const cName = String(cust.name || '').trim();
+        const custSOs = activeSOs.filter(so => String(so.customer_name || so.customerName || '').trim() === cName);
+        const totalTrans = custSOs.reduce((sum, so) => sum + Number(so.total_due || so.totalDue || so.total_amount || 0), 0);
+
+        const custCols = allCollections.filter(c => String(c.customer_name || c.customerName || '').trim() === cName);
+        const totalPaid = custCols.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
+        
+        const balanceDue = Math.max(0, totalTrans - totalPaid);
+
+        return {
+          customerName: cName,
+          totalTransactions: totalTrans,
+          totalPaidCredited: totalPaid,
+          balanceDue,
+          openOrdersCount: custSOs.length
+        };
+      });
+
+      setAuditResults(report);
+    } catch (err) {
+      console.error('Audit failed:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{padding: '30px', backgroundColor: '#0b0b0b', color: '#f4f4f5', borderRadius: '10px', border: '1px solid #1c1c1c'}}>
+      <h3 style={{fontSize: '20px', color: '#c5a059', marginBottom: '8px', fontFamily: "'Cinzel', serif"}}>🛡️ Automated Ledger & Balance Audit</h3>
+      <p style={{fontSize: '13.5px', color: '#a1a1aa', marginBottom: '20px'}}>
+        Instantly reconciles all customer sales orders against recorded cash payments and sales return credits.
+      </p>
+
+      {loading ? (
+        <p style={{fontStyle: 'italic', color: '#71717a', padding: '20px'}}>Running system-wide audit...</p>
+      ) : (
+        <div style={{overflowX: 'auto'}}>
+          <table style={{width: '100%', borderCollapse: 'collapse', fontSize: '13.5px'}}>
+            <thead>
+              <tr style={{backgroundColor: '#141414', borderBottom: '1px solid #222'}}>
+                <th style={{padding: '12px 16px', textAlign: 'left', color: '#c5a059', fontFamily: "'Cinzel', serif"}}>Customer Name</th>
+                <th style={{padding: '12px 16px', textAlign: 'right', color: '#8c8c8c', fontFamily: "'Cinzel', serif"}}>Total Transactions</th>
+                <th style={{padding: '12px 16px', textAlign: 'right', color: '#8c8c8c', fontFamily: "'Cinzel', serif"}}>Total Paid / Credited</th>
+                <th style={{padding: '12px 16px', textAlign: 'right', color: '#c5a059', fontFamily: "'Cinzel', serif"}}>Net Balance Due</th>
+              </tr>
+            </thead>
+            <tbody>
+              {auditResults.map((row, idx) => (
+                <tr key={idx} style={{borderBottom: '1px solid #161616'}}>
+                  <td style={{padding: '14px 16px'}}><b>{row.customerName}</b></td>
+                  <td style={{padding: '14px 16px', textAlign: 'right'}}>₱{row.totalTransactions.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  <td style={{padding: '14px 16px', textAlign: 'right'}}>₱{row.totalPaidCredited.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                  <td style={{padding: '14px 16px', textAlign: 'right', color: row.balanceDue > 0 ? '#fbbf24' : '#34d399'}}>
+                    <b>₱{row.balanceDue.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</b>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <button onClick={runAudit} style={{marginTop: '20px', backgroundColor: '#c5a059', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontFamily: "'Cinzel', serif"}}>
+        🔄 Re-run Audit Check
+      </button>
+    </div>
+  );
+}
 
 // Luxury Atelier Welcome view for non-owner roles
 function AtelierWorkspace({ userName, onNavigate }) {
@@ -263,6 +353,8 @@ export default function MainLayout({ onLogout }) {
         return <StatementOfEquity />;
       case 'Notes to Financial Statements':
         return <NotesToFinancialStatements />;
+      case 'Ledger Audit':
+        return <LedgerAuditTool />;
       default:
         return (
           <div style={{ padding: '30px' }}>
@@ -301,7 +393,7 @@ export default function MainLayout({ onLogout }) {
             </div>
           )}
 
-          {!isManager && renderSection('Management', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue', 'System Settings'])}
+          {!isManager && renderSection('Management', ['Customers', 'Suppliers', 'Products', 'Raw Materials Catalogue', 'SystemSettings'])}
           
           {!isManager && renderSection('Manufacturing', [
             'Formulations', 
@@ -317,7 +409,7 @@ export default function MainLayout({ onLogout }) {
 
           {renderSection('Selling', ['Sales Order', 'Sales Returns'])}
                   
-          {!isManager && renderSection('Finance', ['Collections', 'Customer Ledger', 'Payments'])}
+          {!isManager && renderSection('Finance', ['Collections', 'Customer Ledger', 'Payments', 'Ledger Audit'])}
 
           {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
 
@@ -562,7 +654,7 @@ const styles = {
     justifyContent: 'space-between', 
     alignItems: 'center', 
     padding: '0 40px', 
-    flexShrink: 0, 
+    flexShrink: '0', 
     boxShadow: '0 4px 20px rgba(0,0,0,0.03)' 
   },
   welcomeBanner: {
@@ -577,7 +669,7 @@ const styles = {
     fontWeight: '700'
   },
   headerRightGroup: {
-    display: 'center',
+    display: 'flex',
     alignItems: 'center',
     gap: '30px',
   },
@@ -606,7 +698,7 @@ const styles = {
     padding: '11px 24px', 
     borderRadius: '4px', 
     fontWeight: '600', 
-    fontSize: `13.5px`, 
+    fontSize: '13.5px', 
     letterSpacing: '1px', 
     cursor: 'pointer', 
     transition: 'background-color 0.2s ease, transform 0.1s ease',
