@@ -47,6 +47,7 @@ export default function SalesProductionReport() {
           so_number,
           customer_name,
           date,
+          status,
           total_amount,
           sales_order_items (
             product_name,
@@ -70,9 +71,15 @@ export default function SalesProductionReport() {
     }
   };
 
-  // Filter sales data based on selected report mode
+  // Filter sales data: ONLY INCLUDE APPROVED / COMPLETED SALES ORDERS
   const filteredSales = salesData.filter(order => {
     if (!order.date) return false;
+
+    // Strict Status Gate: Exclude Pending and Declined orders
+    const orderStatus = String(order.status || '').trim().toUpperCase();
+    const isApproved = orderStatus === 'APPROVED' || orderStatus === 'COMPLETED';
+    if (!isApproved) return false;
+
     const orderDate = order.date.slice(0, 10);
 
     if (reportMode === 'custom') {
@@ -105,7 +112,7 @@ export default function SalesProductionReport() {
     returnsMap[soNum].products[prodName] = (returnsMap[soNum].products[prodName] || 0) + qty;
   });
 
-  // Calculate Summary Metrics & Aggregations (Net Sales & Net Bottles)
+  // Calculate Summary Metrics & Aggregations (Net Sales & Net Bottles for APPROVED orders only)
   let totalGrossSales = 0;
   let totalReturnsAmount = 0;
   let totalBottlesSold = 0;
