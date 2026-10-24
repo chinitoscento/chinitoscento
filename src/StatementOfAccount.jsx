@@ -89,7 +89,6 @@ export default function StatementOfAccount() {
         }
       });
 
-      // Filter chronologically and by date range if provided
       openInvoices.sort((a, b) => new Date(a.txnDate) - new Date(b.txnDate));
 
       const filteredInvoices = openInvoices.filter(inv => {
@@ -119,12 +118,33 @@ export default function StatementOfAccount() {
     <div style={styles.container}>
       <style>{`
         @media print {
-          body * { visibility: hidden; }
-          .printable-statement, .printable-statement * { visibility: visible; }
-          .printable-statement {
-            position: absolute; left: 0; top: 0; width: 100%; background: #ffffff !important; padding: 20px; box-sizing: border-box;
+          @page {
+            size: A4 portrait;
+            margin: 12mm;
           }
-          .no-print { display: none !important; }
+          body * { 
+            visibility: hidden; 
+          }
+          .printable-statement, .printable-statement * { 
+            visibility: visible; 
+          }
+          .printable-statement {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          .no-print { 
+            display: none !important; 
+          }
         }
       `}</style>
 
@@ -213,9 +233,9 @@ export default function StatementOfAccount() {
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>SO / INVOICE #</th>
-                <th style={styles.th}>Date of Transaction</th>
-                <th style={styles.th}>Due Date</th>
+                <th style={styles.thSo}>SO / INVOICE #</th>
+                <th style={styles.thDate}>Date of Transaction</th>
+                <th style={styles.thDate}>Due Date</th>
                 <th style={styles.thRight}>Amount Due (Net)</th>
               </tr>
             </thead>
@@ -229,11 +249,11 @@ export default function StatementOfAccount() {
               ) : (
                 statementData.invoices.map((inv, idx) => (
                   <tr key={idx} style={styles.trBody}>
-                    <td style={styles.td}>
+                    <td style={styles.tdSo}>
                       <span style={{ color: '#c5a059', fontWeight: '700' }}>{inv.soNumber}</span>
                     </td>
-                    <td style={styles.td}>{inv.txnDate}</td>
-                    <td style={styles.td}>{inv.dueDate}</td>
+                    <td style={styles.tdDate}>{inv.txnDate}</td>
+                    <td style={styles.tdDate}>{inv.dueDate}</td>
                     <td style={styles.tdRight}>
                       <b>₱{inv.netAmountDue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b>
                     </td>
@@ -278,14 +298,14 @@ const styles = {
   statementWrapper: { backgroundColor: '#ffffff', color: '#111827', borderRadius: '12px', padding: '40px', boxShadow: '0 10px 30px rgba(0,0,0,0.3)', marginTop: '20px' },
   
   /* Center Header */
-  centerHeader: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '28px' },
-  logo: { width: '64px', height: '64px', objectFit: 'contain', marginBottom: '8px' },
+  centerHeader: { display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginBottom: '24px' },
+  logo: { width: '60px', height: '60px', objectFit: 'contain', marginBottom: '8px' },
   brandTitle: { fontSize: '24px', fontWeight: '800', letterSpacing: '2px', color: '#111827', margin: '0 0 4px 0' },
   docTitle: { fontSize: '13px', fontWeight: '700', letterSpacing: '1.5px', color: '#c5a059', margin: '0 0 10px 0', textTransform: 'uppercase' },
   goldDivider: { width: '80px', height: '2px', backgroundColor: '#c5a059' },
 
   /* Left Client Details */
-  clientMetaBox: { display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '18px 20px', marginBottom: '28px', textAlign: 'left' },
+  clientMetaBox: { display: 'flex', flexDirection: 'column', gap: '8px', backgroundColor: '#f9fafb', border: '1px solid #e5e7eb', borderRadius: '8px', padding: '16px 20px', marginBottom: '24px', textAlign: 'left' },
   metaRow: { display: 'flex', gap: '12px', alignItems: 'center', fontSize: '13px' },
   metaLabel: { fontWeight: '700', color: '#6b7280', width: '150px', fontSize: '11px', letterSpacing: '0.05em' },
   metaValBold: { fontWeight: '800', color: '#111827', fontSize: '15px' },
@@ -294,16 +314,18 @@ const styles = {
   /* Table Styles */
   table: { width: '100%', borderCollapse: 'collapse', fontSize: '13px', marginBottom: '24px', textAlign: 'left' },
   trHead: { backgroundColor: '#f3f4f6', borderBottom: '2px solid #d1d5db' },
-  th: { padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#374151', textTransform: 'uppercase', fontSize: '11px' },
-  thRight: { padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: '#374151', textTransform: 'uppercase', fontSize: '11px' },
+  thSo: { padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#374151', textTransform: 'uppercase', fontSize: '11px', whiteSpace: 'nowrap', width: '30%' },
+  thDate: { padding: '12px 16px', textAlign: 'left', fontWeight: '700', color: '#374151', textTransform: 'uppercase', fontSize: '11px', whiteSpace: 'nowrap', width: '25%' },
+  thRight: { padding: '12px 16px', textAlign: 'right', fontWeight: '700', color: '#374151', textTransform: 'uppercase', fontSize: '11px', whiteSpace: 'nowrap', width: '20%' },
   trBody: { borderBottom: '1px solid #e5e7eb' },
-  td: { padding: '14px 16px', color: '#111827' },
-  tdRight: { padding: '14px 16px', textAlign: 'right', color: '#111827' },
+  tdSo: { padding: '12px 16px', color: '#111827', whiteSpace: 'nowrap' },
+  tdDate: { padding: '12px 16px', color: '#111827', whiteSpace: 'nowrap' },
+  tdRight: { padding: '12px 16px', textAlign: 'right', color: '#111827', whiteSpace: 'nowrap' },
   
   /* Footer Running Total */
   trFoot: { backgroundColor: '#111827', color: '#ffffff' },
-  tdFootLabel: { padding: '16px', fontWeight: '700', fontSize: '12px', color: '#d4af37', letterSpacing: '0.05em' },
-  tdFootValue: { padding: '16px', textAlign: 'right', fontWeight: '800', fontSize: '18px', color: '#ffffff' },
+  tdFootLabel: { padding: '14px 16px', fontWeight: '700', fontSize: '12px', color: '#d4af37', letterSpacing: '0.05em' },
+  tdFootValue: { padding: '14px 16px', textAlign: 'right', fontWeight: '800', fontSize: '16px', color: '#ffffff', whiteSpace: 'nowrap' },
 
   footerNote: { display: 'flex', justifyContent: 'flex-end', marginTop: '20px' },
   printBtn: { backgroundColor: '#111827', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' }
