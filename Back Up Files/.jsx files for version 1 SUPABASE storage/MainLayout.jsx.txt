@@ -31,6 +31,215 @@ import NotesToFinancialStatements from './NotesToFinancialStatements.jsx';
 import logo from './logo.png';
 import { supabase } from './supabaseClient';
 
+// Helper to calculate aging status
+const calculateAging = (dueDateStr) => {
+  if (!dueDateStr) return 'Current';
+  const due = new Date(dueDateStr);
+  const today = new Date();
+  const diffTime = today - due;
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  
+  if (diffDays <= 0) return 'Current (Not Due)';
+  if (diffDays <= 30) return '1 - 30 Days Overdue';
+  if (diffDays <= 60) return '31 - 60 Days Overdue';
+  if (diffDays <= 90) return '61 - 90 Days Overdue';
+  return '90+ Days Overdue';
+};
+
+// ✦ Schedule of Accounts Receivables Component
+function ScheduleAccountsReceivables() {
+  const [receivables, setReceivables] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAR();
+  }, []);
+
+  const fetchAR = async () => {
+    setLoading(true);
+    try {
+      const [{ data: soData }, { data: colData }] = await Promise.all([
+        supabase.from('sales_orders').select('*'),
+        supabase.from('collections').select('*')
+      ]);
+
+      const sos = (soData || []).filter(so => String(so.status || so.order_status || '').toUpperCase() !== 'DECLINED');
+      const collections = colData || [];
+
+      const list = sos.map(so => {
+        const soNum = so.so_number || so.soNumber || so.invoice_no;
+        const totalAmt = Number(so.total_amount || so.totalDue || 0);
+        const custName = so.customer_name || so.customerName || 'Unknown Customer';
+        const txnDate = so.date || so.order_date || '2026-01-01';
+
+        // Calculate paid for this specific SO
+        const paid = collections
+          .filter(c => String(c.invoice_no || c.invoiceNo || c.so_number || c.soNumber || '').trim() === String(soNum || '').trim())
+          .reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
+
+        const balance = Math.max(0, totalAmt - paid);
+        const dueDate = so.due_date || so.dueDate || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        const aging = calculateAging(dueDate);
+
+        return {
+          date: txnDate,
+          customer_name: custName,
+          so_number: soNum,
+          due_date: dueDate,
+          total_amount: balance, // Outstanding balance
+          aging
+        };
+      }).filter(item => item.total_amount > 0);
+
+      setReceivables(list);
+    } catch (err) {
+      console.error('Error fetching AR schedule:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '30px', backgroundColor: '#121212', color: '#e0e0e0', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
+      <h2 style={{ fontSize: '26px', fontWeight: '700', color: '#c5a059', margin: '0 0 6px 0' }}>Schedule of Accounts Receivables</h2>
+      <p style={{ fontSize: '15px', color: '#a0a0a0', marginBottom: '25px' }}>Detailed breakdown of outstanding customer balances, due dates, and aging analysis.</p>
+
+      {loading ? (
+        <p style={{ fontStyle: 'italic', color: '#888' }}>Loading accounts receivables...</p>
+      ) : receivables.length === 0 ? (
+        <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>No outstanding customer receivables found!</p>
+      ) : (
+        <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14.5px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#222', borderBottom: '1px solid #333' }}>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Date of Transaction</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Customer Name</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>SO Number</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Due Date</th>
+                <th style={{ padding: '14px 16px', textAlign: 'right', color: '#c5a059' }}>Total Amount Due</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', color: '#c5a059' }}>Aging</th>
+              </tr>
+            </thead>
+            <tbody>
+              {receivables.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #222' }}>
+                  <td style={{ padding: '14px 16px' }}>{item.date}</td>
+                  <td style={{ padding: '14px 16px', fontWeight: '600' }}>{item.customer_name}</td>
+                  <td style={{ padding: '14px 16px', color: '#c5a059', fontWeight: '600' }}>{item.so_number}</td>
+                  <td style={{ padding: '14px 16px', color: '#eab308' }}>{item.due_date}</td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 'bold', color: '#f87171' }}>₱{item.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', backgroundColor: item.aging.includes('Overdue') ? 'rgba(217, 83, 79, 0.2)' : 'rgba(92, 184, 92, 0.2)', color: item.aging.includes('Overdue') ? '#d9534f' : '#5cb85c' }}>
+                      {item.aging}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ✦ Schedule of Accounts Payable Component
+function ScheduleAccountsPayable() {
+  const [payables, setPayables] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetchAP();
+  }, []);
+
+  const fetchAP = async () => {
+    setLoading(true);
+    try {
+      const [{ data: purData }, { data: opexData }] = await Promise.all([
+        supabase.from('purchase_transactions').select('*').gt('balance_due', 0),
+        supabase.from('opex_expenses').select('*').eq('terms_of_payment', 'Credit').gt('balance_due', 0)
+      ]);
+
+      const formattedPurchases = (purData || []).map(p => {
+        const txnDate = p.transaction_date || '2026-01-01';
+        const dueDate = p.first_due_date || p.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        return {
+          date: txnDate,
+          creditor_name: p.creditor_name || p.supplier_name || 'Unknown Creditor',
+          reference: p.ref_id || 'PUR',
+          due_date: dueDate,
+          total_amount: Number(p.balance_due ?? p.total_amount_due ?? 0),
+          aging: calculateAging(dueDate)
+        };
+      });
+
+      const formattedOpex = (opexData || []).map(o => {
+        const txnDate = o.date || '2026-01-01';
+        const dueDate = o.first_due_date || o.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        return {
+          date: txnDate,
+          creditor_name: o.creditor || 'Unknown Creditor',
+          reference: o.ref_number || o.ref_id || 'EXP',
+          due_date: dueDate,
+          total_amount: Number(o.balance_due ?? o.total_amount_due ?? 0),
+          aging: calculateAging(dueDate)
+        };
+      });
+
+      setPayables([...formattedPurchases, ...formattedOpex]);
+    } catch (err) {
+      console.error('Error fetching AP schedule:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ padding: '30px', backgroundColor: '#121212', color: '#e0e0e0', minHeight: '100vh', fontFamily: 'Inter, sans-serif' }}>
+      <h2 style={{ fontSize: '26px', fontWeight: '700', color: '#c5a059', margin: '0 0 6px 0' }}>Schedule of Accounts Payable</h2>
+      <p style={{ fontSize: '15px', color: '#a0a0a0', marginBottom: '25px' }}>Detailed breakdown of creditor obligations, purchase references, due dates, and aging.</p>
+
+      {loading ? (
+        <p style={{ fontStyle: 'italic', color: '#888' }}>Loading accounts payable...</p>
+      ) : payables.length === 0 ? (
+        <p style={{ color: '#5cb85c', fontStyle: 'italic' }}>All creditor obligations are fully paid!</p>
+      ) : (
+        <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #2a2a2a', overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14.5px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#222', borderBottom: '1px solid #333' }}>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Date of Transaction</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Creditor Name</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Pur / Exp Reference</th>
+                <th style={{ padding: '14px 16px', textAlign: 'left', color: '#c5a059' }}>Due Date</th>
+                <th style={{ padding: '14px 16px', textAlign: 'right', color: '#c5a059' }}>Total Amount Due</th>
+                <th style={{ padding: '14px 16px', textAlign: 'center', color: '#c5a059' }}>Aging</th>
+              </tr>
+            </thead>
+            <tbody>
+              {payables.map((item, idx) => (
+                <tr key={idx} style={{ borderBottom: '1px solid #222' }}>
+                  <td style={{ padding: '14px 16px' }}>{item.date}</td>
+                  <td style={{ padding: '14px 16px', fontWeight: '600' }}>{item.creditor_name}</td>
+                  <td style={{ padding: '14px 16px', color: '#c5a059', fontWeight: '600' }}>{item.reference}</td>
+                  <td style={{ padding: '14px 16px', color: '#eab308' }}>{item.due_date}</td>
+                  <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: 'bold', color: '#f87171' }}>₱{item.total_amount.toLocaleString(undefined, {minimumFractionDigits: 2})}</td>
+                  <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                    <span style={{ padding: '4px 10px', borderRadius: '4px', fontSize: '12px', fontWeight: '600', backgroundColor: item.aging.includes('Overdue') ? 'rgba(217, 83, 79, 0.2)' : 'rgba(92, 184, 92, 0.2)', color: item.aging.includes('Overdue') ? '#d9534f' : '#5cb85c' }}>
+                      {item.aging}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // 🛡️ Automated Ledger & Balance Audit Tool Component
 function LedgerAuditTool() {
   const [auditResults, setAuditResults] = useState([]);
@@ -351,6 +560,10 @@ export default function MainLayout({ onLogout }) {
         return <StatementOfEquity />;
       case 'Notes to Financial Statements':
         return <NotesToFinancialStatements />;
+      case 'Schedule of Accounts Receivables':
+        return <ScheduleAccountsReceivables />;
+      case 'Schedule of Accounts Payable':
+        return <ScheduleAccountsPayable />;
       case 'Ledger Audit':
         return <LedgerAuditTool />;
       default:
@@ -431,7 +644,15 @@ export default function MainLayout({ onLogout }) {
 
           {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
 
-          {!isManager && renderSection('Accounting', ['Journal Entries', 'Balance Sheet', 'Income Statement', 'Equity', 'Notes to Financial Statements'])}
+          {!isManager && renderSection('Accounting', [
+            'Journal Entries', 
+            'Balance Sheet', 
+            'Income Statement', 
+            'Equity', 
+            'Notes to Financial Statements',
+            'Schedule of Accounts Receivables',
+            'Schedule of Accounts Payable'
+          ])}
         </div>
       </aside>
 

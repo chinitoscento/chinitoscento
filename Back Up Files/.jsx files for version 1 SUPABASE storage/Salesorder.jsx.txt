@@ -289,6 +289,10 @@ export default function Salesorder() {
     return orderItems.reduce((sum, item) => sum + (Number(item.qty || 0) * Number(item.price || 0)), 0);
   };
 
+  const calculateTotalBottles = () => {
+    return orderItems.reduce((sum, item) => sum + Number(item.qty || 0), 0);
+  };
+
   const generateNextJournalNumber = async (prefixType = 'JE-SO', targetDate = orderDate) => {
     try {
       const d = new Date(targetDate || Date.now());
@@ -1061,6 +1065,14 @@ export default function Salesorder() {
 
                     <div style={styles.divider}></div>
 
+                    {/* Total Bottles Row */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ fontSize: '13px', fontWeight: '600', color: '#a1a1aa' }}>Total Bottles</span>
+                      <span style={{ fontSize: '16px', fontWeight: '700', color: '#ffffff' }}>
+                        {calculateTotalBottles()} pcs
+                      </span>
+                    </div>
+
                     <div style={styles.totalDueContainer}>
                       <span style={{ fontSize: '14px', fontWeight: '600', color: '#d4af37' }}>Total Due</span>
                       <span style={{ fontSize: '20px', fontWeight: '700', color: '#ffffff' }}>
@@ -1230,7 +1242,7 @@ const styles = {
   trHead: { backgroundColor: '#18181b', borderBottom: '1px solid #27272a' },
   th: { padding: '14px 16px', color: '#d4af37', fontWeight: '700', fontSize: '11px', letterSpacing: '0.05em' },
   trBody: { borderBottom: '1px solid #1f1f23' },
-  td: { padding: '16px', color: '#e4e4e7', verticalAlign: 'top' }, // <-- Updated to top-oriented alignment
+  td: { padding: '16px', color: '#e4e4e7', verticalAlign: 'top' },
   emptyCell: { textAlign: 'center', padding: '40px', color: '#71717a', fontStyle: 'italic' },
   badgeApproved: { backgroundColor: 'rgba(5, 150, 105, 0.15)', color: '#34d399', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(5, 150, 105, 0.3)' },
   badgeDeclined: { backgroundColor: 'rgba(220, 38, 38, 0.15)', color: '#f87171', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: '600', border: '1px solid rgba(220, 38, 38, 0.3)' },
