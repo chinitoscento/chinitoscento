@@ -149,6 +149,9 @@ export default function SalesReturns() {
           date: so.date || so.order_date || so.created_at?.split('T')[0] || '',
           remarks: so.remarks || ''
         };
+      }).sort((a, b) => {
+        // Sort Sales Orders descending (newest first) by SO Number
+        return String(b.soNumber || '').localeCompare(String(a.soNumber || ''));
       });
 
       const formattedFg = (fgData || []).map(fg => ({
