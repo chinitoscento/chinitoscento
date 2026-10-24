@@ -26,7 +26,7 @@ export default function Costing() {
 
   const loadCostingData = async () => {
     try {
-      // 1. Fetch Catalog, Purchases, Formulations, and Settings from Supabase tables
+      // 1. Fetch Catalog, Purchases, Formulations, Settings, and Purchase Line Items from Supabase tables
       const [
         { data: catalogData, error: catalogError },
         { data: purchasesData, error: purchasesError },
@@ -90,10 +90,10 @@ export default function Costing() {
         });
       });
 
-      // Calculate already consumed quantities from maceration deductions to determine current unexhausted FIFO layers
+      // Calculate already consumed quantities from MACERATION and PACKAGING deductions to determine current unexhausted FIFO layers
       const consumedMap = {};
       allLines.forEach(l => {
-        if (l.type === 'MACERATION_DEDUCTION') {
+        if (l.type === 'MACERATION_DEDUCTION' || l.type === 'PACKAGING_DEDUCTION') {
           const code = String(l.code || '').trim().toUpperCase();
           const name = String(l.name || '').trim().toLowerCase();
           const qtyConsumed = Math.abs(Number(l.quantity || 0));
@@ -194,7 +194,6 @@ export default function Costing() {
         } else if (lowerName && unitCostMap[lowerName] !== undefined) {
           unitCost = unitCostMap[lowerName];
         } else {
-          // Try fetching direct FIFO calculation if not mapped yet
           unitCost = getFifoUnitCost(key, lowerName, isLiquid ? requiredVolumeMl : 1);
         }
 
@@ -528,7 +527,7 @@ const styles = {
   empty: { padding: '20px', color: '#9ca3af', fontStyle: 'italic', textAlign: 'center' },
   actionBtn: { backgroundColor: '#c5a059', color: '#121212', border: 'none', padding: '10px 16px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '13px', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' },
   secondaryActionBtn: { backgroundColor: '#27272a', color: '#c5a059', border: '1px solid #c5a059', padding: '10px 16px', borderRadius: '6px', fontWeight: '600', cursor: 'pointer', fontSize: '13px' },
-  priceTag: {  color: '#040191', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' },
+  priceTag: { color: '#040191', padding: '4px 8px', borderRadius: '4px', fontWeight: '600' },
   printHeaderCenter: { textAlign: 'center', marginBottom: '20px', display: 'none' },
   printLogo: { width: '45px', height: '45px', objectFit: 'contain', marginBottom: '5px' },
   printBrandName: { margin: 0, fontSize: '18px', fontWeight: '700', color: '#ffffff', letterSpacing: '0.5px' },
