@@ -15,6 +15,29 @@ const getAgingCategory = (dueDateStr) => {
   return '91+ Days';
 };
 
+// Helper to dynamically roll installment due dates forward to the current monthly cycle
+const getAdjustedDueDate = (txnDate, initialDueDate, creditorName, terms) => {
+  const creditorStr = String(creditorName || '').toLowerCase();
+  const termsStr = String(terms || '').toLowerCase();
+  const isInstallment = creditorStr.includes('ggives') || 
+                        creditorStr.includes('spaylater') || 
+                        creditorStr.includes('atome') || 
+                        creditorStr.includes('installment') ||
+                        termsStr.includes('installment');
+
+  if (!isInstallment) return initialDueDate;
+
+  let due = new Date(initialDueDate || txnDate);
+  const today = new Date();
+
+  // Roll due date forward month-by-month until it aligns with the current or upcoming monthly cycle
+  while (due < today && (today.getFullYear() * 12 + today.getMonth() - (due.getFullYear() * 12 + due.getMonth())) > 0) {
+    due.setMonth(due.getMonth() + 1);
+  }
+
+  return due.toISOString().split('T')[0];
+};
+
 export default function ScheduleAccountsPayable() {
   const [payables, setPayables] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,14 +64,19 @@ export default function ScheduleAccountsPayable() {
         if (startDate && txnDate < startDate) return null;
         if (endDate && txnDate > endDate) return null;
 
-        const dueDate = p.first_due_date || p.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        const initialDueDate = p.first_due_date || p.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        const creditor = p.creditor_name || p.supplier_name || 'Unknown Creditor';
+        const terms = p.payment_terms || p.terms || '';
+
+        const adjustedDueDate = getAdjustedDueDate(txnDate, initialDueDate, creditor, terms);
+
         return {
           date: txnDate,
-          creditor_name: p.creditor_name || p.supplier_name || 'Unknown Creditor',
+          creditor_name: creditor,
           reference: p.ref_id || 'PUR',
-          due_date: dueDate,
+          due_date: adjustedDueDate,
           total_amount: Number(p.balance_due ?? p.total_amount_due ?? 0),
-          aging: getAgingCategory(dueDate)
+          aging: getAgingCategory(adjustedDueDate)
         };
       }).filter(item => item !== null);
 
@@ -57,14 +85,19 @@ export default function ScheduleAccountsPayable() {
         if (startDate && txnDate < startDate) return null;
         if (endDate && txnDate > endDate) return null;
 
-        const dueDate = o.first_due_date || o.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        const initialDueDate = o.first_due_date || o.due_date || new Date(new Date(txnDate).setDate(new Date(txnDate).getDate() + 30)).toISOString().split('T')[0];
+        const creditor = o.creditor || 'Unknown Creditor';
+        const terms = o.terms_of_payment || '';
+
+        const adjustedDueDate = getAdjustedDueDate(txnDate, initialDueDate, creditor, terms);
+
         return {
           date: txnDate,
-          creditor_name: o.creditor || 'Unknown Creditor',
+          creditor_name: creditor,
           reference: o.ref_number || o.ref_id || 'EXP',
-          due_date: dueDate,
+          due_date: adjustedDueDate,
           total_amount: Number(o.balance_due ?? o.total_amount_due ?? 0),
-          aging: getAgingCategory(dueDate)
+          aging: getAgingCategory(adjustedDueDate)
         };
       }).filter(item => item !== null);
 
