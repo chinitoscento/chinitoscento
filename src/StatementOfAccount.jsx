@@ -61,9 +61,14 @@ export default function StatementOfAccount() {
         const txnDate = so.date || so.created_at?.split('T')[0] || '2026-01-01';
         const dueDate = so.due_date || so.dueDate || '-';
         
-        // Exclude cash payment sales orders from unpaid balance statements
-        const paymentTerms = String(so.payment_terms || so.terms || so.payment_type || so.paymentType || '').toUpperCase();
-        if (paymentTerms === 'CASH') return;
+        // Comprehensive check to exclude CASH transactions across all possible column variations
+        const paymentTerms = String(so.payment_terms || so.terms || '').toUpperCase();
+        const paymentMode = String(so.payment_mode || so.paymentMode || so.mode || '').toUpperCase();
+        const paymentType = String(so.payment_type || so.paymentType || so.type || '').toUpperCase();
+
+        if (paymentTerms.includes('CASH') || paymentMode.includes('CASH') || paymentType.includes('CASH')) {
+          return; // Skip cash sales orders entirely
+        }
 
         // 1. Calculate collections applied to this SO
         const appliedCols = collections.filter(c => {
@@ -82,7 +87,7 @@ export default function StatementOfAccount() {
         // 3. Compute Net Remaining Amount Due
         const netAmountDue = Math.max(0, totalSoAmount - totalPaid - totalReturns);
 
-        // Only include if there is an actual remaining balance (> ₱0.01)
+        // Only include if there is an actual remaining credit balance (> ₱0.01)
         if (netAmountDue > 0.01) {
           openInvoices.push({
             soNumber: soNum,
