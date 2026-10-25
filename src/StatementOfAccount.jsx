@@ -48,34 +48,41 @@ export default function StatementOfAccount() {
       if (colError) throw colError;
       if (srError) throw srError;
 
-      const activeSOs = (soData || []).filter(so => String(so.status || '').toUpperCase() !== 'DECLINED');
+      // Filter out declined sales orders
+      const activeSOs = (soData || []).filter(so => String(so.status || so.order_status || '').toUpperCase() !== 'DECLINED');
       const collections = colData || [];
       const validReturns = (srData || []).filter(sr => String(sr.status || '').toUpperCase() !== 'DECLINED');
 
       const openInvoices = [];
 
       activeSOs.forEach(so => {
-        const soNum = so.so_number || so.soNumber;
-        const totalSoAmount = Number(so.total_amount || so.totalDue || 0);
+        const soNum = so.so_number || so.soNumber || so.id;
+        const totalSoAmount = Number(so.total_amount || so.totalDue || so.total || 0);
         const txnDate = so.date || so.created_at?.split('T')[0] || '2026-01-01';
         const dueDate = so.due_date || so.dueDate || '-';
+        
+        // Exclude cash payment sales orders from unpaid balance statements
+        const paymentTerms = String(so.payment_terms || so.terms || so.payment_type || so.paymentType || '').toUpperCase();
+        if (paymentTerms === 'CASH') return;
 
         // 1. Calculate collections applied to this SO
-        const appliedCols = collections.filter(
-          c => String(c.invoice_no || c.invoiceNo || c.so_number || c.soNumber || '').trim() === String(soNum).trim()
-        );
-        const totalPaid = appliedCols.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || 0), 0);
+        const appliedCols = collections.filter(c => {
+          const colSo = String(c.invoice_no || c.invoiceNo || c.so_number || c.soNumber || c.ref_no || '').trim().toLowerCase();
+          return colSo === String(soNum).trim().toLowerCase();
+        });
+        const totalPaid = appliedCols.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
 
         // 2. Calculate sales returns applied to this SO
-        const appliedReturns = validReturns.filter(
-          sr => String(sr.so_number || sr.soNumber || '').trim() === String(soNum).trim()
-        );
+        const appliedReturns = validReturns.filter(sr => {
+          const srSo = String(sr.so_number || sr.soNumber || '').trim().toLowerCase();
+          return srSo === String(soNum).trim().toLowerCase();
+        });
         const totalReturns = appliedReturns.reduce((sum, sr) => sum + Number(sr.total_amount || sr.subtotal || 0), 0);
 
-        // 3. Compute Net Amount Due
+        // 3. Compute Net Remaining Amount Due
         const netAmountDue = Math.max(0, totalSoAmount - totalPaid - totalReturns);
 
-        // Include only if there is a remaining balance
+        // Only include if there is an actual remaining balance (> ₱0.01)
         if (netAmountDue > 0.01) {
           openInvoices.push({
             soNumber: soNum,
