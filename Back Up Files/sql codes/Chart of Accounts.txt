@@ -78,14 +78,24 @@ SET account_name = EXCLUDED.account_name,
     account_type = EXCLUDED.account_type, 
     sub_category = EXCLUDED.sub_category;
 
-
-DROP TRIGGER IF EXISTS trg_expense_journal ON opex_expenses;
-
 -- Add Work-in-Process / Macerating Inventory to Chart of Accounts
-INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category, normal_balance, is_active) VALUES
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category) VALUES
 ('1330', 'Work-in-Process / Macerating Inventory', 'Asset', 'Current Assets')
 ON CONFLICT (account_code) DO UPDATE 
 SET account_name = EXCLUDED.account_name, 
     account_type = EXCLUDED.account_type, 
     sub_category = EXCLUDED.sub_category;
 
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category) 
+VALUES ('1500', 'Equipment & Perfume Vessels', 'Asset', 'Non-Current Assets')
+ON CONFLICT (account_code) DO UPDATE 
+SET account_name = EXCLUDED.account_name, 
+    account_type = EXCLUDED.account_type, 
+    sub_category = EXCLUDED.sub_category;
+
+INSERT INTO chart_of_accounts (account_code, account_name, account_type, sub_category) 
+VALUES ('4050', 'Sales Returns & Allowances', 'Revenue', 'Contra Revenue')
+ON CONFLICT (account_code) DO UPDATE 
+SET account_name = EXCLUDED.account_name, 
+    account_type = EXCLUDED.account_type, 
+    sub_category = EXCLUDED.sub_category;

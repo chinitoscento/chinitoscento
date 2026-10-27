@@ -13,7 +13,7 @@ export default function JournalEntries() {
   const [referenceNo, setReferenceNo] = useState('');
   const [description, setDescription] = useState('');
   
-  // Multi-line items (Must balance: Total Debits == Total Credits)
+  // Multi-line items for adjusting/correcting entries
   const [lines, setLines] = useState([
     { account_code: '', description: '', debit: '', credit: '' },
     { account_code: '', description: '', debit: '', credit: '' }
@@ -47,16 +47,12 @@ export default function JournalEntries() {
       `);
       
     if (data) {
-      // Sort entries descending by the sequence number/counter (last 6 digits)
       data.sort((a, b) => {
         const numA = parseInt((a.je_number || '').slice(-6), 10);
         const numB = parseInt((b.je_number || '').slice(-6), 10);
-        
-        // Fallback to 0 if parsing fails
         const safeA = isNaN(numA) ? 0 : numA;
         const safeB = isNaN(numB) ? 0 : numB;
-        
-        return safeB - safeA; // Descending order (highest counter/newest first)
+        return safeB - safeA;
       });
 
       setEntries(data);
@@ -66,7 +62,6 @@ export default function JournalEntries() {
 
   const generateNextJeNumber = async () => {
     try {
-      // Fetch all existing JE numbers to determine the global highest sequential counter
       const { data, error } = await supabase
         .from('journal_entries')
         .select('je_number');
@@ -78,7 +73,6 @@ export default function JournalEntries() {
       if (data && data.length > 0) {
         data.forEach(item => {
           if (item.je_number) {
-            // Extract the numeric suffix (last 6 characters of the format JE-YYYYMM000001)
             const suffix = item.je_number.slice(-6);
             const num = parseInt(suffix, 10);
             if (!isNaN(num) && num > maxSequence) {
@@ -91,7 +85,6 @@ export default function JournalEntries() {
       const nextSequence = maxSequence + 1;
       const paddedSequence = String(nextSequence).padStart(6, '0');
       
-      // Use the current date's Year and Month for the prefix (JE-YYYYMM)
       const now = new Date();
       const year = now.getFullYear();
       const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -99,7 +92,6 @@ export default function JournalEntries() {
       setJeNumber(`JE-${year}${month}${paddedSequence}`);
     } catch (err) {
       console.error('Error generating sequential JE number:', err);
-      // Fallback timestamp code if query fails
       setJeNumber(`JE-${Date.now().toString().slice(-12)}`);
     }
   };
@@ -108,7 +100,6 @@ export default function JournalEntries() {
     const updated = [...lines];
     updated[index][field] = value;
     
-    // Auto-clear opposing field for convenience (Debits vs Credits)
     if (field === 'debit' && value > 0) updated[index].credit = '';
     if (field === 'credit' && value > 0) updated[index].debit = '';
     
@@ -139,14 +130,12 @@ export default function JournalEntries() {
     }
 
     try {
-      // 1. Insert Header
       const { error: headerError } = await supabase
         .from('journal_entries')
         .insert([{ je_number: jeNumber, date, reference_no: referenceNo, description }]);
 
       if (headerError) throw headerError;
 
-      // 2. Insert Lines
       const linePayload = lines.map(l => ({
         je_number: jeNumber,
         account_code: l.account_code,
@@ -161,9 +150,8 @@ export default function JournalEntries() {
 
       if (lineError) throw lineError;
 
-      alert('Journal entry successfully posted!');
+      alert('Adjusting journal entry successfully posted!');
       
-      // Reset form & generate next sequential code
       setDescription('');
       setReferenceNo('');
       setLines([
@@ -173,7 +161,7 @@ export default function JournalEntries() {
       await generateNextJeNumber();
       fetchJournalEntries();
     } catch (err) {
-      console.error('Error posting journal entry:', err);
+      console.error('Error posting adjusting journal entry:', err);
       alert('Failed to post journal entry. Check console for details.');
     }
   };
@@ -183,7 +171,7 @@ export default function JournalEntries() {
       <div style={styles.header}>
         <div>
           <h1 style={styles.title}>Journal Entries Ledger</h1>
-          <p style={styles.subtitle}>Record foundational debits and credits for accurate financial reporting</p>
+          <p style={styles.subtitle}>Record adjusting, correcting, and foundational debits & credits</p>
         </div>
       </div>
 
@@ -191,7 +179,7 @@ export default function JournalEntries() {
       <form onSubmit={handleSubmit} style={styles.card}>
         <div style={styles.cardHeader}>
           <BookOpen size={18} color="#c5a059" />
-          <h2 style={styles.cardTitle}>New Manual Journal Entry</h2>
+          <h2 style={styles.cardTitle}>New Manual / Adjusting Journal Entry</h2>
         </div>
 
         <div style={styles.formGrid}>
@@ -215,12 +203,12 @@ export default function JournalEntries() {
             />
           </div>
           <div>
-            <label style={styles.label}>External Ref / Invoice No</label>
+            <label style={styles.label}>External Ref / Adjustment Tag</label>
             <input 
               type="text" 
               value={referenceNo} 
               onChange={(e) => setReferenceNo(e.target.value)} 
-              placeholder="e.g. INV-2026-001" 
+              placeholder="e.g. ADJ-INV-2026-01" 
               style={styles.input} 
             />
           </div>
@@ -232,18 +220,18 @@ export default function JournalEntries() {
             type="text" 
             value={description} 
             onChange={(e) => setDescription(e.target.value)} 
-            placeholder="e.g. Monthly raw material bottling expense or opening balances" 
+            placeholder="e.g. Adjusting entry to write down Raw Materials Inventory to actual physical count" 
             style={styles.input} 
             required 
           />
         </div>
 
-        {/* LINE ITEMS TABLE */}
+        {/* LINE ITEMS TABLE WITH ACCOUNT CODE SELECTOR */}
         <div style={{ overflowX: 'auto', marginBottom: '16px', padding: '0 24px' }}>
           <table style={styles.table}>
             <thead>
               <tr style={styles.trHead}>
-                <th style={styles.th}>Account Code & Name</th>
+                <th style={styles.th}>Select Account Code & Name</th>
                 <th style={styles.th}>Line Description</th>
                 <th style={{ ...styles.th, textAlign: 'right' }}>Debit (₱)</th>
                 <th style={{ ...styles.th, textAlign: 'right' }}>Credit (₱)</th>
@@ -260,10 +248,10 @@ export default function JournalEntries() {
                       style={styles.select}
                       required
                     >
-                      <option value="">Select Account...</option>
+                      <option value="">-- Choose Account Code & Title --</option>
                       {accounts.map(acc => (
                         <option key={acc.account_code} value={acc.account_code}>
-                          {acc.account_code} - {acc.account_name} ({acc.account_type})
+                          {acc.account_code} - {acc.account_name} [{acc.account_type}]
                         </option>
                       ))}
                     </select>
@@ -325,7 +313,7 @@ export default function JournalEntries() {
 
         <div style={{ marginTop: '20px', textAlign: 'right' }}>
           <button type="submit" style={{ ...styles.primaryButton, opacity: isBalanced ? 1 : 0.6, cursor: isBalanced ? 'pointer' : 'not-allowed' }}>
-            Post Journal Entry
+            Post Adjusting Entry
           </button>
         </div>
       </form>
@@ -358,7 +346,7 @@ export default function JournalEntries() {
                 <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: '8px' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid #222' }}>
-                      <th style={{ ...styles.th, padding: '6px 10px', fontSize: '10px' }}>Account</th>
+                      <th style={{ ...styles.th, padding: '6px 10px', fontSize: '10px' }}>Account Code & Name</th>
                       <th style={{ ...styles.th, padding: '6px 10px', fontSize: '10px' }}>Memo</th>
                       <th style={{ ...styles.th, padding: '6px 10px', fontSize: '10px', textAlign: 'right' }}>Debit</th>
                       <th style={{ ...styles.th, padding: '6px 10px', fontSize: '10px', textAlign: 'right' }}>Credit</th>
@@ -410,7 +398,7 @@ const styles = {
   trBody: { borderBottom: '1px solid #161616' },
   td: { padding: '10px 16px' },
   deleteBtn: { backgroundColor: 'transparent', border: 'none', color: '#f87171', cursor: 'pointer', padding: '6px' },
-  formFooter: { display: 'flex', justifyContent: 'space-system', alignItems: 'center', padding: '0 24px', flexWrap: 'wrap', gap: '16px' },
+  formFooter: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 24px', flexWrap: 'wrap', gap: '16px' },
   secondaryButton: { backgroundColor: '#1a1a1a', color: '#ccc', border: '1px solid #333', padding: '8px 14px', borderRadius: '4px', fontWeight: '600', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontFamily: "'Cinzel', serif" },
   primaryButton: { backgroundColor: primaryGold, color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '4px', fontWeight: '600', fontSize: '13px', cursor: 'pointer', fontFamily: "'Cinzel', serif", margin: '20px 24px' },
   totalsWrapper: { display: 'flex', alignItems: 'center', gap: '20px' },
