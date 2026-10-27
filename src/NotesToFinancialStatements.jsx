@@ -129,10 +129,12 @@ const styles = {
 
 export default function NotesToFinancialStatements() {
   const [loading, setLoading] = useState(false);
+  const [receivablesBalance, setReceivablesBalance] = useState(0);
+  const [allowanceBalance, setAllowanceBalance] = useState(0);
   const [inventoryBreakdown, setInventoryBreakdown] = useState({
-    rawMaterials: 12189.61,  // Verified Workback Valuation
-    wip: 16873.44,           // Active Macerating Vats
-    finishedGoods: 27422.74, // Verified Costed Finished Goods
+    rawMaterials: 12189.61,
+    wip: 16873.44,
+    finishedGoods: 27422.74,
   });
   const [equipmentBalance, setEquipmentBalance] = useState(0);
 
@@ -146,6 +148,8 @@ export default function NotesToFinancialStatements() {
       const { data, error } = await supabase.from('journal_entry_lines').select('*');
       if (error && error.code !== 'PGRST116') console.error(error);
 
+      let ar = 0;
+      let da = 0;
       let rm = 0;
       let wip = 0;
       let fg = 0;
@@ -154,16 +158,21 @@ export default function NotesToFinancialStatements() {
       if (data) {
         data.forEach(entry => {
           const code = String(entry.account_code || '').trim();
-          const net = Number(entry.debit || 0) - Number(entry.credit || 0);
+          const debit = Number(entry.debit || 0);
+          const credit = Number(entry.credit || 0);
+          const net = debit - credit;
 
-          if (code === '1310') rm += net;
+          if (code === '1200') ar += net;
+          else if (code === '1210') da += (credit - debit); // Contra-asset normal balance
+          else if (code === '1310') rm += net;
           else if (code === '1330') wip += net;
           else if (code === '1320') fg += net;
           else if (code.startsWith('15')) equip += net;
         });
       }
 
-      // If ledger is fully posted and reconciled, use net values; otherwise default to verified physical counts
+      setReceivablesBalance(ar);
+      setAllowanceBalance(da);
       setInventoryBreakdown({
         rawMaterials: rm > 0 ? rm : 12189.61,
         wip: wip > 0 ? wip : 16873.44,
@@ -177,6 +186,7 @@ export default function NotesToFinancialStatements() {
     }
   };
 
+  const netReceivables = receivablesBalance - allowanceBalance;
   const totalInventory = inventoryBreakdown.rawMaterials + inventoryBreakdown.wip + inventoryBreakdown.finishedGoods;
 
   const handlePrint = () => {
@@ -237,12 +247,38 @@ export default function NotesToFinancialStatements() {
           </p>
         </div>
 
-        {/* Note 2: Summary of Significant Accounting Policies */}
+        {/* Note 2: Trade & Other Receivables */}
         <div style={styles.noteCard} className="note-card">
-          <div style={styles.noteTitle} className="note-title">Note 2 — Summary of Significant Accounting Policies</div>
-          <p style={styles.paragraph} className="paragraph">
-            <strong>Inventories Valuation:</strong> Inventories are valued at the lower of cost and net realizable value. Cost is determined using standard costing methods, which include direct raw materials (essential oils, alcohol, packaging bottles), direct labor, and an allocated proportion of production overheads incurred during maceration and packaging stages.
+          <div style={styles.noteTitle} className="note-title">Note 2 — Trade & Other Receivables</div>
+          <p style[styles.paragraph} className="paragraph">
+            Trade receivables consist of wholesale and retail credit extended to distributors and clients. Doubtful accounts are evaluated periodically and provided for as an allowance.
           </p>
+
+          <table style={styles.table}>
+            <thead>
+              <tr>
+                <th style={styles.th}>Receivable Category</th>
+                <th style={styles.th}>Description</th>
+                <th style={{ ...styles.th, textAlign: 'right' }}>Amount (PHP)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style={styles.td}><strong>Accounts Receivable (Gross)</strong></td>
+                <td style={styles.td}>Acct 1200 — Outstanding trade receivables from wholesale and retail clients.</td>
+                <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {receivablesBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
+              </tr>
+              <tr>
+                <td style={styles.td}><strong>Less: Allowance for Doubtful Accounts</strong></td>
+                <td style={styles.td}>Acct 1210 — Estimated uncollectible customer accounts.</td>
+                <td style={{ ...styles.td, ...styles.tdAmount }}>(₱ {allowanceBalance.toLocaleString('en-PH', { minimumFractionDigits: 2 })})</td>
+              </tr>
+              <tr>
+                <td colSpan="2" style={styles.totalRowTD}><strong>Net Trade Receivables (Balance Sheet)</strong></td>
+                <td style={{ ...styles.totalRowTD, textAlign: 'right' }}><strong>₱ {netReceivables.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</strong></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         {/* Note 3: Inventories Breakdown */}

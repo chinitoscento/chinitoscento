@@ -155,6 +155,7 @@ export default function IncomeStatement() {
     transportation: 0,
     utilities: 0,
     interest: 0,
+    badDebt: 0,
     otherOpex: 0,
   });
 
@@ -197,6 +198,7 @@ export default function IncomeStatement() {
         transportation: 0,
         utilities: 0,
         interest: 0,
+        badDebt: 0,
         otherOpex: 0,
       };
 
@@ -204,18 +206,15 @@ export default function IncomeStatement() {
         data.forEach(entry => {
           if (entry.journal_entry_lines) {
             entry.journal_entry_lines.forEach(line => {
-              const code = line.account_code || '';
+              const code = String(line.account_code || '').trim();
               const netAmt = Number(line.credit || 0) - Number(line.debit || 0);
               const debAmt = Number(line.debit || 0) - Number(line.credit || 0);
 
               if (code.startsWith('400')) totals.grossSales += netAmt;
-              // UPDATED TO READ ACCOUNT 4050 FOR SALES RETURNS & ALLOWANCES
               if (code === '4050' || code.startsWith('401')) totals.salesReturns += debAmt;
               
-              // Direct Perpetual COGS (Account 5000)
               if (code === '5000' || code === '500') totals.cogsDirect += debAmt;
 
-              // Periodic Raw Purchases
               if (code.startsWith('502') || code === '5100') totals.purchases += debAmt;
               if (code.startsWith('501')) totals.beginningInventory += debAmt;
               if (code.startsWith('503')) totals.endingInventory += debAmt;
@@ -230,7 +229,8 @@ export default function IncomeStatement() {
               if (code.startsWith('607')) totals.transportation += debAmt;
               if (code.startsWith('608')) totals.utilities += debAmt;
               if (code.startsWith('609')) totals.interest += debAmt;
-              if (code.startsWith('610')) totals.otherOpex += debAmt;
+              if (code === '6110') totals.badDebt += debAmt;
+              else if (code.startsWith('610')) totals.otherOpex += debAmt;
             });
           }
         });
@@ -244,13 +244,27 @@ export default function IncomeStatement() {
   };
 
   const netSales = balances.grossSales - balances.salesReturns;
-  
-  // Total COGS evaluates direct Perpetual COGS or calculated Periodic COGS
   const periodicCOGS = (balances.beginningInventory + balances.purchases) - balances.endingInventory;
   const totalCOGS = balances.cogsDirect > 0 ? balances.cogsDirect : periodicCOGS;
-  
   const grossIncome = netSales - totalCOGS;
-  const totalOpex = balances.maceratingEquipment + balances.rent + balances.payroll + balances.testerKits + balances.shipping + balances.marketing + balances.telecom + balances.transportation + balances.utilities + balances.otherOpex;
+
+  const opexItems = [
+    { label: 'Macerating Equipment', amount: balances.maceratingEquipment },
+    { label: 'Rent', amount: balances.rent },
+    { label: 'Payroll & Benefits', amount: balances.payroll },
+    { label: 'Tester Kits', amount: balances.testerKits },
+    { label: 'Shipping Fee', amount: balances.shipping },
+    { label: 'Marketing Ads', amount: balances.marketing },
+    { label: 'Telecom & Internet', amount: balances.telecom },
+    { label: 'Transportation', amount: balances.transportation },
+    { label: 'Utilities', amount: balances.utilities },
+    { label: 'Interest', amount: balances.interest },
+    { label: 'Bad Debt Expense', amount: balances.badDebt },
+    { label: 'Other Operating Expenses', amount: balances.otherOpex },
+  ];
+
+  const filteredOpex = opexItems.filter(item => item.amount > 0);
+  const totalOpex = filteredOpex.reduce((sum, item) => sum + item.amount, 0);
   const netIncome = grossIncome - totalOpex;
 
   const handlePrint = () => {
@@ -288,21 +302,11 @@ export default function IncomeStatement() {
     const csvRows = [
       ['Category', 'Account Item', 'Amount (PHP)'],
       ['Revenues', 'Gross Sales', balances.grossSales],
-      ['Revenues', 'Sales Returns & Allowances', balances.salesReturns],
+      ...(balances.salesReturns > 0 ? [['Revenues', 'Sales Returns & Allowances', balances.salesReturns]] : []),
       ['Net Sales', '', netSales],
-      ['COGS', 'Cost of Goods Sold (Account 5000)', totalCOGS],
+      ['COGS', 'Cost of Goods Sold', totalCOGS],
       ['Gross Income', '', grossIncome],
-      ['Operating Expenses', 'Macerating Equipment', balances.maceratingEquipment],
-      ['Operating Expenses', 'Rent', balances.rent],
-      ['Operating Expenses', 'Payroll & Benefits', balances.payroll],
-      ['Operating Expenses', 'Tester Kits', balances.testerKits],
-      ['Operating Expenses', 'Shipping Fee', balances.shipping],
-      ['Operating Expenses', 'Marketing Ads', balances.marketing],
-      ['Operating Expenses', 'Telecom & Internet', balances.telecom],
-      ['Operating Expenses', 'Transportation', balances.transportation],
-      ['Operating Expenses', 'Utilities', balances.utilities],
-      ['Operating Expenses', 'Interest', balances.interest],
-      ['Operating Expenses', 'Other Operating Expenses', balances.otherOpex],
+      ...filteredOpex.map(item => ['Operating Expenses', item.label, item.amount]),
       ['Total Operating Expenses', '', totalOpex],
       ['Net Income / (Loss)', '', netIncome]
     ];
@@ -342,19 +346,21 @@ export default function IncomeStatement() {
             <span>Gross Sales</span>
             <span style={styles.amount} className="amount">₱ {balances.grossSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
-          <div style={styles.row} className="row">
-            <span>Sales Returns & Allowances</span>
-            <span style={styles.amount} className="amount">₱ {balances.salesReturns.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
+          
+          {balances.salesReturns > 0 && (
+            <div style={styles.row} className="row">
+              <span>Sales Returns & Allowances</span>
+              <span style={styles.amount} className="amount">₱ {balances.salesReturns.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+            </div>
+          )}
           
           <div style={styles.subTotalRow} className="sub-total-row">
             <span>NET SALES</span>
             <span>₱ {netSales.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
-          {/* PERPETUAL INVENTORY COGS DISPLAY */}
           <div style={styles.subRow} className="sub-row">
-            <span>Cost of Goods Sold (Account 5000)</span>
+            <span>Cost of Goods Sold</span>
             <span style={styles.amount} className="amount">₱ {totalCOGS.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
@@ -368,46 +374,12 @@ export default function IncomeStatement() {
             <span>₱ {grossIncome.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
           </div>
 
-          <div style={styles.subRow} className="sub-row">
-            <span>Macerating Equipment</span>
-            <span style={styles.amount} className="amount">₱ {balances.maceratingEquipment.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Rent</span>
-            <span style={styles.amount} className="amount">₱ {balances.rent.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Payroll & Benefits</span>
-            <span style={styles.amount} className="amount">₱ {balances.payroll.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Tester Kits</span>
-            <span style={styles.amount} className="amount">₱ {balances.testerKits.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Shipping Fee</span>
-            <span style={styles.amount} className="amount">₱ {balances.shipping.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Marketing Ads</span>
-            <span style={styles.amount} className="amount">₱ {balances.marketing.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Telecom & Internet</span>
-            <span style={styles.amount} className="amount">₱ {balances.telecom.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Transportation</span>
-            <span style={styles.amount} className="amount">₱ {balances.transportation.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Utilities</span>
-            <span style={styles.amount} className="amount">₱ {balances.utilities.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
-          <div style={styles.subRow} className="sub-row">
-            <span>Interest</span>
-            <span style={styles.amount} className="amount">₱ {balances.interest.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
-          </div>
+          {filteredOpex.map((item, idx) => (
+            <div key={idx} style={styles.subRow} className="sub-row">
+              <span>{item.label}</span>
+              <span style={styles.amount} className="amount">₱ {item.amount.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</span>
+            </div>
+          ))}
 
           <div style={styles.subTotalRow} className="sub-total-row">
             <span>TOTAL OPERATING EXPENSES</span>
