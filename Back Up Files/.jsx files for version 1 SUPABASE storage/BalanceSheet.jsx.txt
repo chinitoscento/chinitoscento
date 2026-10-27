@@ -166,8 +166,20 @@ export default function BalanceSheet() {
   const fetchBalanceSheetData = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('journal_entry_lines').select('*');
-      if (error) console.error(error);
+      // Query journal entries joined with their lines, filtering strictly by the cut-off date
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select(`
+          date,
+          journal_entry_lines (
+            account_code,
+            debit,
+            credit
+          )
+        `)
+        .lte('date', asOfDate); // Strict cut-off filter matching transaction date
+
+      if (error) throw error;
       
       let totals = { 
         cash: 0, 
@@ -182,32 +194,30 @@ export default function BalanceSheet() {
         netIncomeForPeriod: 0
       };
 
-      let totalRevenue = 0;
-      let totalExpenses = 0;
-
       if (data) {
-        data.forEach(entry => {
-          const code = String(entry.account_code || '').trim();
-          const debit = Number(entry.debit || 0);
-          const credit = Number(entry.credit || 0);
+        data.forEach(je => {
+          const lines = je.journal_entry_lines || [];
+          lines.forEach(entry => {
+            const code = String(entry.account_code || '').trim();
+            const debit = Number(entry.debit || 0);
+            const credit = Number(entry.credit || 0);
 
-          if (code.startsWith('10')) totals.cash += debit - credit;
-          else if (code.startsWith('12')) totals.receivables += debit - credit;
-          else if (code.startsWith('13')) totals.inventory += debit - credit;   
-          else if (code.startsWith('15')) totals.equipment += debit - credit;   
-          else if (code.startsWith('20')) totals.payables += credit - debit;
-          else if (code.startsWith('21')) totals.loansPayable += credit - debit;
-          else if (code.startsWith('30')) {
-            // Differentiating initial vs additional capital or combining them based on account structure
-            totals.capital += credit - debit;
-          }
-          else if (code.startsWith('31')) {
-            totals.drawings += debit - credit; // Owner withdrawals / drawings
-          }
-          else {
-            // Universal Income Statement calculation for Net Income / Loss
-            totals.netIncomeForPeriod += (credit - debit);
-          }
+            if (code.startsWith('10')) totals.cash += debit - credit;
+            else if (code.startsWith('12')) totals.receivables += debit - credit;
+            else if (code.startsWith('13')) totals.inventory += debit - credit;   
+            else if (code.startsWith('15')) totals.equipment += debit - credit;   
+            else if (code.startsWith('20')) totals.payables += credit - debit;
+            else if (code.startsWith('21')) totals.loansPayable += credit - debit;
+            else if (code.startsWith('30')) {
+              totals.capital += credit - debit;
+            }
+            else if (code.startsWith('31')) {
+              totals.drawings += debit - credit;
+            }
+            else {
+              totals.netIncomeForPeriod += (credit - debit);
+            }
+          });
         });
       }
 
