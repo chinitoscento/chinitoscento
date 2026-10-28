@@ -132,9 +132,9 @@ export default function NotesToFinancialStatements() {
   const [receivablesBalance, setReceivablesBalance] = useState(0);
   const [allowanceBalance, setAllowanceBalance] = useState(0);
   const [inventoryBreakdown, setInventoryBreakdown] = useState({
-    rawMaterials: 12189.61,
-    wip: 16873.44,
-    finishedGoods: 27422.74,
+    rawMaterials: 0,
+    wip: 0,
+    finishedGoods: 0,
   });
   const [equipmentBalance, setEquipmentBalance] = useState(0);
 
@@ -174,9 +174,9 @@ export default function NotesToFinancialStatements() {
       setReceivablesBalance(ar);
       setAllowanceBalance(da);
       setInventoryBreakdown({
-        rawMaterials: rm > 0 ? rm : 12189.61,
-        wip: wip > 0 ? wip : 16873.44,
-        finishedGoods: fg > 0 ? fg : 27422.74,
+        rawMaterials: Math.max(0, rm),
+        wip: Math.max(0, wip),
+        finishedGoods: Math.max(0, fg),
       });
       setEquipmentBalance(Math.max(0, equip));
     } catch (err) {
@@ -242,7 +242,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 1: Corporate Information */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 1 — Corporate Information & Basis of Preparation</div>
-          <p style={styles.paragraph} className="paragraph">
+          <p style={styles.paragraph}>
             <strong>Chinito Scento</strong> ("The Brand") operates as a bespoke fragrance house specializing in artisanal compounding, maceration, bottle packaging, and wholesale/retail distribution. These financial statements have been prepared in accordance with historical cost convention, reflecting all active inventory tracking, production runs, sales orders, and journal entries managed within the Chinito Scento ERP system.
           </p>
         </div>
@@ -250,7 +250,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 2: Trade & Other Receivables */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 2 — Trade & Other Receivables</div>
-          <p style={styles.paragraph} className="paragraph">
+          <p style={styles.paragraph}>
             Trade receivables consist of wholesale and retail credit extended to distributors and clients. Doubtful accounts are evaluated periodically and provided for as an allowance.
           </p>
 
@@ -284,7 +284,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 3: Inventories Breakdown */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 3 — Inventories Breakdown</div>
-          <p style={styles.paragraph} className="paragraph">
+          <p style={styles.paragraph}>
             As presented on the Balance Sheet under Current Assets, total inventories consist of the following operational manufacturing tiers (excluding fixed assets):
           </p>
 
@@ -299,17 +299,17 @@ export default function NotesToFinancialStatements() {
             <tbody>
               <tr>
                 <td style={styles.td}><strong>Raw Materials & Packaging</strong></td>
-                <td style={styles.td}>Unreacted essential oils, compounds, empty glass bottles, atomizers, caps, and exterior boxes.</td>
+                <td style={styles.td}>Unreacted essential oils, compounds, empty glass bottles, atomizers, caps, and exterior boxes. (Acct 1310)</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.rawMaterials.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
                 <td style={styles.td}><strong>Work-in-Process (WIP)</strong></td>
-                <td style={styles.td}>Perfume juices currently undergoing aging and maceration in blending vats.</td>
+                <td style={styles.td}>Perfume juices currently undergoing aging and maceration in blending vats. (Acct 1330)</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.wip.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
                 <td style={styles.td}><strong>Finished Goods</strong></td>
-                <td style={styles.td}>Bottled, labeled, and boxed luxury fragrances fully ready for client dispatch or wholesale.</td>
+                <td style={styles.td}>Bottled, labeled, and boxed luxury fragrances fully ready for client dispatch or wholesale. (Acct 1320)</td>
                 <td style={{ ...styles.td, ...styles.tdAmount }}>₱ {inventoryBreakdown.finishedGoods.toLocaleString('en-PH', { minimumFractionDigits: 2 })}</td>
               </tr>
               <tr>
@@ -323,7 +323,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 4: Property, Plant and Equipment */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 4 — Property, Plant & Equipment</div>
-          <p style={styles.paragraph} className="paragraph">
+          <p style={styles.paragraph}>
             Equipment and perfume vessels include laboratory scales, mixing equipment, stainless steel blending vats, and collapsible mobile perfume bars utilized for retail events and exhibitions. Depreciation is computed on a straight-line basis over the estimated useful lives of the assets.
           </p>
 

@@ -1302,7 +1302,7 @@ id,je_number,account_code,description,debit,credit,created_at
 1317,JE-SR-202610000514,1200,Accounts Receivable reduction for SR SR-202610000008,0.00,2000.00,2026-10-27 11:17:47.834935+08
 1318,JE-SR-202610000514,1320,Inventory restored for SR SR-202610000008,910.58,0.00,2026-10-27 11:17:47.834935+08
 1319,JE-SR-202610000514,5000,COGS reversal for SR SR-202610000008,0.00,910.58,2026-10-27 11:17:47.834935+08
-1320,JE-202610000515,5000,CORRECTING ENTRY: To record inventory adjustment writing down Raw Materials & Packaging to actual physical count / workback valuation as of October 2026.,19286.71,0.00,2026-10-28 06:52:34.830072+08
-1321,JE-202610000515,1310,CORRECTING ENTRY: To record inventory adjustment writing down Raw Materials & Packaging to actual physical count / workback valuation as of October 2026.,0.00,19286.71,2026-10-28 06:52:34.830072+08
-1322,JE-202610000516,1320,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,14505.02,0.00,2026-10-28 06:53:32.115882+08
-1323,JE-202610000516,5000,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,0.00,14505.02,2026-10-28 06:53:32.115882+08
+1320,JE-202610000515,5000,CORRECTING ENTRY: To record inventory adjustment writing down Raw Materials & Packaging to actual physical count / workback valuation as of October 2026.,31096.13,0.00,2026-10-28 06:52:34.830072+08
+1321,JE-202610000515,1310,CORRECTING ENTRY: To record inventory adjustment writing down Raw Materials & Packaging to actual physical count / workback valuation as of October 2026.,0.00,31096.13,2026-10-28 06:52:34.830072+08
+1322,JE-202610000516,1320,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,8598.76,0.00,2026-10-28 06:53:32.115882+08
+1323,JE-202610000516,5000,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,0.00,8598.76,2026-10-28 06:53:32.115882+08
