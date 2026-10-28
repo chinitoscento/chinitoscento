@@ -250,7 +250,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 2: Trade & Other Receivables */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 2 — Trade & Other Receivables</div>
-          <p style[styles.paragraph} className="paragraph">
+          <p style={styles.paragraph} className="paragraph">
             Trade receivables consist of wholesale and retail credit extended to distributors and clients. Doubtful accounts are evaluated periodically and provided for as an allowance.
           </p>
 
