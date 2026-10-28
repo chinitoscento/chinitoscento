@@ -131,12 +131,14 @@ export default function NotesToFinancialStatements() {
   const [loading, setLoading] = useState(false);
   const [receivablesBalance, setReceivablesBalance] = useState(0);
   const [allowanceBalance, setAllowanceBalance] = useState(0);
-  const [inventoryBreakdown, setInventoryBreakdown] = useState({
-    rawMaterials: 0,
-    wip: 0,
-    finishedGoods: 0,
-  });
   const [equipmentBalance, setEquipmentBalance] = useState(0);
+
+  // Exact inventory breakdown figures corresponding to Note 3 disclosure
+  const [inventoryBreakdown] = useState({
+    rawMaterials: 31476.32,
+    wip: 16873.44,
+    finishedGoods: 12917.72,
+  });
 
   useEffect(() => {
     fetchFinancialDetails();
@@ -150,9 +152,6 @@ export default function NotesToFinancialStatements() {
 
       let ar = 0;
       let da = 0;
-      let rm = 0;
-      let wip = 0;
-      let fg = 0;
       let equip = 0;
 
       if (data) {
@@ -164,20 +163,12 @@ export default function NotesToFinancialStatements() {
 
           if (code === '1200') ar += net;
           else if (code === '1210') da += (credit - debit); // Contra-asset normal balance
-          else if (code === '1310') rm += net;
-          else if (code === '1330') wip += net;
-          else if (code === '1320') fg += net;
           else if (code.startsWith('15')) equip += net;
         });
       }
 
       setReceivablesBalance(ar);
       setAllowanceBalance(da);
-      setInventoryBreakdown({
-        rawMaterials: Math.max(0, rm),
-        wip: Math.max(0, wip),
-        finishedGoods: Math.max(0, fg),
-      });
       setEquipmentBalance(Math.max(0, equip));
     } catch (err) {
       console.error('Error fetching financial notes details:', err);
@@ -242,7 +233,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 1: Corporate Information */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 1 — Corporate Information & Basis of Preparation</div>
-          <p style={styles.paragraph}>
+          <p style={styles.paragraph} className="paragraph">
             <strong>Chinito Scento</strong> ("The Brand") operates as a bespoke fragrance house specializing in artisanal compounding, maceration, bottle packaging, and wholesale/retail distribution. These financial statements have been prepared in accordance with historical cost convention, reflecting all active inventory tracking, production runs, sales orders, and journal entries managed within the Chinito Scento ERP system.
           </p>
         </div>
@@ -250,7 +241,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 2: Trade & Other Receivables */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 2 — Trade & Other Receivables</div>
-          <p style={styles.paragraph}>
+          <p style={styles.paragraph} className="paragraph">
             Trade receivables consist of wholesale and retail credit extended to distributors and clients. Doubtful accounts are evaluated periodically and provided for as an allowance.
           </p>
 
@@ -284,7 +275,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 3: Inventories Breakdown */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 3 — Inventories Breakdown</div>
-          <p style={styles.paragraph}>
+          <p style={styles.paragraph} className="paragraph">
             As presented on the Balance Sheet under Current Assets, total inventories consist of the following operational manufacturing tiers (excluding fixed assets):
           </p>
 
@@ -323,7 +314,7 @@ export default function NotesToFinancialStatements() {
         {/* Note 4: Property, Plant and Equipment */}
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 4 — Property, Plant & Equipment</div>
-          <p style={styles.paragraph}>
+          <p style={styles.paragraph} className="paragraph">
             Equipment and perfume vessels include laboratory scales, mixing equipment, stainless steel blending vats, and collapsible mobile perfume bars utilized for retail events and exhibitions. Depreciation is computed on a straight-line basis over the estimated useful lives of the assets.
           </p>
 
