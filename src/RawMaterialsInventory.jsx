@@ -287,12 +287,13 @@ export default function RawMaterialsInventory() {
               <th style={styles.th}>CURRENT STOCK LEVEL</th>
               <th style={styles.th}>UNIT</th>
               <th style={styles.th}>STATUS</th>
+              <th style={styles.th}>REQUIRED TO RESTOCK</th>
             </tr>
           </thead>
           <tbody>
             {filteredInventory.length === 0 ? (
               <tr>
-                <td colSpan="6" style={styles.emptyTd}>No raw materials found matching your filter criteria.</td>
+                <td colSpan="7" style={styles.emptyTd}>No raw materials found matching your filter criteria.</td>
               </tr>
             ) : (
               filteredInventory.map((item, index) => {
@@ -301,6 +302,7 @@ export default function RawMaterialsInventory() {
                 
                 const totalStockValue = Number(item.stockQty);
                 const isAlert = totalStockValue < threshold;
+                const requiredRestock = isAlert ? threshold - totalStockValue : 0;
 
                 return (
                   <tr key={item.id || index} style={styles.trBody}>
@@ -323,6 +325,15 @@ export default function RawMaterialsInventory() {
                       <span style={isAlert ? styles.alertBadge : styles.normalBadge}>
                         {isAlert ? 'ALERT (Low Stock)' : 'Approved'}
                       </span>
+                    </td>
+                    <td style={styles.td}>
+                      {isAlert ? (
+                        <span style={styles.restockBadge}>
+                          +{requiredRestock.toLocaleString()} {item.baseUnit || ''}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#71717a', fontStyle: 'italic' }}>—</span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -568,6 +579,17 @@ const styles = {
     backgroundColor: 'rgba(153, 27, 27, 0.4)',
     color: '#f87171',
     border: '1px solid rgba(248, 113, 113, 0.2)',
+    letterSpacing: '0.5px',
+  },
+  restockBadge: {
+    display: 'inline-block',
+    padding: '4px 12px',
+    borderRadius: '12px',
+    fontSize: '11px',
+    fontWeight: '700',
+    backgroundColor: 'rgba(217, 119, 6, 0.2)',
+    color: '#fbbf24',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
     letterSpacing: '0.5px',
   },
   modalOverlay: {
