@@ -100,7 +100,7 @@ export default function RawMaterialsInventory() {
       (lineItemsData || []).forEach(line => {
         const lineType = (line.type || '').toUpperCase();
         if (
-          lineType !== 'COGS' && 
+          lineType !== 'RM' && 
           lineType !== 'MACERATION_DEDUCTION' && 
           lineType !== 'PACKAGING_DEDUCTION' && 
           lineType !== 'PACAKAGIN_DEDUCTION'
@@ -125,7 +125,7 @@ export default function RawMaterialsInventory() {
           const volSource = lineContainerVol || matchedItem.volumeSize;
           const volInfo = parseVolumeSize(volSource);
           matchedItem.stockQty += lineQty * volInfo.sizeVal; // Automatically subtracts if lineQty is negative
-        } else if (lineName && (lineType === 'COGS' || lineType === 'PACKAGING_DEDUCTION' || lineType === 'PACAKAGIN_DEDUCTION')) {
+        } else if (lineName && (lineType === 'RM' || lineType === 'PACKAGING_DEDUCTION' || lineType === 'PACAKAGIN_DEDUCTION')) {
           const isLiquid = nameKey.includes('oil') || nameKey.includes('solvent') || nameKey.includes('liquid');
           const defaultVol = lineContainerVol || (isLiquid ? '250ml' : '1');
           const volInfo = parseVolumeSize(defaultVol);

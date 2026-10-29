@@ -90,7 +90,7 @@ export default function Dashboard({ onNavigate }) {
       (lineItemsData || []).forEach(line => {
         const lineType = (line.type || '').toUpperCase();
         if (
-          lineType !== 'COGS' && 
+          lineType !== 'RM' && 
           lineType !== 'MACERATION_DEDUCTION' && 
           lineType !== 'PACKAGING_DEDUCTION' && 
           lineType !== 'PACAKAGIN_DEDUCTION'
