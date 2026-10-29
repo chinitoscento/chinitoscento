@@ -687,7 +687,6 @@ export default function Maceration() {
 
   const groupedList = Object.values(groupedPerPerfumeMap).map(g => ({
     ...g,
-    macCodeStr: g.macCodes.join(', '),
     statusSummary: g.statuses.size > 1 ? 'Mixed / Multiple' : Array.from(g.statuses)[0]
   }));
 
@@ -808,7 +807,13 @@ export default function Maceration() {
                   <tr key={idx} style={styles.trBody}>
                     <td style={styles.td}><b style={{ color: '#F3F4F6' }}>{g.scent}</b></td>
                     <td style={styles.td}>{g.productCode}</td>
-                    <td style={styles.td}><span style={styles.codeBadge}>{g.macCodeStr}</span></td>
+                    <td style={styles.td}>
+                      <div style={styles.badgeColumn}>
+                        {g.macCodes.map((code, cIdx) => (
+                          <span key={cIdx} style={styles.codeBadge}>{code}</span>
+                        ))}
+                      </div>
+                    </td>
                     <td style={styles.td}>{g.totalVolume.toLocaleString()} ml</td>
                     <td style={styles.td}>{g.totalQty} units</td>
                     <td style={styles.td}>
@@ -1080,7 +1085,14 @@ const styles = {
     padding: '18px 20px',
     fontSize: '13px',
     color: '#D1D5DB',
-    fontFamily: 'sans-serif'
+    fontFamily: 'sans-serif',
+    verticalAlign: 'middle'
+  },
+  badgeColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    alignItems: 'flex-start'
   },
   emptyTd: {
     padding: '60px',
@@ -1097,7 +1109,8 @@ const styles = {
     fontWeight: '600',
     fontSize: '11px',
     border: '1px solid rgba(212, 175, 55, 0.3)',
-    fontFamily: 'monospace'
+    fontFamily: 'monospace',
+    display: 'inline-block'
   },
   maceratingBadge: {
     backgroundColor: 'rgba(245, 158, 11, 0.15)',
