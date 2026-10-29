@@ -836,41 +836,42 @@ export default function Salesorder() {
     <div style={styles.container}>
       <style>{`
         @page {
-          size: letter;
+          size: auto;
           margin: 10mm;
         }
         @media print {
-          body, html {
+          body {
             background: #ffffff !important;
             color: #111827 !important;
-            height: 100% !important;
-            overflow: visible !important;
           }
-          body * { visibility: hidden; }
-          #printable-invoice, #printable-invoice * { visibility: visible; }
-          .invoice-overlay, .invoice-modal-wrapper {
-            position: static !important; 
-            display: block !important; 
-            background: transparent !important; 
-            width: 100% !important; 
-            height: auto !important; 
-            margin: 0 !important; 
-            padding: 0 !important; 
-            overflow: visible !important;
+          /* Hide everything outside the invoice container */
+          body > *:not(#root) {
+            display: none !important;
+          }
+          .invoice-overlay, .invoice-modal {
+            position: absolute !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: #ffffff !important;
             box-shadow: none !important;
+            border: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
           }
           #printable-invoice {
-            position: absolute; 
-            left: 0; 
-            top: 0; 
-            width: 100%; 
-            margin: 0; 
-            padding: 10px 20px !important; 
-            box-sizing: border-box !important; 
-            background: #ffffff !important; 
-            box-shadow: none !important;
+            display: block !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 10mm !important;
+            box-sizing: border-box !important;
+            background: #ffffff !important;
           }
-          .no-print, button { display: none !important; }
+          .no-print, button { 
+            display: none !important; 
+          }
         }
       `}</style>
 
