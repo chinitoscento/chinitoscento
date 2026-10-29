@@ -5,8 +5,9 @@ export default function Customers() {
   const [customers, setCustomers] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  const [editingCustomer, setEditingCustomer] = useState(null); // ✦ Track customer being edited
   
-  // Form state matching your specifications
+  // Form state
   const [formData, setFormData] = useState({
     code: '',
     name: '',
@@ -43,7 +44,7 @@ export default function Customers() {
   };
 
   const handleOpenModal = () => {
-    // Automatically generate next sequential code like CUST-0001, CUST-0002, etc.
+    setEditingCustomer(null); // Clear editing state for new entries
     let nextCode = 'CUST-0001';
     if (customers.length > 0) {
       const codes = customers
@@ -74,6 +75,21 @@ export default function Customers() {
     setIsModalOpen(true);
   };
 
+  // ✦ Handler to open modal for editing an existing customer
+  const handleOpenEdit = (cust) => {
+    setEditingCustomer(cust);
+    setFormData({
+      code: cust.code || '',
+      name: cust.name || '',
+      phone: cust.phone || '',
+      email: cust.email || '',
+      category: cust.category || 'VIP Boutique',
+      creditLimit: cust.creditLimit || '',
+      status: cust.status || 'Active'
+    });
+    setIsModalOpen(true);
+  };
+
   const handleInputChange = (e) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
@@ -83,20 +99,8 @@ export default function Customers() {
     e.preventDefault();
     if (!formData.name) return;
 
-    // Ensure code has fallback sequencing if left blank manually
-    let finalCode = formData.code;
-    if (!finalCode) {
-      const numericValues = customers
-        .map(c => c.code)
-        .filter(code => code && code.startsWith('CUST-'))
-        .map(code => parseInt(code.replace('CUST-', ''), 10))
-        .filter(num => !isNaN(num));
-      const maxNum = numericValues.length > 0 ? Math.max(...numericValues) : customers.length;
-      finalCode = `CUST-${String(maxNum + 1).padStart(4, '0')}`;
-    }
-
-    const newRecord = {
-      code: finalCode,
+    const payload = {
+      code: formData.code,
       name: formData.name,
       phone: formData.phone,
       email: formData.email,
@@ -106,21 +110,34 @@ export default function Customers() {
     };
 
     try {
-      const { error } = await supabase.from('customers').insert([newRecord]);
-      if (error) throw error;
+      if (editingCustomer) {
+        // ✦ Update existing customer in Supabase
+        const { error } = await supabase
+          .from('customers')
+          .update(payload)
+          .eq('id', editingCustomer.id);
+
+        if (error) throw error;
+      } else {
+        // ✦ Insert new customer record
+        let finalCode = formData.code;
+        if (!finalCode) {
+          const numericValues = customers
+            .map(c => c.code)
+            .filter(code => code && code.startsWith('CUST-'))
+            .map(code => parseInt(code.replace('CUST-', ''), 10))
+            .filter(num => !isNaN(num));
+          const maxNum = numericValues.length > 0 ? Math.max(...numericValues) : customers.length;
+          finalCode = `CUST-${String(maxNum + 1).padStart(4, '0')}`;
+          payload.code = finalCode;
+        }
+
+        const { error } = await supabase.from('customers').insert([payload]);
+        if (error) throw error;
+      }
 
       await loadCustomers();
-
-      // Reset form and close modal
-      setFormData({
-        code: '',
-        name: '',
-        phone: '',
-        email: '',
-        category: 'VIP Boutique',
-        creditLimit: '',
-        status: 'Active'
-      });
+      setEditingCustomer(null);
       setIsModalOpen(false);
     } catch (err) {
       console.error('Error saving customer to Supabase:', err);
@@ -214,7 +231,8 @@ export default function Customers() {
                     </span>
                   </td>
                   <td style={styles.tdActions}>
-                    <button style={styles.actionLink}>Edit</button>
+                    {/* ✦ Attached handleOpenEdit handler */}
+                    <button style={styles.actionLink} onClick={() => handleOpenEdit(cust)}>Edit</button>
                   </td>
                 </tr>
               ))
@@ -228,18 +246,19 @@ export default function Customers() {
         <div style={styles.modalOverlay}>
           <div style={styles.modalCard}>
             <div style={styles.modalHeader}>
-              <h2 style={styles.modalTitle}>Register New Customer</h2>
+              <h2 style={styles.modalTitle}>{editingCustomer ? 'Edit Customer Details' : 'Register New Customer'}</h2>
               <button style={styles.closeButton} onClick={() => setIsModalOpen(false)}>×</button>
             </div>
 
             <form onSubmit={handleSubmit} style={styles.formGrid}>
               <div style={styles.inputGroup}>
-                <label style={styles.label}>Customer Code (Sequential)</label>
+                <label style={styles.label}>Customer Code</label>
                 <input 
                   type="text" 
                   name="code" 
                   value={formData.code}
                   onChange={handleInputChange}
+                  readOnly={Boolean(editingCustomer)} // Keep code read-only when editing
                   style={{ ...styles.input, backgroundColor: '#f9f9f9', fontWeight: 'bold' }}
                 />
               </div>
@@ -333,7 +352,7 @@ export default function Customers() {
                   type="submit" 
                   style={styles.primaryButton}
                 >
-                  Save Customer
+                  {editingCustomer ? 'Update Changes' : 'Save Customer'}
                 </button>
               </div>
             </form>
