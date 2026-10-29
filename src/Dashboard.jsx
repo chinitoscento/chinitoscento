@@ -175,7 +175,7 @@ export default function Dashboard({ onNavigate }) {
       }, 0);
       setTotalFinishedGoods(totalFG);
 
-      // 8. Production Batches & Maceration Batches Status Check
+      // 8. Production Batches & Maceration Batches Status Check from maceration table
       const macerationBatches = macerationData || [];
       let maceratingCount = 0;
       let readyCount = 0;
@@ -189,14 +189,16 @@ export default function Dashboard({ onNavigate }) {
         }
       });
 
+      // Production Batches: Strictly Ready status count
       setProductionSummary({
         text: readyCount > 0 ? `${readyCount} Ready for Packaging` : 'Awaiting packaging',
-        count: readyCount + maceratingCount
+        count: readyCount 
       });
 
+      // Maceration Batches: Strictly Macerating status count
       setMacerationSummary({
-        text: `${maceratingCount} Actively Aging`,
-        count: maceratingCount
+        text: maceratingCount > 0 ? `${maceratingCount} Actively Aging` : 'No active aging batches',
+        count: maceratingCount 
       });
 
       // 9. Total Net Sales Calculation (Gross Sales minus Sales Returns)
@@ -453,6 +455,6 @@ const styles = {
     fontSize: '13px',
     color: primaryGold,
     fontWeight: '600',
-    letterSpacing: '0.3px',
+    letterSpacing: '0.3.3px',
   },
 };

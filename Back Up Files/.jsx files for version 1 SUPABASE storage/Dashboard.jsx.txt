@@ -5,7 +5,9 @@ export default function Dashboard({ onNavigate }) {
   const [lowStockCount, setLowStockCount] = useState(0);
   const [totalFinishedGoods, setTotalFinishedGoods] = useState(0);
   const [productionSummary, setProductionSummary] = useState({ text: '—', count: 0 });
+  const [macerationSummary, setMacerationSummary] = useState({ text: '—', count: 0 });
   const [totalNetSales, setTotalNetSales] = useState(0);
+  const [totalCollection, setTotalCollection] = useState(0);
 
   useEffect(() => {
     loadDashboardData();
@@ -55,13 +57,14 @@ export default function Dashboard({ onNavigate }) {
         // Safe fallback
       }
 
-      // 4. Fetch finished goods, maceration, sales orders, and sales returns
+      // 4. Fetch finished goods, maceration, sales orders, collections, and sales returns
       const { data: fgData } = await supabase.from('finished_goods').select('*');
       const { data: macerationData } = await supabase.from('maceration').select('*');
       const { data: soData } = await supabase.from('sales_orders').select('*');
+      const { data: colData } = await supabase.from('collections').select('*');
       const { data: srData } = await supabase.from('sales_returns').select('*');
 
-      // 5. Aggregate Stock via Ledger
+      // 5. Aggregate Stock via Ledger (Fixed: using 'RM' instead of 'COGS')
       const itemMap = new Map();
 
       (catalogueData || []).forEach(cat => {
@@ -115,7 +118,7 @@ export default function Dashboard({ onNavigate }) {
           const volSource = lineContainerVol || matchedItem.volumeSize;
           const volInfo = parseVolumeSize(volSource);
           matchedItem.stockQty += lineQty * volInfo.sizeVal;
-        } else if (lineName && (lineType === 'COGS' || lineType === 'PACKAGING_DEDUCTION' || lineType === 'PACAKAGIN_DEDUCTION')) {
+        } else if (lineName && (lineType === 'RM' || lineType === 'PACKAGING_DEDUCTION' || lineType === 'PACAKAGIN_DEDUCTION')) {
           const isLiquid = nameKey.includes('oil') || nameKey.includes('solvent') || nameKey.includes('liquid');
           const defaultVol = lineContainerVol || (isLiquid ? '250ml' : '1');
           const volInfo = parseVolumeSize(defaultVol);
@@ -141,7 +144,7 @@ export default function Dashboard({ onNavigate }) {
 
       const inventoryList = Array.from(uniqueItemsMap.values());
 
-      // 6. Counts logic
+      // 6. Counts logic for Low Stock
       const counts = inventoryList.reduce((acc, item) => {
         const key = item.code || item.rawMaterial;
         const threshold = savedThresholds[key] !== undefined ? Number(savedThresholds[key]) : 10;
@@ -172,7 +175,7 @@ export default function Dashboard({ onNavigate }) {
       }, 0);
       setTotalFinishedGoods(totalFG);
 
-      // 8. Production Batches Status Check
+      // 8. Production Batches & Maceration Batches Status Check
       const macerationBatches = macerationData || [];
       let maceratingCount = 0;
       let readyCount = 0;
@@ -186,13 +189,15 @@ export default function Dashboard({ onNavigate }) {
         }
       });
 
-      if (readyCount > 0) {
-        setProductionSummary({ text: `${readyCount} Ready for Packaging`, count: readyCount });
-      } else if (maceratingCount > 0) {
-        setProductionSummary({ text: `${maceratingCount} Macerating`, count: maceratingCount });
-      } else {
-        setProductionSummary({ text: '—', count: 0 });
-      }
+      setProductionSummary({
+        text: readyCount > 0 ? `${readyCount} Ready for Packaging` : 'Awaiting packaging',
+        count: readyCount + maceratingCount
+      });
+
+      setMacerationSummary({
+        text: `${maceratingCount} Actively Aging`,
+        count: maceratingCount
+      });
 
       // 9. Total Net Sales Calculation (Gross Sales minus Sales Returns)
       const allSales = soData || [];
@@ -211,7 +216,14 @@ export default function Dashboard({ onNavigate }) {
         return sum + amount;
       }, 0);
 
-      setTotalNetSales(Math.max(0, grossSalesSum - totalReturnsSum));
+      const netSales = Math.max(0, grossSalesSum - totalReturnsSum);
+      setTotalNetSales(netSales);
+
+      // 10. For Collection (Accounts Receivable / Unpaid balances)
+      const collections = colData || [];
+      const totalPaidCollections = collections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
+      const totalReceivable = Math.max(0, netSales - totalPaidCollections);
+      setTotalCollection(totalReceivable);
 
     } catch (err) {
       console.error('Error loading dashboard data from Supabase:', err);
@@ -226,103 +238,132 @@ export default function Dashboard({ onNavigate }) {
         <p style={styles.pageSubtitle}>Welcome back, Administrator. Here is a high-level overview of your perfume operations.</p>
       </div>
 
-      {/* Metric Cards Grid */}
-      <div style={styles.metricsGrid}>
-        {/* TOTAL NET SALES CARD */}
-        <div 
-          style={{ ...styles.card, ...styles.clickableCard }}
-          onClick={() => {
-            if (onNavigate) {
-              onNavigate('Sales Production Report', 'Reports');
-            } else {
-              window.location.hash = 'sales-production-report';
-            }
-          }}
-          title="Click to view Sales & Production Report"
-        >
-          <span style={styles.cardLabel}>TOTAL NET SALES</span>
-          <span style={styles.cardValue}>
-            ₱{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-          </span>
-          <span style={styles.cardSub}>Gross sales less returns</span>
-        </div>
-        
-        {/* NET INCOME CARD */}
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>NET INCOME</span>
-          <span style={styles.cardValue}>—</span>
-          <span style={styles.cardSub}>After operating expenses</span>
-        </div>
-        
-        {/* RAW MATERIALS LOW STOCK CARD */}
-        <div 
-          style={{ ...styles.card, ...styles.clickableCard }}
-          onClick={() => {
-            if (onNavigate) {
-              onNavigate('Raw Materials', 'Manufacturing');
-            } else {
-              window.location.hash = 'raw-materials';
-            }
-          }}
-          title="Click to view Raw Materials Inventory"
-        >
-          <span style={styles.cardLabel}>RAW MATERIALS</span>
-          <span style={{ ...styles.cardValue, color: lowStockCount > 0 ? '#dc2626' : '#121212' }}>
-            {lowStockCount}
-          </span>
-          <span style={{ ...styles.cardSub, color: lowStockCount > 0 ? '#dc2626' : primaryGold }}>
-            {lowStockCount > 0 ? `${lowStockCount} Items in Low Stock` : 'Active stock ingredients'}
-          </span>
-        </div>
-        
-        {/* FINISHED GOODS CARD */}
-        <div 
-          style={{ ...styles.card, ...styles.clickableCard }}
-          onClick={() => {
-            if (onNavigate) {
-              onNavigate('Finished Goods', 'Manufacturing');
-            } else {
-              window.location.hash = 'finished-goods';
-            }
-          }}
-          title="Click to view Finished Goods Inventory"
-        >
-          <span style={styles.cardLabel}>FINISHED GOODS</span>
-          <span style={styles.cardValue}>{totalFinishedGoods.toLocaleString()}</span>
-          <span style={styles.cardSub}>Ready for distribution</span>
-        </div>
+      {/* --- SECTION 1: PERFORMANCE --- */}
+      <div style={styles.sectionContainer}>
+        <h3 style={styles.sectionHeader}>Performance</h3>
+        <div style={styles.metricsGrid}>
+          {/* TOTAL NET SALES CARD */}
+          <div 
+            style={{ ...styles.card, ...styles.clickableCard }}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('Sales Production Report', 'Reports');
+              } else {
+                window.location.hash = 'sales-production-report';
+              }
+            }}
+            title="Click to view Sales & Production Report"
+          >
+            <span style={styles.cardLabel}>TOTAL NET SALES</span>
+            <span style={styles.cardValue}>
+              ₱{totalNetSales.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span style={styles.cardSub}>Gross sales less returns</span>
+          </div>
+          
+          {/* NET INCOME CARD */}
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>TOTAL NET INCOME</span>
+            <span style={styles.cardValue}>—</span>
+            <span style={styles.cardSub}>After operating expenses</span>
+          </div>
 
-        {/* PRODUCTION BATCHES CARD */}
-        <div 
-          style={{ ...styles.card, ...styles.clickableCard }}
-          onClick={() => {
-            if (onNavigate) {
-              onNavigate('Maceration', 'Manufacturing');
-            } else {
-              window.location.hash = 'maceration';
-            }
-          }}
-          title="Click to view Maceration page"
-        >
-          <span style={styles.cardLabel}>PRODUCTION BATCHES</span>
-          <span style={{ ...styles.cardValue, color: productionSummary.count > 0 ? '#0369a1' : '#121212' }}>
-            {productionSummary.count > 0 ? productionSummary.count : '—'}
-          </span>
-          <span style={styles.cardSub}>{productionSummary.text}</span>
+          {/* FOR COLLECTION CARD */}
+          <div style={styles.card}>
+            <span style={styles.cardLabel}>FOR COLLECTION</span>
+            <span style={styles.cardValue}>
+              ₱{totalCollection.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <span style={styles.cardSub}>Outstanding receivables</span>
+          </div>
         </div>
+      </div>
 
-        {/* PENDING SALES ORDERS CARD */}
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>PENDING SALES ORDERS</span>
-          <span style={styles.cardValue}>—</span>
-          <span style={styles.cardSub}>Awaiting processing</span>
+      {/* --- SECTION 2: INVENTORY --- */}
+      <div style={styles.sectionContainer}>
+        <h3 style={styles.sectionHeader}>Inventory</h3>
+        <div style={styles.metricsGrid}>
+          {/* RAW MATERIALS CARD */}
+          <div 
+            style={{ ...styles.card, ...styles.clickableCard }}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('Raw Materials', 'Manufacturing');
+              } else {
+                window.location.hash = 'raw-materials';
+              }
+            }}
+            title="Click to view Raw Materials Inventory"
+          >
+            <span style={styles.cardLabel}>RAW MATERIALS</span>
+            <span style={{ ...styles.cardValue, color: lowStockCount > 0 ? '#dc2626' : '#121212' }}>
+              {lowStockCount}
+            </span>
+            <span style={{ ...styles.cardSub, color: lowStockCount > 0 ? '#dc2626' : primaryGold }}>
+              {lowStockCount > 0 ? `${lowStockCount} Items in Low Stock` : 'Active stock ingredients'}
+            </span>
+          </div>
+          
+          {/* FINISHED GOODS CARD */}
+          <div 
+            style={{ ...styles.card, ...styles.clickableCard }}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('Finished Goods', 'Manufacturing');
+              } else {
+                window.location.hash = 'finished-goods';
+              }
+            }}
+            title="Click to view Finished Goods Inventory"
+          >
+            <span style={styles.cardLabel}>FINISHED GOODS AVAILABLE</span>
+            <span style={styles.cardValue}>{totalFinishedGoods.toLocaleString()}</span>
+            <span style={styles.cardSub}>Ready for distribution</span>
+          </div>
         </div>
+      </div>
 
-        {/* COLLECTION CARD */}
-        <div style={styles.card}>
-          <span style={styles.cardLabel}>COLLECTION</span>
-          <span style={styles.cardValue}>—</span>
-          <span style={styles.cardSub}>Accounts receivable total</span>
+      {/* --- SECTION 3: MANUFACTURING --- */}
+      <div style={styles.sectionContainer}>
+        <h3 style={styles.sectionHeader}>Manufacturing</h3>
+        <div style={styles.metricsGrid}>
+          {/* PRODUCTION BATCHES CARD */}
+          <div 
+            style={{ ...styles.card, ...styles.clickableCard }}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('Maceration', 'Manufacturing');
+              } else {
+                window.location.hash = 'maceration';
+              }
+            }}
+            title="Click to view Production Batches"
+          >
+            <span style={styles.cardLabel}>PRODUCTION BATCHES</span>
+            <span style={{ ...styles.cardValue, color: productionSummary.count > 0 ? '#0369a1' : '#121212' }}>
+              {productionSummary.count > 0 ? productionSummary.count : '—'}
+            </span>
+            <span style={styles.cardSub}>{productionSummary.text}</span>
+          </div>
+
+          {/* MACERATION BATCHES CARD */}
+          <div 
+            style={{ ...styles.card, ...styles.clickableCard }}
+            onClick={() => {
+              if (onNavigate) {
+                onNavigate('Maceration', 'Manufacturing');
+              } else {
+                window.location.hash = 'maceration';
+              }
+            }}
+            title="Click to view Maceration Batches"
+          >
+            <span style={styles.cardLabel}>MACERATION BATCHES</span>
+            <span style={{ ...styles.cardValue, color: macerationSummary.count > 0 ? '#0369a1' : '#121212' }}>
+              {macerationSummary.count > 0 ? macerationSummary.count : '—'}
+            </span>
+            <span style={styles.cardSub}>{macerationSummary.text}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -336,10 +377,11 @@ const styles = {
     width: '100%',
     maxWidth: '100%',
     boxSizing: 'border-box',
+    paddingBottom: '40px',
   },
   headerBlock: {
     textAlign: 'center',
-    marginBottom: '35px',
+    marginBottom: '30px',
   },
   pageTitle: {
     fontSize: '24px',
@@ -355,9 +397,23 @@ const styles = {
     margin: 0,
     letterSpacing: '0.3px',
   },
+  sectionContainer: {
+    marginBottom: '28px',
+  },
+  sectionHeader: {
+    fontSize: '15px',
+    fontWeight: '700',
+    color: '#333333',
+    fontFamily: "'Cinzel', 'Segoe UI', serif",
+    letterSpacing: '1px',
+    textTransform: 'uppercase',
+    marginBottom: '14px',
+    borderBottom: '2px solid #e5e2de',
+    paddingBottom: '6px',
+  },
   metricsGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
     gap: '20px',
     width: '100%',
     boxSizing: 'border-box',
