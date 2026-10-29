@@ -27,6 +27,7 @@ import JournalEntries from './JournalEntries.jsx';
 import BalanceSheet from './BalanceSheet.jsx';
 import IncomeStatement from './IncomeStatement.jsx';
 import StatementOfEquity from './StatementOfEquity.jsx';
+import CashFlowStatement from './CashFlowStatement.jsx';
 import NotesToFinancialStatements from './NotesToFinancialStatements.jsx';
 
 import logo from './logo.png';
@@ -560,6 +561,8 @@ export default function MainLayout({ onLogout }) {
         return <IncomeStatement />;
       case 'Equity':
         return <StatementOfEquity />;
+      case 'Cash Flows':
+        return <CashFlowStatement />;
       case 'Notes to Financial Statements':
         return <NotesToFinancialStatements />;
       case 'Schedule of Accounts Receivables':
@@ -657,6 +660,7 @@ export default function MainLayout({ onLogout }) {
             'Balance Sheet', 
             'Income Statement', 
             'Equity', 
+            'Cash Flows',
             'Notes to Financial Statements',
             'Schedule of Accounts Receivables',
             'Schedule of Accounts Payable'

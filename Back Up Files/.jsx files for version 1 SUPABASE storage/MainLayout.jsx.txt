@@ -17,6 +17,7 @@ import Salesorder from './Salesorder.jsx';
 import SalesReturns from './SalesReturns.jsx';
 import Collections from './Collections.jsx';
 import CustomerLedger from './CustomerLedger.jsx';
+import StatementOfAccount from './StatementOfAccount.jsx'; // ✦ Newly Added Statement of Account Module
 import Payments from './PayablesPayments.jsx';
 import SystemSettings from './SystemSettings.jsx';
 import AnalyticsReports from './AnalyticsReports.jsx';
@@ -72,7 +73,6 @@ function ScheduleAccountsReceivables() {
         const custName = so.customer_name || so.customerName || 'Unknown Customer';
         const txnDate = so.date || so.order_date || '2026-01-01';
 
-        // Calculate paid for this specific SO
         const paid = collections
           .filter(c => String(c.invoice_no || c.invoiceNo || c.so_number || c.soNumber || '').trim() === String(soNum || '').trim())
           .reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
@@ -86,7 +86,7 @@ function ScheduleAccountsReceivables() {
           customer_name: custName,
           so_number: soNum,
           due_date: dueDate,
-          total_amount: balance, // Outstanding balance
+          total_amount: balance,
           aging
         };
       }).filter(item => item.total_amount > 0);
@@ -546,6 +546,8 @@ export default function MainLayout({ onLogout }) {
         return <Collections />;
       case 'Customer Ledger':
         return <CustomerLedger />;
+      case 'Statement of Account': // ✦ Statement of Account View Case
+        return <StatementOfAccount />;
       case 'Payments':
         return <Payments />;
       case 'System Settings':
@@ -584,7 +586,6 @@ export default function MainLayout({ onLogout }) {
             size: auto;
             margin: 10mm;
           }
-          /* ✦ Remove position fixed & overflow hidden from parent container when printing */
           html, body, #root, div, main, section {
             overflow: visible !important;
             height: auto !important;
@@ -640,7 +641,14 @@ export default function MainLayout({ onLogout }) {
 
           {renderSection('Selling', ['Sales Order', 'Sales Returns'])}
                   
-          {!isManager && renderSection('Finance', ['Collections', 'Customer Ledger', 'Payments', 'Ledger Audit'])}
+          {/* ✦ Finance Section with Statement of Account placed directly below Customer Ledger */}
+          {!isManager && renderSection('Finance', [
+            'Collections', 
+            'Customer Ledger', 
+            'Statement of Account', 
+            'Payments', 
+            'Ledger Audit'
+          ])}
 
           {renderSection('Reports', ['Sales Production Report','Analytics Reports'])}
 

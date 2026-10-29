@@ -1,23 +1,26 @@
 account_code,account_name,account_type,sub_category,is_active,created_at
-1000,Cash on Hand / Bank,Asset,Current Assets,true,2026-10-18 08:43:17.165839+08
-1200,Accounts Receivable,Asset,Current Assets,true,2026-10-18 08:43:17.165839+08
-1310,Raw Materials Inventory,Asset,Current Assets,true,2026-10-18 08:43:17.165839+08
-1320,Finished Goods Inventory,Asset,Current Assets,true,2026-10-18 08:43:17.165839+08
-1330,Work-in-Process / Macerating Inventory,Asset,Current Assets,true,2026-10-18 08:43:17.165839+08
-1500,Equipment & Perfume Vessels,Asset,Non-Current Assets,true,2026-10-20 09:38:01.877798+08
-2000,Accounts Payable,Liability,Current Liabilities,true,2026-10-18 08:43:17.165839+08
-3000,Owner s Capital,Equity,Equity,true,2026-10-18 08:43:17.165839+08
-4000,Sales Revenue,Revenue,Operating Revenue,true,2026-10-18 08:43:17.165839+08
-4050,Sales Returns & Allowances,Revenue,Contra Revenue,true,2026-10-22 12:01:07.998649+08
-5000,Cost of Goods Sold (COGS),Expense,Cost of Sales,true,2026-10-18 08:43:17.165839+08
-6000,Macerating Equipment,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6010,Rent Expense,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6020,Payroll & Benefits,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6030,Tester Kits,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6040,Shipping Fee,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6050,Marketing Ads,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6060,Telecom & Internet,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6070,Transportation,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6080,Utilities,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6090,Interest,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
-6100,Miscellaneous / Others,Expense,Operating Expenses,true,2026-10-18 08:43:17.165839+08
+1000,Cash on Hand / Bank,Asset,Current Assets,true,2026-09-26 15:33:53.801158+08
+1200,Accounts Receivable,Asset,Current Assets,true,2026-09-26 15:33:53.801158+08
+1210,Allowance for Doubtful Accounts,Asset,Current Assets,true,2026-10-28 07:34:25.096514+08
+1300,Inventory (Raw Materials & Finished Goods),Asset,Current Assets,true,2026-09-26 15:33:53.801158+08
+1310,Raw Materials Inventory,Asset,Current Assets,true,2026-09-26 15:52:27.290482+08
+1320,Finished Goods Inventory,Asset,Current Assets,true,2026-09-26 15:52:27.290482+08
+1330,Work-in-Process / Macerating Inventory,Asset,Current Assets,true,2026-09-30 08:23:10.122109+08
+1500,Equipment & Perfume Vessels,Asset,Non-Current Assets,true,2026-10-20 09:36:57.205975+08
+2000,Accounts Payable,Liability,Current Liabilities,true,2026-09-26 15:33:53.801158+08
+3000,Owner s Capital,Equity,Equity,true,2026-09-26 15:33:53.801158+08
+4000,Sales Revenue,Revenue,Operating Revenue,true,2026-09-26 15:33:53.801158+08
+4050,Sales Returns & Allowances,Revenue,Contra Revenue,true,2026-10-22 14:55:03.713083+08
+5000,Cost of Goods Sold (COGS),Expense,Cost of Sales,true,2026-09-26 15:33:53.801158+08
+6000,Macerating Equipment,Expense,Operating Expenses,true,2026-09-26 15:33:53.801158+08
+6010,Rent Expense,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6020,Payroll & Benefits,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6030,Tester Kits,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6040,Shipping Fee,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6050,Marketing Ads,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6060,Telecom & Internet,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6070,Transportation,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6080,Utilities,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6090,Interest,Expense,Operating Expenses,true,2026-09-28 22:11:03.451891+08
+6100,Miscellaneous / Others,Expense,Operating Expenses,true,2026-09-28 22:19:42.310509+08
+6110,Bad Debt Expense,Expense,Operating Expenses,true,2026-10-28 07:34:25.096514+08
