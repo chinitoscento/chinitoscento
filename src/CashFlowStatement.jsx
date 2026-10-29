@@ -3,106 +3,116 @@ import { supabase } from './supabaseClient';
 
 export default function CashFlowStatement() {
   const [loading, setLoading] = useState(true);
-  const [statement, setStatement] = useState({
+  const [data, setData] = useState({
     netIncome: 0,
     arChange: 0,
     rmChange: 0,
     wipChange: 0,
     fgChange: 0,
     apChange: 0,
-    operatingCashFlow: 0,
-    investingCashFlow: 0,
-    financingCashFlow: 0,
+    operatingCF: 0,
+    investingCF: 0,
+    financingCF: 0,
     netCashChange: 0,
-    beginningCash: 0,
-    endingCash: 0,
+    endingCash: 0
   });
 
   useEffect(() => {
-    fetchLedgerCashFlow();
+    fetchLiveDatabaseCashFlow();
   }, []);
 
-  const fetchLedgerCashFlow = async () => {
+  const fetchLiveDatabaseCashFlow = async () => {
     setLoading(true);
     try {
-      const [{ data: lines }, { data: accounts }] = await Promise.all([
+      // Fetch live data directly from database tables
+      const [
+        { data: lines, error: lineError },
+        { data: accounts, error: accError }
+      ] = await Promise.all([
         supabase.from('journal_entry_lines').select('*'),
         supabase.from('chart_of_accounts').select('*')
       ]);
 
-      if (!lines || !accounts) return;
+      if (lineError) throw lineError;
+      if (accError) throw accError;
 
-      const accountMap = {};
-      accounts.forEach(a => {
-        accountMap[a.account_code] = { ...a, debit: 0, credit: 0 };
-      });
-
-      lines.forEach(l => {
-        if (accountMap[l.account_code]) {
-          accountMap[l.account_code].debit += Number(l.debit || 0);
-          accountMap[l.account_code].credit += Number(l.credit || 0);
+      // Aggregate debits and credits per account code directly from journal_entry_lines
+      const accountTotals = {};
+      (lines || []).forEach(l => {
+        const code = Number(l.account_code);
+        if (!accountTotals[code]) {
+          accountTotals[code] = { debit: 0, credit: 0 };
         }
+        accountTotals[code].debit += Number(l.debit || 0);
+        accountTotals[code].credit += Number(l.credit || 0);
       });
 
+      // Helper to get net balance (Debit - Credit)
       const getDebitBalance = (code) => {
-        const a = accountMap[code];
-        return a ? (a.debit - a.credit) : 0;
+        const acc = accountTotals[code];
+        return acc ? (acc.debit - acc.credit) : 0;
       };
 
+      // Helper to get credit-normal balance (Credit - Debit)
       const getCreditBalance = (code) => {
-        const a = accountMap[code];
-        return a ? (a.credit - a.debit) : 0;
+        const acc = accountTotals[code];
+        return acc ? (acc.credit - acc.debit) : 0;
       };
 
-      // 1. Exact Net Income matching Income Statement (Sales - Returns - COGS - Opex)
+      // 1. Income Statement calculation directly from database accounts
       const sales = getCreditBalance(4000);
       const returns = getDebitBalance(4050);
       const netSales = sales - returns;
 
       const cogs = getDebitBalance(5000);
 
-      let opex = 0;
-      Object.keys(accountMap).forEach(code => {
-        if (Number(code) >= 6000 && Number(code) <= 6110) {
-          opex += getDebitBalance(code);
+      // Sum all operating expenses (Account codes 6000 to 6199)
+      let totalOpex = 0;
+      Object.keys(accountTotals).forEach(codeStr => {
+        const code = Number(codeStr);
+        if (code >= 6000 && code < 7000) {
+          totalOpex += getDebitBalance(code);
         }
       });
 
-      const netIncome = netSales - cogs - opex; // Should match ₱23,314.24
+      const netIncome = netSales - cogs - totalOpex;
 
-      // 2. Working Capital Changes (Ending balances from Balance Sheet)
-      const arChange = -getDebitBalance(1200);   // Accounts Receivable
-      const rmChange = -getDebitBalance(1310);   // Raw Materials
-      const wipChange = -getDebitBalance(1330);  // WIP
-      const fgChange = -getDebitBalance(1320);   // Finished Goods
-      const apChange = getCreditBalance(2000);   // Accounts Payable
+      // 2. Working capital changes directly from database balance movements
+      const arChange = -getDebitBalance(1200);
+      const rmChange = -getDebitBalance(1310);
+      const wipChange = -getDebitBalance(1330);
+      const fgChange = -getDebitBalance(1320);
+      const apChange = getCreditBalance(2000);
 
-      const operatingCashFlow = netIncome + arChange + rmChange + wipChange + fgChange + apChange;
+      const operatingCF = netIncome + arChange + rmChange + wipChange + fgChange + apChange;
 
-      // 3. Investing & Financing Activities
-      const investingCashFlow = -getDebitBalance(1500); // Equipment & Vessels
-      const financingCashFlow = getCreditBalance(3000);  // Owner's Capital
+      // 3. Investing Activities (Equipment / Vessels - Acct 1500)
+      const investingCF = -getDebitBalance(1500);
 
-      const netCashChange = operatingCashFlow + investingCashFlow + financingCashFlow;
-      const endingCash = getDebitBalance(1000); // Cash on Hand / Bank (₱9,472.44)
-      const beginningCash = endingCash - netCashChange; // Should reconcile cleanly
+      // 4. Financing Activities (Owner's Capital - Acct 3000)
+      const financingCF = getCreditBalance(3000);
 
-      setStatement({
+      const netCashChange = operatingCF + investingCF + financingCF;
+
+      // Ending Cash directly from Cash on Hand / Bank (Acct 1000)
+      const endingCash = getDebitBalance(1000);
+
+      setData({
         netIncome,
         arChange,
         rmChange,
         wipChange,
         fgChange,
         apChange,
-        operatingCashFlow,
-        investingCashFlow,
-        financingCashFlow,
+        operatingCF,
+        investingCF,
+        financingCF,
         netCashChange,
-        beginningCash: Math.max(0, beginningCash),
-        endingCash,
+        endingCash
       });
+
     } catch (err) {
-      console.error('Error calculating cash flows:', err);
+      console.error('Error reading database for cash flows:', err);
     } finally {
       setLoading(false);
     }
@@ -112,56 +122,53 @@ export default function CashFlowStatement() {
     <div style={{ padding: '40px', backgroundColor: '#faf9f6', color: '#1a1a1a', minHeight: '100vh', fontFamily: "'Cormorant Garamond', 'Cinzel', serif" }}>
       <div style={{ maxWidth: '850px', margin: '0 auto', background: '#fff', padding: '50px', borderRadius: '8px', border: '1px solid #e6e2db', boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
         
-        {/* Header */}
         <div style={{ textAlign: 'center', marginBottom: '40px', borderBottom: '2px solid #c5a059', paddingBottom: '20px' }}>
           <div style={{ fontSize: '12px', fontWeight: '700', letterSpacing: '3px', color: '#c5a059', fontFamily: "'Cinzel', serif" }}>CHINITO SCENTO PERFUMERIES WHOLESALING</div>
           <h1 style={{ fontSize: '28px', fontWeight: '600', color: '#1a1a1a', margin: '10px 0 5px 0', fontFamily: "'Cinzel', serif" }}>Statement of Cash Flows</h1>
-          <p style={{ fontSize: '14px', color: '#666', fontStyle: 'italic' }}>Period: 2026-06-30 to 2026-10-29</p>
+          <p style={{ fontSize: '14px', color: '#666', fontStyle: 'italic' }}>Live Database Query Report</p>
         </div>
 
         {loading ? (
-          <p style={{ textAlign: 'center', fontStyle: 'italic', color: '#888' }}>Compiling cash flows from general ledger...</p>
+          <p style={{ textAlign: 'center', fontStyle: 'italic', color: '#888' }}>Reading journal entry lines from database...</p>
         ) : (
           <div>
             {/* Operating Activities */}
             <div style={{ marginBottom: '30px' }}>
               <h3 style={{ fontSize: '15px', color: '#c5a059', borderBottom: '1px solid #eee', paddingBottom: '8px', fontFamily: "'Cinzel', serif", letterSpacing: '1px' }}>CASH FLOWS FROM OPERATING ACTIVITIES</h3>
-              <div style={rowStyle}><span>Net Income / (Loss)</span> <span style={{fontWeight: '600'}}>₱{statement.netIncome.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+              <div style={rowStyle}><span>Net Income / (Loss)</span> <span style={{fontWeight: '600'}}>₱{data.netIncome.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
               <div style={subHeadingStyle}><span>Adjustments for Working Capital Changes:</span><span></span></div>
-              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Increase in Accounts Receivable (Acct 1200)</span> <span>({formatVal(statement.arChange)})</span></div>
-              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Increase in Raw Materials Inventory (Acct 1310)</span> <span>({formatVal(statement.rmChange)})</span></div>
-              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Increase in Work-in-Process Inventory (Acct 1330)</span> <span>({formatVal(statement.wipChange)})</span></div>
-              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Increase in Finished Goods Inventory (Acct 1320)</span> <span>({formatVal(statement.fgChange)})</span></div>
-              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Increase in Accounts Payable (Acct 2000)</span> <span>₱{statement.apChange.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Accounts Receivable (Acct 1200)</span> <span>{formatVal(data.arChange)}</span></div>
+              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Raw Materials Inventory (Acct 1310)</span> <span>{formatVal(data.rmChange)}</span></div>
+              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Work-in-Process Inventory (Acct 1330)</span> <span>{formatVal(data.wipChange)}</span></div>
+              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Finished Goods Inventory (Acct 1320)</span> <span>{formatVal(data.fgChange)}</span></div>
+              <div style={{...rowStyle, paddingLeft: '20px'}}><span>Accounts Payable (Acct 2000)</span> <span>{formatVal(data.apChange)}</span></div>
               <div style={totalRowStyle}>
                 <span>Net Cash Provided by / (Used in) Operating Activities</span> 
-                <span style={{color: statement.operatingCashFlow < 0 ? '#d9534f' : '#1a1a1a'}}>
-                  {statement.operatingCashFlow < 0 ? `(₱${Math.abs(statement.operatingCashFlow).toLocaleString('en-PH', {minimumFractionDigits: 2})})` : `₱${statement.operatingCashFlow.toLocaleString('en-PH', {minimumFractionDigits: 2})}`}
-                </span>
+                <span>{formatVal(data.operatingCF)}</span>
               </div>
             </div>
 
             {/* Investing Activities */}
             <div style={{ marginBottom: '30px' }}>
               <h3 style={{ fontSize: '15px', color: '#c5a059', borderBottom: '1px solid #eee', paddingBottom: '8px', fontFamily: "'Cinzel', serif", letterSpacing: '1px' }}>CASH FLOWS FROM INVESTING ACTIVITIES</h3>
-              <div style={rowStyle}><span>Purchase of Equipment & Vessels (Acct 1500)</span> <span>({formatVal(statement.investingCashFlow)})</span></div>
-              <div style={totalRowStyle}><span>Net Cash Used in Investing Activities</span> <span>({formatVal(statement.investingCashFlow)})</span></div>
+              <div style={rowStyle}><span>Equipment & Vessels (Acct 1500)</span> <span>{formatVal(data.investingCF)}</span></div>
+              <div style={totalRowStyle}><span>Net Cash Used in Investing Activities</span> <span>{formatVal(data.investingCF)}</span></div>
             </div>
 
             {/* Financing Activities */}
             <div style={{ marginBottom: '30px' }}>
               <h3 style={{ fontSize: '15px', color: '#c5a059', borderBottom: '1px solid #eee', paddingBottom: '8px', fontFamily: "'Cinzel', serif", letterSpacing: '1px' }}>CASH FLOWS FROM FINANCING ACTIVITIES</h3>
-              <div style={rowStyle}><span>Owner Capital Contributions (Acct 3000)</span> <span>₱{statement.financingCashFlow.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
-              <div style={totalRowStyle}><span>Net Cash Provided by Financing Activities</span> <span>₱{statement.financingCashFlow.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+              <div style={rowStyle}><span>Owner's Capital (Acct 3000)</span> <span>{formatVal(data.financingCF)}</span></div>
+              <div style={totalRowStyle}><span>Net Cash Provided by Financing Activities</span> <span>{formatVal(data.financingCF)}</span></div>
             </div>
 
             {/* Summary */}
             <div style={{ marginTop: '40px', borderTop: '2px solid #333', paddingTop: '20px' }}>
-              <div style={rowStyle}><span>Net Increase in Cash</span> <span style={{fontWeight: 'bold'}}>₱{statement.netCashChange.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
-              <div style={rowStyle}><span>Cash Balance at Beginning of Period</span> <span>₱{statement.beginningCash.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+              <div style={rowStyle}><span>Net Increase in Cash</span> <span style={{fontWeight: 'bold'}}>₱{data.netCashChange.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span></div>
+              <div style={rowStyle}><span>Cash Balance at Beginning of Period</span> <span>₱0.00</span></div>
               <div style={{...rowStyle, fontSize: '17px', fontWeight: 'bold', color: '#c5a059', marginTop: '10px', borderTop: '1px solid #ddd', paddingTop: '10px'}}>
                 <span>Cash Balance at End of Period (Acct 1000)</span> 
-                <span>₱{statement.endingCash.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span>
+                <span>₱{data.endingCash.toLocaleString('en-PH', {minimumFractionDigits: 2})}</span>
               </div>
             </div>
 
@@ -172,10 +179,9 @@ export default function CashFlowStatement() {
   );
 }
 
-// Helper to format negative vs positive values cleanly in parentheses
 function formatVal(val) {
   const absVal = Math.abs(val).toLocaleString('en-PH', {minimumFractionDigits: 2});
-  return val < 0 ? `₱${absVal}` : `₱${absVal}`;
+  return val < 0 ? `(₱${absVal})` : `₱${absVal}`;
 }
 
 const rowStyle = {
