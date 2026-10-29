@@ -835,14 +835,40 @@ export default function Salesorder() {
   return (
     <div style={styles.container}>
       <style>{`
+        @page {
+          size: letter;
+          margin: 10mm;
+        }
         @media print {
+          body, html {
+            background: #ffffff !important;
+            color: #111827 !important;
+            height: 100% !important;
+            overflow: visible !important;
+          }
           body * { visibility: hidden; }
           #printable-invoice, #printable-invoice * { visibility: visible; }
           .invoice-overlay, .invoice-modal-wrapper {
-            position: static !important; display: block !important; background: transparent !important; width: 100% !important; height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important;
+            position: static !important; 
+            display: block !important; 
+            background: transparent !important; 
+            width: 100% !important; 
+            height: auto !important; 
+            margin: 0 !important; 
+            padding: 0 !important; 
+            overflow: visible !important;
+            box-shadow: none !important;
           }
           #printable-invoice {
-            position: absolute; left: 0; top: 0; width: 100%; margin: 0; padding: 0; box-sizing: border-box !important; background: #ffffff !important; box-shadow: none !important;
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            margin: 0; 
+            padding: 10px 20px !important; 
+            box-sizing: border-box !important; 
+            background: #ffffff !important; 
+            box-shadow: none !important;
           }
           .no-print, button { display: none !important; }
         }
@@ -1313,47 +1339,47 @@ const styles = {
   invoiceModalActions: { padding: '12px 20px', backgroundColor: '#f3f4f6', borderBottom: '1px solid #e5e7eb', display: 'flex', justifyContent: 'flex-end', gap: '12px' },
   printBtn: { backgroundColor: '#111827', color: '#ffffff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
   closeInvoiceBtn: { backgroundColor: 'transparent', border: '1px solid #d1d5db', color: '#374151', padding: '8px 16px', borderRadius: '6px', fontWeight: '600', fontSize: '13px', cursor: 'pointer' },
-  invoiceContainer: { padding: '56px', backgroundColor: '#ffffff', overflowY: 'auto', flex: 1 },
+  invoiceContainer: { padding: '36px 48px', backgroundColor: '#ffffff', overflowY: 'auto', flex: 1 },
   invoiceHeader: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' },
-  invoiceBrand: { display: 'flex', gap: '18px', alignItems: 'center' },
-  invoiceLogo: { width: '64px', height: '64px', objectFit: 'contain' },
+  invoiceBrand: { display: 'flex', gap: '16px', alignItems: 'center' },
+  invoiceLogo: { width: '56px', height: '56px', objectFit: 'contain' },
   invoiceBrandTextContainer: { display: 'flex', flexDirection: 'column' },
-  invoiceBrandTitle: { fontSize: '22px', fontWeight: '800', letterSpacing: '0.1em', color: '#111827', marginBottom: '4px' },
-  invoiceGoldDividerShort: { width: '40px', height: '2px', backgroundColor: '#d4af37', marginBottom: '6px' },
-  invoiceBrandSub: { fontSize: '11px', color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' },
+  invoiceBrandTitle: { fontSize: '20px', fontWeight: '800', letterSpacing: '0.1em', color: '#111827', marginBottom: '2px' },
+  invoiceGoldDividerShort: { width: '36px', height: '2px', backgroundColor: '#d4af37', marginBottom: '4px' },
+  invoiceBrandSub: { fontSize: '10px', color: '#6b7280', letterSpacing: '0.08em', textTransform: 'uppercase' },
   invoiceMetaRight: { textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end' },
-  invoiceTitle: { fontSize: '26px', fontWeight: '900', letterSpacing: '0.15em', color: '#d4af37', marginBottom: '12px' },
-  invoiceMetaTable: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  invoiceMetaRow: { display: 'flex', justifyContent: 'flex-end', gap: '12px', fontSize: '13px' },
+  invoiceTitle: { fontSize: '22px', fontWeight: '900', letterSpacing: '0.15em', color: '#d4af37', marginBottom: '8px' },
+  invoiceMetaTable: { display: 'flex', flexDirection: 'column', gap: '3px' },
+  invoiceMetaRow: { display: 'flex', justifyContent: 'flex-end', gap: '10px', fontSize: '12px' },
   invoiceMetaLabel: { color: '#6b7280', fontWeight: '500' },
   invoiceMetaVal: { color: '#111827', fontWeight: '600', letterSpacing: '0.02em' },
-  invoiceDividerThick: { height: '2px', backgroundColor: '#111827', margin: '36px 0 28px 0' },
-  invoiceGridSection: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '40px', marginBottom: '36px', fontSize: '13px' },
-  invoiceBillToBox: { display: 'flex', flexDirection: 'column', gap: '4px' },
-  invoiceTermsBox: { display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-end', textAlign: 'right' },
-  invoiceSectionTitle: { fontSize: '11px', fontWeight: '800', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '8px' },
-  invoiceCustomerName: { fontSize: '16px', fontWeight: '700', color: '#111827', marginBottom: '4px', letterSpacing: '0.02em' },
-  invoiceText: { color: '#4b5563', marginBottom: '3px' },
-  invoiceTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '28px', fontSize: '13px' },
+  invoiceDividerThick: { height: '2px', backgroundColor: '#111827', margin: '24px 0 20px 0' },
+  invoiceGridSection: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '30px', marginBottom: '24px', fontSize: '12.5px' },
+  invoiceBillToBox: { display: 'flex', flexDirection: 'column', gap: '3px' },
+  invoiceTermsBox: { display: 'flex', flexDirection: 'column', gap: '3px', alignItems: 'flex-end', textAlign: 'right' },
+  invoiceSectionTitle: { fontSize: '10.5px', fontWeight: '800', color: '#d4af37', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' },
+  invoiceCustomerName: { fontSize: '15px', fontWeight: '700', color: '#111827', marginBottom: '2px', letterSpacing: '0.02em' },
+  invoiceText: { color: '#4b5563', marginBottom: '2px' },
+  invoiceTable: { width: '100%', borderCollapse: 'collapse', marginBottom: '20px', fontSize: '12.5px' },
   invoiceTrHead: { borderBottom: '2px solid #111827', backgroundColor: '#f9fafb' },
-  invoiceTh: { padding: '12px 16px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.08em', textAlign: 'left' },
-  invoiceThCenter: { padding: '12px 16px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.08em', textAlign: 'center' },
-  invoiceThRight: { padding: '12px 16px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.08em', textAlign: 'right' },
+  invoiceTh: { padding: '10px 14px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.08em', textAlign: 'left' },
+  invoiceThCenter: { padding: '10px 14px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.08em', textAlign: 'center' },
+  invoiceThRight: { padding: '10px 14px', color: '#374151', fontWeight: '700', textTransform: 'uppercase', fontSize: '10.5px', letterSpacing: '0.08em', textAlign: 'right' },
   invoiceTrBody: { borderBottom: '1px solid #e5e7eb' },
-  invoiceTd: { padding: '16px', color: '#111827', textAlign: 'left' },
-  invoiceTdCenter: { padding: '16px', color: '#4b5563', textAlign: 'center' },
-  invoiceTdRight: { padding: '16px', color: '#4b5563', textAlign: 'right' },
-  invoiceSummaryWrapper: { display: 'flex', justifyContent: 'flex-end', marginBottom: '56px' },
-  invoiceSummaryCard: { width: '320px', backgroundColor: '#f9fafb', borderRadius: '10px', border: '1px solid #e5e7eb', padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: '10px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' },
+  invoiceTd: { padding: '12px 14px', color: '#111827', textAlign: 'left' },
+  invoiceTdCenter: { padding: '12px 14px', color: '#4b5563', textAlign: 'center' },
+  invoiceTdRight: { padding: '12px 14px', color: '#4b5563', textAlign: 'right' },
+  invoiceSummaryWrapper: { display: 'flex', justifyContent: 'flex-end', marginBottom: '32px' },
+  invoiceSummaryCard: { width: '300px', backgroundColor: '#f9fafb', borderRadius: '8px', border: '1px solid #e5e7eb', padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: '8px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' },
   invoiceSummaryLine: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-  invoiceSummaryDivider: { height: '1px', backgroundColor: '#e5e7eb', margin: '4px 0' },
-  invoiceTotalHighlight: { color: '#b89728', fontSize: '18px', fontWeight: '800', letterSpacing: '0.02em' },
-  invoiceSignatures: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '64px', marginTop: '40px', paddingTop: '20px' },
+  invoiceSummaryDivider: { height: '1px', backgroundColor: '#e5e7eb', margin: '2px 0' },
+  invoiceTotalHighlight: { color: '#b89728', fontSize: '16px', fontWeight: '800', letterSpacing: '0.02em' },
+  invoiceSignatures: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '48px', marginTop: '24px', paddingTop: '12px' },
   signatureBox: { display: 'flex', flexDirection: 'column' },
-  signatureLine: { height: '1px', backgroundColor: '#9ca3af', marginBottom: '10px' },
-  signatureLabel: { fontSize: '11px', color: '#6b7280', marginBottom: '3px', letterSpacing: '0.02em' },
-  signatureName: { fontSize: '13px', fontWeight: '700', color: '#111827', letterSpacing: '0.05em' },
-  invoiceFooterNote: { marginTop: '56px', textAlign: 'center', fontSize: '12px', color: '#6b7280', fontStyle: 'italic', borderTop: '1px solid #f3f4f6', paddingTop: '24px' },
+  signatureLine: { height: '1px', backgroundColor: '#9ca3af', marginBottom: '8px' },
+  signatureLabel: { fontSize: '10.5px', color: '#6b7280', marginBottom: '2px', letterSpacing: '0.02em' },
+  signatureName: { fontSize: '12.5px', fontWeight: '700', color: '#111827', letterSpacing: '0.05em' },
+  invoiceFooterNote: { marginTop: '32px', textAlign: 'center', fontSize: '11px', color: '#6b7280', fontStyle: 'italic', borderTop: '1px solid #f3f4f6', paddingTop: '16px' },
   notificationSuccess: { backgroundColor: 'rgba(5, 150, 105, 0.2)', border: '1px solid #059669', color: '#34d399', padding: '12px 16px', borderRadius: '8px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500' },
   notificationError: { backgroundColor: 'rgba(220, 38, 38, 0.2)', border: '1px solid #dc2626', color: '#f87171', padding: '12px 16px', borderRadius: '8px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '13px', fontWeight: '500' },
   notificationActionBtn: { backgroundColor: '#059669', color: '#ffffff', border: 'none', padding: '4px 10px', borderRadius: '4px', fontWeight: '600', cursor: 'pointer', fontSize: '12px' },
