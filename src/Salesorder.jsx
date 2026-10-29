@@ -15,6 +15,7 @@ export default function Salesorder() {
 
   const [soNumber, setSoNumber] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState('');
+  const [customerCategory, setCustomerCategory] = useState(''); // ✦ Track customer category for tiered pricing
   const [customerAddress, setCustomerAddress] = useState('');
   const [customerContact, setCustomerContact] = useState('');
   
@@ -204,14 +205,34 @@ export default function Salesorder() {
     return `${prefix}${String(nextSeq).padStart(6, '0')}`;
   };
 
+  // ✦ Tiered Pricing Helper based on Customer Category
+  const getTierPriceForCategory = (category, basePrice) => {
+    const cat = String(category || '').toLowerCase().trim();
+    if (cat.includes('distributor')) return 200.00;
+    if (cat.includes('wholesale')) return 250.00;
+    if (cat.includes('retail') || cat.includes('vip')) return 350.00;
+    return basePrice || 350.00;
+  };
+
   const handleCustomerMasterSelect = (e) => {
     const custName = e.target.value;
     setSelectedCustomer(custName);
     const found = customers.find(c => String(c.name || c.customer_name || c.customerName || c.company_name || c.companyName || '') === String(custName));
     if (found) {
+      const cat = found.category || 'Retail Client';
+      setCustomerCategory(cat);
       setCustomerAddress(found.address || found.location || 'N/A');
       setCustomerContact(found.contact || found.phone || found.mobile || 'N/A');
+
+      // Update active product price if a product is already selected
+      if (selectedProductCode) {
+        const selectedFg = finishedGoods.find(fg => fg.productCode === selectedProductCode || fg.name === selectedProductCode);
+        if (selectedFg) {
+          setItemPrice(getTierPriceForCategory(cat, selectedFg.price));
+        }
+      }
     } else {
+      setCustomerCategory('');
       setCustomerAddress('');
       setCustomerContact('');
     }
@@ -234,7 +255,8 @@ export default function Salesorder() {
     setSelectedProductCode(value);
     const selectedFg = finishedGoods.find(fg => fg.productCode === value || fg.name === value);
     if (selectedFg) {
-      setItemPrice(selectedFg.price || '');
+      // ✦ Auto-fill price according to customer category tier
+      setItemPrice(getTierPriceForCategory(customerCategory, selectedFg.price));
     }
   };
 
@@ -661,6 +683,7 @@ export default function Salesorder() {
       setSoNumber(generateNextSoNumber(updatedList, orderDate));
       
       setSelectedCustomer('');
+      setCustomerCategory('');
       setCustomerAddress('');
       setCustomerContact('');
       setPaymentTerms('');
@@ -941,7 +964,7 @@ export default function Salesorder() {
                         <option value="" style={{ color: '#000000', backgroundColor: '#ffffff' }}>Select Customer...</option>
                         {customers.map((c, i) => {
                           const name = c.name || c.customer_name || c.customerName || c.company_name || c.companyName || '';
-                          return name ? <option key={i} value={name} style={{ color: '#000000', backgroundColor: '#ffffff' }}>{name}</option> : null;
+                          return name ? <option key={i} value={name} style={{ color: '#000000', backgroundColor: '#ffffff' }}>{name} ({c.category || 'Retail'})</option> : null;
                         })}
                       </select>
                     </div>
@@ -1028,7 +1051,7 @@ export default function Salesorder() {
                   <div style={styles.summaryCard}>
                     <div style={styles.summaryMetaRow}>
                       <span style={{ color: '#a1a1aa' }}>Customer:</span>
-                      <span style={{ fontWeight: '600', color: '#f4f4f5' }}>{selectedCustomer || 'Not selected'}</span>
+                      <span style={{ fontWeight: '600', color: '#f4f4f5' }}>{selectedCustomer || 'Not selected'} {customerCategory ? `(${customerCategory})` : ''}</span>
                     </div>
                     <div style={styles.summaryMetaRow}>
                       <span style={{ color: '#a1a1aa' }}>Terms:</span>
