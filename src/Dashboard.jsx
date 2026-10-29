@@ -57,12 +57,13 @@ export default function Dashboard({ onNavigate }) {
         // Safe fallback
       }
 
-      // 4. Fetch finished goods, maceration, sales orders, collections, and sales returns
+      // 4. Fetch finished goods, maceration, sales orders, sales returns, and journal entry lines (for AR)
       const { data: fgData } = await supabase.from('finished_goods').select('*');
       const { data: macerationData } = await supabase.from('maceration').select('*');
       const { data: soData } = await supabase.from('sales_orders').select('*');
-      const { data: colData } = await supabase.from('collections').select('*');
       const { data: srData } = await supabase.from('sales_returns').select('*');
+      const { data: jeLinesData, error: jeLinesError } = await supabase.from('journal_entry_lines').select('*');
+      if (jeLinesError) console.error('Journal Entry Lines Error:', jeLinesError);
 
       // 5. Aggregate Stock via Ledger
       const itemMap = new Map();
@@ -219,10 +220,20 @@ export default function Dashboard({ onNavigate }) {
       const netSales = Math.max(0, grossSalesSum - totalReturnsSum);
       setTotalNetSales(netSales);
 
-      // 10. For Collection
-      const collections = colData || [];
-      const totalPaidCollections = collections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
-      const totalReceivable = Math.max(0, netSales - totalPaidCollections);
+      // 10. For Collection (Accounts Receivable from journal_entry_lines account_code '1200')
+      const lines = jeLinesData || [];
+      let arDebit = 0;
+      let arCredit = 0;
+
+      lines.forEach(l => {
+        const accCode = String(l.account_code || '').trim();
+        if (accCode === '1200') {
+          arDebit += Number(l.debit || 0);
+          arCredit += Number(l.credit || 0);
+        }
+      });
+
+      const totalReceivable = Math.max(0, arDebit - arCredit);
       setTotalCollection(totalReceivable);
 
     } catch (err) {
@@ -283,7 +294,7 @@ export default function Dashboard({ onNavigate }) {
       <div style={styles.sectionContainer}>
         <h3 style={styles.sectionHeader}>Inventory</h3>
         <div style={styles.metricsGrid}>
-          {/* RAW MATERIALS CARD (Redirects to Raw Materials toggled Alert Level) */}
+          {/* RAW MATERIALS CARD */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {
@@ -328,7 +339,7 @@ export default function Dashboard({ onNavigate }) {
       <div style={styles.sectionContainer}>
         <h3 style={styles.sectionHeader}>Manufacturing</h3>
         <div style={styles.metricsGrid}>
-          {/* PRODUCTION BATCHES CARD (Redirects to Maceration toggled Ready with Standard View) */}
+          {/* PRODUCTION BATCHES CARD */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {
@@ -349,7 +360,7 @@ export default function Dashboard({ onNavigate }) {
             <span style={styles.cardSub}>{productionSummary.text}</span>
           </div>
 
-          {/* MACERATION BATCHES CARD (Redirects to Maceration toggled Macerating with Grouped View) */}
+          {/* MACERATION BATCHES CARD */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {

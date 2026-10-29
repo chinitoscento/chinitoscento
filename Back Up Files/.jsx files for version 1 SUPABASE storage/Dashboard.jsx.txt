@@ -64,7 +64,7 @@ export default function Dashboard({ onNavigate }) {
       const { data: colData } = await supabase.from('collections').select('*');
       const { data: srData } = await supabase.from('sales_returns').select('*');
 
-      // 5. Aggregate Stock via Ledger (Fixed: using 'RM' instead of 'COGS')
+      // 5. Aggregate Stock via Ledger
       const itemMap = new Map();
 
       (catalogueData || []).forEach(cat => {
@@ -189,19 +189,17 @@ export default function Dashboard({ onNavigate }) {
         }
       });
 
-      // Production Batches: Strictly Ready status count
       setProductionSummary({
         text: readyCount > 0 ? `${readyCount} Ready for Packaging` : 'Awaiting packaging',
         count: readyCount 
       });
 
-      // Maceration Batches: Strictly Macerating status count
       setMacerationSummary({
         text: maceratingCount > 0 ? `${maceratingCount} Actively Aging` : 'No active aging batches',
         count: maceratingCount 
       });
 
-      // 9. Total Net Sales Calculation (Gross Sales minus Sales Returns)
+      // 9. Total Net Sales Calculation
       const allSales = soData || [];
       const grossSalesSum = allSales.reduce((sum, order) => {
         const orderStatus = (order.status || order.order_status || '').toLowerCase();
@@ -221,7 +219,7 @@ export default function Dashboard({ onNavigate }) {
       const netSales = Math.max(0, grossSalesSum - totalReturnsSum);
       setTotalNetSales(netSales);
 
-      // 10. For Collection (Accounts Receivable / Unpaid balances)
+      // 10. For Collection
       const collections = colData || [];
       const totalPaidCollections = collections.reduce((sum, c) => sum + Number(c.amount_paid || c.amountPaid || c.credit || 0), 0);
       const totalReceivable = Math.max(0, netSales - totalPaidCollections);
@@ -285,17 +283,18 @@ export default function Dashboard({ onNavigate }) {
       <div style={styles.sectionContainer}>
         <h3 style={styles.sectionHeader}>Inventory</h3>
         <div style={styles.metricsGrid}>
-          {/* RAW MATERIALS CARD */}
+          {/* RAW MATERIALS CARD (Redirects to Raw Materials toggled Alert Level) */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {
+              sessionStorage.setItem('chinito_rm_filter', 'alert');
               if (onNavigate) {
                 onNavigate('Raw Materials', 'Manufacturing');
               } else {
                 window.location.hash = 'raw-materials';
               }
             }}
-            title="Click to view Raw Materials Inventory"
+            title="Click to view Raw Materials in Low Stock Alert"
           >
             <span style={styles.cardLabel}>RAW MATERIALS</span>
             <span style={{ ...styles.cardValue, color: lowStockCount > 0 ? '#dc2626' : '#121212' }}>
@@ -329,17 +328,19 @@ export default function Dashboard({ onNavigate }) {
       <div style={styles.sectionContainer}>
         <h3 style={styles.sectionHeader}>Manufacturing</h3>
         <div style={styles.metricsGrid}>
-          {/* PRODUCTION BATCHES CARD */}
+          {/* PRODUCTION BATCHES CARD (Redirects to Maceration toggled Ready with Standard View) */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {
+              sessionStorage.setItem('chinito_mac_status', 'Ready');
+              sessionStorage.setItem('chinito_mac_view', 'STANDARD');
               if (onNavigate) {
                 onNavigate('Maceration', 'Manufacturing');
               } else {
                 window.location.hash = 'maceration';
               }
             }}
-            title="Click to view Production Batches"
+            title="Click to view Ready Production Batches"
           >
             <span style={styles.cardLabel}>PRODUCTION BATCHES</span>
             <span style={{ ...styles.cardValue, color: productionSummary.count > 0 ? '#0369a1' : '#121212' }}>
@@ -348,17 +349,19 @@ export default function Dashboard({ onNavigate }) {
             <span style={styles.cardSub}>{productionSummary.text}</span>
           </div>
 
-          {/* MACERATION BATCHES CARD */}
+          {/* MACERATION BATCHES CARD (Redirects to Maceration toggled Macerating with Grouped View) */}
           <div 
             style={{ ...styles.card, ...styles.clickableCard }}
             onClick={() => {
+              sessionStorage.setItem('chinito_mac_status', 'Macerating');
+              sessionStorage.setItem('chinito_mac_view', 'GROUPED');
               if (onNavigate) {
                 onNavigate('Maceration', 'Manufacturing');
               } else {
                 window.location.hash = 'maceration';
               }
             }}
-            title="Click to view Maceration Batches"
+            title="Click to view Actively Aging Maceration Batches Grouped"
           >
             <span style={styles.cardLabel}>MACERATION BATCHES</span>
             <span style={{ ...styles.cardValue, color: macerationSummary.count > 0 ? '#0369a1' : '#121212' }}>
@@ -455,6 +458,6 @@ const styles = {
     fontSize: '13px',
     color: primaryGold,
     fontWeight: '600',
-    letterSpacing: '0.3.3px',
+    letterSpacing: '0.3px',
   },
 };
