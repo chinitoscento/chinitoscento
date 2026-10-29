@@ -5,6 +5,10 @@ export default function Maceration() {
   const [productionList, setProductionList] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   
+  // Toggles state
+  const [statusFilter, setStatusFilter] = useState('ALL'); // 'ALL', 'Macerating', 'Ready', 'Bottled'
+  const [viewMode, setViewMode] = useState('STANDARD'); // 'STANDARD', 'GROUPED'
+
   // Form fields
   const [productionCode, setProductionCode] = useState('');
   const [selectedScent, setSelectedScent] = useState('');
@@ -36,13 +40,11 @@ export default function Maceration() {
     let maxSeq = 0;
 
     try {
-      // 1. Fetch existing production codes from the Supabase maceration table
       const { data, error } = await supabase
         .from('maceration')
         .select('production_code')
         .order('id', { ascending: false });
 
-      // 2. Scan database records for the highest sequence number
       if (data && data.length > 0) {
         data.forEach(item => {
           if (item.production_code) {
@@ -60,7 +62,6 @@ export default function Maceration() {
       console.error('Error fetching latest maceration code:', err);
     }
 
-    // 3. Scan local state list safely as fallback
     if (localList && localList.length > 0) {
       localList.forEach(item => {
         const code = item.production_code || item.productionCode || '';
@@ -76,7 +77,6 @@ export default function Maceration() {
       });
     }
 
-    // 4. Increment and format the final string (Target format: MAC-YYYYMMNNNNNN)
     const nextSeq = maxSeq + 1;
     const dateObj = dateString ? new Date(dateString) : new Date();
     const year = dateObj.getFullYear();
@@ -525,7 +525,6 @@ export default function Maceration() {
         .from('maceration')
         .select('production_code');
 
-      // --- FIXED: Added await here to resolve promise to string code ---
       const freshProductionCode = await generateNextProductionCode(latestMacs || productionList, productionDate);
 
       const oilFifoResult = await calculateFifoDepletion(
@@ -579,7 +578,6 @@ export default function Maceration() {
       const { error: insertError } = await supabase.from('maceration').insert([newRecord]);
       if (insertError) throw insertError;
 
-      // --- INSERT RECORD INTO DEDICATED WIP BATCHES TABLE ---
       const { error: wipError } = await supabase.from('wip_batches').insert([{
         mac_code: freshProductionCode,
         product_code: formulationData.productCode,
@@ -590,7 +588,6 @@ export default function Maceration() {
         status: finalStatus
       }]);
       if (wipError) throw wipError;
-      // -----------------------------------------------------
 
       const freshJeNumber = await generateNextJournalNumber('JE-MAC');
 
@@ -645,6 +642,55 @@ export default function Maceration() {
     ? formulations.map(f => f.scentName).filter(Boolean).sort((a, b) => a.localeCompare(b))
     : [];
 
+  // Filtered list based on Status Toggle
+  const filteredList = productionList.filter(item => {
+    if (statusFilter === 'ALL') return true;
+    return (item.status || '').toLowerCase() === statusFilter.toLowerCase();
+  });
+
+  // Grouped per Perfume data computation
+  const groupedPerPerfumeMap = {};
+  filteredList.forEach(item => {
+    const scent = item.scent || 'Unknown';
+    const pCode = item.productCode || item.product_code || '-';
+    const macCode = item.productionCode || item.production_code || '';
+    const vol = Number(item.volumeDesired || item.volume_desired || 0);
+    const qty = Number(item.expectedQty || item.expected_qty || 0);
+    const stat = item.status || 'Macerating';
+    const pDate = item.date || '-';
+    const rDate = item.readyDate || item.ready_date || '-';
+
+    if (!groupedPerPerfumeMap[scent]) {
+      groupedPerPerfumeMap[scent] = {
+        scent,
+        productCode: pCode,
+        macCodes: [],
+        totalVolume: 0,
+        totalQty: 0,
+        statuses: new Set(),
+        latestProdDate: pDate,
+        latestReadyDate: rDate
+      };
+    }
+    groupedPerPerfumeMap[scent].macCodes.push(macCode);
+    groupedPerPerfumeMap[scent].totalVolume += vol;
+    groupedPerPerfumeMap[scent].totalQty += qty;
+    groupedPerPerfumeMap[scent].statuses.add(stat);
+    
+    if (pDate > groupedPerPerfumeMap[scent].latestProdDate) {
+      groupedPerPerfumeMap[scent].latestProdDate = pDate;
+    }
+    if (rDate > groupedPerPerfumeMap[scent].latestReadyDate) {
+      groupedPerPerfumeMap[scent].latestReadyDate = rDate;
+    }
+  });
+
+  const groupedList = Object.values(groupedPerPerfumeMap).map(g => ({
+    ...g,
+    macCodeStr: g.macCodes.join(', '),
+    statusSummary: g.statuses.size > 1 ? 'Mixed / Multiple' : Array.from(g.statuses)[0]
+  }));
+
   return (
     <div style={styles.moduleCard}>
       <div style={styles.headerBlock}>
@@ -663,48 +709,124 @@ export default function Maceration() {
         </div>
       </div>
 
+      {/* --- TOGGLES & FILTERS TOOLBAR --- */}
+      <div style={styles.toolbarContainer}>
+        <div style={styles.filterGroup}>
+          <span style={styles.toolbarLabel}>Filter Status:</span>
+          {['ALL', 'Macerating', 'Ready', 'Bottled'].map(tab => (
+            <button
+              key={tab}
+              onClick={() => setStatusFilter(tab)}
+              style={statusFilter === tab ? styles.activeFilterTab : styles.filterTab}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+
+        <div style={styles.filterGroup}>
+          <span style={styles.toolbarLabel}>View Mode:</span>
+          <button
+            onClick={() => setViewMode('STANDARD')}
+            style={viewMode === 'STANDARD' ? styles.activeFilterTab : styles.filterTab}
+          >
+            Standard Table View
+          </button>
+          <button
+            onClick={() => setViewMode('GROUPED')}
+            style={viewMode === 'GROUPED' ? styles.activeFilterTab : styles.filterTab}
+          >
+            Grouped Per Perfume Summary
+          </button>
+        </div>
+      </div>
+
       <div style={styles.tableContainer}>
-        <table style={styles.table}>
-          <thead>
-            <tr style={styles.trHead}>
-              <th style={styles.th}>MAC CODE</th>
-              <th style={styles.th}>PERFUME SCENT</th>
-              <th style={styles.th}>PRODUCT CODE</th>
-              <th style={styles.th}>DESIRED VOLUME (ML)</th>
-              <th style={styles.th}>EXPECTED QTY</th>
-              <th style={styles.th}>STATUS</th>
-              <th style={styles.th}>PROD DATE</th>
-              <th style={styles.th}>READY DATE</th>
-            </tr>
-          </thead>
-          <tbody>
-            {productionList.length === 0 ? (
-              <tr>
-                <td colSpan="8" style={styles.emptyTd}>No production history recorded yet. Click '+ Add Production Run' to start.</td>
+        {viewMode === 'STANDARD' ? (
+          <table style={styles.table}>
+            <thead>
+              <tr style={styles.trHead}>
+                <th style={styles.th}>MAC CODE</th>
+                <th style={styles.th}>PERFUME SCENT</th>
+                <th style={styles.th}>PRODUCT CODE</th>
+                <th style={styles.th}>DESIRED VOLUME (ML)</th>
+                <th style={styles.th}>EXPECTED QTY</th>
+                <th style={styles.th}>STATUS</th>
+                <th style={styles.th}>PROD DATE</th>
+                <th style={styles.th}>READY DATE</th>
               </tr>
-            ) : (
-              productionList.map((item) => (
-                <tr key={item.id} style={styles.trBody}>
-                  <td style={styles.td}><span style={styles.codeBadge}>{item.productionCode || item.production_code}</span></td>
-                  <td style={styles.td}><b style={{ color: '#F3F4F6' }}>{item.scent}</b></td>
-                  <td style={styles.td}>{item.productCode || item.product_code}</td>
-                  <td style={styles.td}>{item.volumeDesired?.toLocaleString() || item.volume_desired?.toLocaleString()} ml</td>
-                  <td style={styles.td}>{item.expectedQty || item.expected_qty} units</td>
-                  <td style={styles.td}>
-                    <span style={
-                      item.status === 'Bottled' ? styles.bottledBadge : 
-                      item.status === 'Ready' ? styles.readyBadge : styles.maceratingBadge
-                    }>
-                      {item.status.toUpperCase()}
-                    </span>
-                  </td>
-                  <td style={styles.td}>{item.date}</td>
-                  <td style={styles.td}>{item.readyDate || item.ready_date || '-'}</td>
+            </thead>
+            <tbody>
+              {filteredList.length === 0 ? (
+                <tr>
+                  <td colSpan="8" style={styles.emptyTd}>No production history recorded matching your criteria.</td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+              ) : (
+                filteredList.map((item) => (
+                  <tr key={item.id} style={styles.trBody}>
+                    <td style={styles.td}><span style={styles.codeBadge}>{item.productionCode || item.production_code}</span></td>
+                    <td style={styles.td}><b style={{ color: '#F3F4F6' }}>{item.scent}</b></td>
+                    <td style={styles.td}>{item.productCode || item.product_code}</td>
+                    <td style={styles.td}>{item.volumeDesired?.toLocaleString() || item.volume_desired?.toLocaleString()} ml</td>
+                    <td style={styles.td}>{item.expectedQty || item.expected_qty} units</td>
+                    <td style={styles.td}>
+                      <span style={
+                        item.status === 'Bottled' ? styles.bottledBadge : 
+                        item.status === 'Ready' ? styles.readyBadge : styles.maceratingBadge
+                      }>
+                        {item.status.toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={styles.td}>{item.date}</td>
+                    <td style={styles.td}>{item.readyDate || item.ready_date || '-'}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        ) : (
+          <table style={styles.table}>
+            <thead>
+              <tr style={styles.trHead}>
+                <th style={styles.th}>PERFUME SCENT</th>
+                <th style={styles.th}>PERFUME CODE</th>
+                <th style={styles.th}>MAC CODE(S)</th>
+                <th style={styles.th}>DESIRED VOLUME</th>
+                <th style={styles.th}>EXPECTED QTY</th>
+                <th style={styles.th}>STATUS</th>
+                <th style={styles.th}>PROD DATE</th>
+                <th style={styles.th}>READY DATE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groupedList.length === 0 ? (
+                <tr>
+                  <td colSpan="8" style={styles.emptyTd}>No summary records found matching your criteria.</td>
+                </tr>
+              ) : (
+                groupedList.map((g, idx) => (
+                  <tr key={idx} style={styles.trBody}>
+                    <td style={styles.td}><b style={{ color: '#F3F4F6' }}>{g.scent}</b></td>
+                    <td style={styles.td}>{g.productCode}</td>
+                    <td style={styles.td}><span style={styles.codeBadge}>{g.macCodeStr}</span></td>
+                    <td style={styles.td}>{g.totalVolume.toLocaleString()} ml</td>
+                    <td style={styles.td}>{g.totalQty} units</td>
+                    <td style={styles.td}>
+                      <span style={
+                        g.statusSummary === 'Bottled' ? styles.bottledBadge : 
+                        g.statusSummary === 'Ready' ? styles.readyBadge : styles.maceratingBadge
+                      }>
+                        {g.statusSummary.toUpperCase()}
+                      </span>
+                    </td>
+                    <td style={styles.td}>{g.latestProdDate}</td>
+                    <td style={styles.td}>{g.latestReadyDate}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {isModalOpen && (
@@ -844,9 +966,60 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: '32px',
+    marginBottom: '24px',
     borderBottom: '1px solid rgba(212, 175, 55, 0.2)',
     paddingBottom: '20px'
+  },
+  toolbarContainer: {
+    display: 'flex',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: '24px',
+    flexWrap: 'wrap',
+    gap: '16px',
+    backgroundColor: '#121212',
+    padding: '16px 20px',
+    borderRadius: '10px',
+    border: '1px solid rgba(212, 175, 55, 0.15)'
+  },
+  filterGroup: {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    flexWrap: 'wrap'
+  },
+  toolbarLabel: {
+    fontSize: '11px',
+    fontWeight: '700',
+    color: '#9CA3AF',
+    textTransform: 'uppercase',
+    letterSpacing: '0.1em',
+    marginRight: '6px',
+    fontFamily: 'sans-serif'
+  },
+  filterTab: {
+    backgroundColor: '#1A1A1A',
+    color: '#9CA3AF',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    padding: '6px 14px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: '600',
+    cursor: 'pointer',
+    fontFamily: 'sans-serif',
+    transition: 'all 0.2s'
+  },
+  activeFilterTab: {
+    backgroundColor: 'rgba(212, 175, 55, 0.15)',
+    color: '#E5C158',
+    border: '1px solid rgba(212, 175, 55, 0.4)',
+    padding: '6px 14px',
+    borderRadius: '6px',
+    fontSize: '12px',
+    fontWeight: '700',
+    cursor: 'pointer',
+    fontFamily: 'sans-serif',
+    boxShadow: '0 2px 8px rgba(212, 175, 55, 0.2)'
   },
   mainTitle: {
     fontSize: '28px',

@@ -554,7 +554,7 @@ export default function Maceration() {
 
       const prodDateObj = new Date(productionDate || Date.now());
       const readyDateObj = new Date(prodDateObj);
-      readyDateObj.setDate(readyDateObj.getDate() + 30);
+      readyDateObj.setDate(readyDateObj.getDate() + 60);
       const readyDateFormatted = readyDateObj.toISOString().split('T')[0];
 
       const todayStr = new Date().toISOString().split('T')[0];
