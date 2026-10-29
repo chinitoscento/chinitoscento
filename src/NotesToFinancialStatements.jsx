@@ -43,6 +43,14 @@ const styles = {
     gap: '10px',
     alignItems: 'center',
   },
+  dateInput: {
+    padding: '10px 14px',
+    border: '1px solid #dcd6cd',
+    borderRadius: '6px',
+    fontSize: '13.5px',
+    outline: 'none',
+    backgroundColor: '#faf9f6',
+  },
   actionBtn: {
     backgroundColor: '#c5a059',
     color: '#ffffff',
@@ -129,6 +137,7 @@ const styles = {
 
 export default function NotesToFinancialStatements() {
   const [loading, setLoading] = useState(false);
+  const [asOfDate, setAsOfDate] = useState(new Date().toISOString().split('T')[0]);
   const [receivablesBalance, setReceivablesBalance] = useState(0);
   const [allowanceBalance, setAllowanceBalance] = useState(0);
   const [inventoryBreakdown, setInventoryBreakdown] = useState({
@@ -140,13 +149,25 @@ export default function NotesToFinancialStatements() {
 
   useEffect(() => {
     fetchFinancialDetails();
-  }, []);
+  }, [asOfDate]);
 
   const fetchFinancialDetails = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.from('journal_entry_lines').select('*');
-      if (error && error.code !== 'PGRST116') console.error(error);
+      // EXACT SAME FETCH MANNER AS BalanceSheet.jsx (joining journal_entries with date filter)
+      const { data, error } = await supabase
+        .from('journal_entries')
+        .select(`
+          date,
+          journal_entry_lines (
+            account_code,
+            debit,
+            credit
+          )
+        `)
+        .lte('date', asOfDate);
+
+      if (error) throw error;
 
       let ar = 0;
       let da = 0;
@@ -156,18 +177,21 @@ export default function NotesToFinancialStatements() {
       let equip = 0;
 
       if (data) {
-        data.forEach(entry => {
-          const code = String(entry.account_code || '').trim();
-          const debit = Number(entry.debit || 0);
-          const credit = Number(entry.credit || 0);
-          const net = debit - credit;
+        data.forEach(je => {
+          const lines = je.journal_entry_lines || [];
+          lines.forEach(entry => {
+            const code = String(entry.account_code || '').trim();
+            const debit = Number(entry.debit || 0);
+            const credit = Number(entry.credit || 0);
+            const net = debit - credit;
 
-          if (code === '1200') ar += net;
-          else if (code === '1210') da += (credit - debit);
-          else if (code === '1310') rm += net;
-          else if (code === '1330') wip += net;
-          else if (code === '1320') fg += net;
-          else if (code.startsWith('15')) equip += net;
+            if (code === '1200') ar += net;
+            else if (code === '1210') da += (credit - debit); // Contra-asset normal balance
+            else if (code === '1310') rm += net;
+            else if (code === '1330') wip += net;
+            else if (code === '1320') fg += net;
+            else if (code.startsWith('15')) equip += net;
+          });
         });
       }
 
@@ -229,9 +253,15 @@ export default function NotesToFinancialStatements() {
           <div>
             <div style={styles.categoryTag}>✦ FINANCIAL DISCLOSURES</div>
             <h1 style={styles.title}>Notes to Financial Statements</h1>
-            <p style={styles.subtitle}>Chinito Scento Perfumery Atelier — Comprehensive Schedule of Accounts</p>
+            <p style={styles.subtitle}>Chinito Scento Perfumery Atelier — As of {asOfDate}</p>
           </div>
           <div style={styles.headerControls}>
+            <input 
+              type="date" 
+              value={asOfDate} 
+              onChange={(e) => setAsOfDate(e.target.value)}
+              style={styles.dateInput}
+            />
             <button onClick={fetchFinancialDetails} style={styles.secondaryBtn}>
               {loading ? '...' : 'Refresh'}
             </button>
@@ -243,7 +273,7 @@ export default function NotesToFinancialStatements() {
         <div style={styles.noteCard} className="note-card">
           <div style={styles.noteTitle} className="note-title">Note 1 — Corporate Information & Basis of Preparation</div>
           <p style={styles.paragraph}>
-            <strong>Chinito Scento</strong> ("The Brand") operates as a bespoke fragrance house specializing in artisanal compounding, maceration, bottle packaging, and wholesale/retail distribution. These financial statements have been prepared in accordance with historical cost convention, reflecting all active inventory tracking, production runs, sales orders, and journal entries managed within the Chinito Scento ERP system.
+            <strong>Chinito Scento</strong> ("The Brand") operates as a bespoke fragrance house specializing in artisanal compounding, maceration, bottle packaging, and wholesale/retail distribution. These financial statements have been prepared in accordance with historical cost convention, reflecting all active inventory tracking, production runs, sales orders, and journal entries managed within the Chinito Scento ERP system as of {asOfDate}.
           </p>
         </div>
 

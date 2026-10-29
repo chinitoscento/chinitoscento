@@ -166,7 +166,6 @@ export default function BalanceSheet() {
   const fetchBalanceSheetData = async () => {
     setLoading(true);
     try {
-      // Query journal entries joined with their lines, filtering strictly by the cut-off date
       const { data, error } = await supabase
         .from('journal_entries')
         .select(`
@@ -177,7 +176,7 @@ export default function BalanceSheet() {
             credit
           )
         `)
-        .lte('date', asOfDate); // Strict cut-off filter matching transaction date
+        .lte('date', asOfDate);
 
       if (error) throw error;
       
@@ -203,7 +202,7 @@ export default function BalanceSheet() {
             const credit = Number(entry.credit || 0);
 
             if (code.startsWith('10')) totals.cash += debit - credit;
-            else if (code.startsWith('12')) totals.receivables += debit - credit;
+            else if (code === '1200') totals.receivables += debit - credit; // STRICTLY GROSS AR (EXCLUDING CONTRA-ASSET 1210)
             else if (code.startsWith('13')) totals.inventory += debit - credit;   
             else if (code.startsWith('15')) totals.equipment += debit - credit;   
             else if (code.startsWith('20')) totals.payables += credit - debit;
@@ -232,8 +231,6 @@ export default function BalanceSheet() {
   const totalCurrentAssets = balances.cash + balances.receivables + balances.inventory;
   const totalAssets = totalCurrentAssets + balances.equipment;
   const totalLiabilities = balances.payables + balances.loansPayable;
-  
-  // Ending Capital matching Statement of Changes in Equity
   const endingCapital = balances.capital + balances.netIncomeForPeriod - balances.drawings;
   const totalEquity = endingCapital;
 
@@ -300,7 +297,6 @@ export default function BalanceSheet() {
   return (
     <div style={styles.container}>
       <div id="printable-report-card">
-        {/* Header Card */}
         <div style={styles.headerCard} className="header-card">
           <div>
             <div style={styles.categoryTag} className="category-tag">✦ FINANCIAL STATEMENT</div>
@@ -324,9 +320,7 @@ export default function BalanceSheet() {
           </div>
         </div>
 
-        {/* Two-Column Grid */}
         <div style={styles.gridContainer} className="print-grid">
-          {/* ASSETS COLUMN */}
           <div style={styles.statementBox} className="statement-box">
             <div>
               <div style={styles.columnHeader} className="column-header">ASSETS</div>
@@ -358,7 +352,6 @@ export default function BalanceSheet() {
             </div>
           </div>
 
-          {/* LIABILITIES & CAPITAL COLUMN */}
           <div style={styles.statementBox} className="statement-box">
             <div>
               <div style={styles.columnHeader} className="column-header">LIABILITIES & CAPITAL</div>

@@ -1306,3 +1306,11 @@ id,je_number,account_code,description,debit,credit,created_at
 1321,JE-202610000515,1310,CORRECTING ENTRY: To record inventory adjustment writing down Raw Materials & Packaging to actual physical count / workback valuation as of October 2026.,0.00,31096.13,2026-10-28 06:52:34.830072+08
 1322,JE-202610000516,1320,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,8598.76,0.00,2026-10-28 06:53:32.115882+08
 1323,JE-202610000516,5000,To adjust and record the correct valuation of Finished Goods inventory based on updated juice and packaging costing.,0.00,8598.76,2026-10-28 06:53:32.115882+08
+1324,JE-SO-202610000517,1200,,400.00,0.00,2026-10-28 17:19:22.256526+08
+1325,JE-SO-202610000517,4000,,0.00,400.00,2026-10-28 17:19:22.256526+08
+1326,JE-SO-202610000517,5000,,248.03,0.00,2026-10-28 17:19:22.256526+08
+1327,JE-SO-202610000517,1320,,0.00,248.03,2026-10-28 17:19:22.256526+08
+1328,JE-SO-202610000518,1200,,200.00,0.00,2026-10-29 13:32:49.289671+08
+1329,JE-SO-202610000518,4000,,0.00,200.00,2026-10-29 13:32:49.289671+08
+1330,JE-SO-202610000518,5000,,103.28,0.00,2026-10-29 13:32:49.289671+08
+1331,JE-SO-202610000518,1320,,0.00,103.28,2026-10-29 13:32:49.289671+08
